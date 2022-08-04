@@ -1,0 +1,60 @@
+version: "3.9"
+
+volumes:
+  kaprien-mq-data:
+  kaprien-storage:
+  kaprien-keystorage:
+  kaprien-settings:
+
+services:
+  kaprien-mq:
+    image: rabbitmq:3-management-alpine
+    container_name: kaprien-mq
+    volumes:
+     - "kaprien-mq-data:/var/lib/rabbitmq"
+     - "kaprien-storage:/var/opt/kaprien/storage"
+     - "kaprien-keystorage:/var/opt/kaprien/keystorage"
+     - "kaprien-settings:/var/opt/kaprien/settings/"
+    healthcheck:
+      test: "exit 0"
+    restart: always
+    tty: true
+
+  kaprien-rest-api:
+    image: ghcr.io/kaprien/kaprien-rest-api:dev
+    volumes:
+      - kaprien-storage:/var/opt/kaprien/storage
+      - kaprien-keystorage:/var/opt/kaprien/keystorage
+      - kaprien-settings:/var/opt/kaprien/settings/
+    command: uvicorn app:kaprien_app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - 80:8000
+    environment:
+      - KAPRIEN_STORAGE_BACKEND="LocalStorage"
+      - KAPRIEN_KEYVAULT_BACKEND="LocalKeyVault"
+      - KAPRIEN_LOCAL_STORAGE_BACKEND_PATH="/var/opt/kaprien/storage"
+      - KAPRIEN_LOCAL_KEYVAULT_PATH="/var/opt/kaprien/keystorage"
+      - KAPRIEN_RABBITMQ_SERVER="guest:guest@kaprien-mq:5672"
+    depends_on:
+      kaprien-mq:
+        condition: service_healthy
+
+  kaprien-repo-worker:
+    build:
+      context: .
+    command: "watchmedo auto-restart -d /opt/kaprien-repo-worker -p '*.py' -- celery -A app worker -l debug -Q repository_metadata -n kaprien@dev"
+    environment:
+      - KAPRIEN_STORAGE_BACKEND="LocalStorage"
+      - KAPRIEN_KEYVAULT_BACKEND="LocalKeyVault"
+      - KAPRIEN_LOCAL_STORAGE_BACKEND_PATH="/var/opt/kaprien/storage"
+      - KAPRIEN_LOCAL_KEYVAULT_PATH="/var/opt/kaprien/keystorage"
+      - KAPRIEN_RABBITMQ_SERVER="guest:guest@kaprien-mq:5672"
+      - KAPRIEN_WORKER_ID="dev"
+    volumes:
+      - ./:/opt/kaprien-repo-worker:z
+      - kaprien-storage:/var/opt/kaprien/storage
+      - kaprien-keystorage:/var/opt/kaprien/keystorage
+      - kaprien-settings:/var/opt/kaprien/settings/
+    depends_on:
+      kaprien-mq:
+        condition: service_healthy
