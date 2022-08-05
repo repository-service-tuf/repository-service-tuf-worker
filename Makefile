@@ -4,6 +4,7 @@ build-dev:
 run-dev:
 	# $(MAKE) build-dev
 	docker login ghcr.io
+	docker-compose pull
 	docker-compose up --remove-orphans
 
 init-repository:
