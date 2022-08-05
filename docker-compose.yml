@@ -8,7 +8,7 @@ volumes:
 
 services:
   kaprien-mq:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:3.10.7-management-alpine
     container_name: kaprien-mq
     volumes:
      - "kaprien-mq-data:/var/lib/rabbitmq"
