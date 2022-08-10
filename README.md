@@ -11,6 +11,33 @@ Kaprien Repository Worker
 - Pipenv
 - Docker
 
+### Preparing development environment
+
+After installing Python, install the pipenv tool.
+```shell
+$ pip install pipenv
+```
+
+Creating a virtual environment for this project.
+```shell
+$ pipenv shell
+```
+
+Install requirements from Pipfile.lock
+The flag -d will install the development requirements
+```Shell
+$ pipenv install -d
+```
+
+#### MacOS running on Macbooks M1
+For developers, after above command, run
+```shell
+$ pip uninstall cryptography cffi -y
+$ pip cache purge
+$ LDFLAGS=-L$(brew --prefix libffi)/lib CFLAGS=-I$(brew --prefix libffi)/include pip install cffi cryptography
+
+```
+
 ### Github Account Token
 
 For the development environment, you will require a Github Account Token to

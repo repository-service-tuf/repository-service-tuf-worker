@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ADD requirements.txt /builder/requirements.txt
 
 WORKDIR /builder
-RUN apt-get update && apt-get install libpq-dev gcc -y
+RUN apt-get update && apt-get install libpq-dev gcc git -y
 RUN pip install --user -r requirements.txt
 RUN apt-get remove gcc --purge -y \
     && rm -rf /var/lib/apt/lists/* \
@@ -30,5 +30,5 @@ FROM pre-final
 WORKDIR /opt/kaprien-repo-worker
 
 COPY app.py /opt/kaprien-repo-worker
-COPY kaprien_repo_worker /opt/kaprien-repo-worker/kaprien_repo_worker
+COPY repo_worker /opt/kaprien-repo-worker/repo_worker
 
