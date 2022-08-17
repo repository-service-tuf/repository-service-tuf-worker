@@ -26,6 +26,6 @@ jobs:
         context: .
         push: false
         tags: |
-            ghcr.io/KAPRIEN/kaprien-repo-worker:test
+            ghcr.io/kaprien/kaprien-repo-worker:test
         build-args: |
           RELEASE_VERSION=test
