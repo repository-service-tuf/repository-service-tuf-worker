@@ -151,7 +151,11 @@ def _get_config(settings):
 def kaprien_repo_worker(action, settings, payload):
 
     config = _get_config(settings)
-    if action == "add_targets":
+    if action == "add_initial_metadata":
+        repository_function = getattr(config.repository, action)
+        repository_function(payload.get("metadata"))
+
+    elif action == "add_targets":
         repository_function = getattr(config.repository, action)
         repository_function(payload.get("targets"))
 

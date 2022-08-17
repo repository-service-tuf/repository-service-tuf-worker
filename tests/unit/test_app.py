@@ -103,11 +103,13 @@ class TestApp:
         monkeypatch.setattr("app.MetadataRepository", lambda *a: mocked_repo)
 
         result = app.kaprien_repo_worker(
-            "add_targets", test_settings, {"key": "value"}
+            "add_targets", test_settings, {"targets": {"key": "value"}}
         )
 
         assert result is None
-        assert mocked_repo.add_targets.calls == [pretend.call(None)]
+        assert mocked_repo.add_targets.calls == [
+            pretend.call({"key": "value"})
+        ]
 
     def test_kaprien_repo_worker_invalid_action(self, monkeypatch):
         monkeypatch.setenv("KAPRIEN_WORKER_ID", "test")
