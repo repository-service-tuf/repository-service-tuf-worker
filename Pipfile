@@ -8,9 +8,9 @@ celery = "*"
 dynaconf = "*"
 watchdog = "*"
 cryptography = "*"
-tuf = {ref = "develop", git = "https://github.com/theupdateframework/python-tuf.git"}
 pynacl = "*"
 redis = "*"
+tuf = "==2.0.0"
 
 [dev-packages]
 tox = "*"
