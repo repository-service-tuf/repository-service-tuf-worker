@@ -2,9 +2,9 @@ build-dev:
 	docker build -t kaprien-repo-worker:dev .
 
 run-dev:
-	# $(MAKE) build-dev
+	$(MAKE) build-dev
 	docker login ghcr.io
-	docker-compose pull
+	docker pull ghcr.io/kaprien/kaprien-rest-api:dev
 	docker-compose up --remove-orphans
 
 init-repository:
@@ -16,6 +16,10 @@ stop:
 clean:
 	$(MAKE) stop
 	docker-compose rm --force
+
+purge:
+	$(MAKE) clean
+	docker rmi kaprien-repo-worker_kaprien-repo-worker --force
 
 reformat:
 	black -l 79 .

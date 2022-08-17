@@ -12,7 +12,7 @@
 
 
 from datetime import datetime, timedelta
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import redis
 from securesystemslib.exceptions import StorageError  # type: ignore
@@ -151,6 +151,20 @@ class MetadataRepository:
         self._persist(snapshot, Snapshot.type)
 
         return snapshot.signed.version
+
+    def add_initial_metadata(
+        self, metadata: Dict[str, Dict[str, Any]]
+    ) -> bool:
+        if self._is_initialized() is True:
+            return False
+
+        r = redis.StrictRedis.from_url("redis://redis")
+        with r.lock("TUF_REPO_LOCK"):
+            for role_name, data in metadata.items():
+                metadata = Metadata.from_dict(data)
+                self._persist(metadata, role_name)
+
+        return True
 
     def add_targets(self, targets):
         """
