@@ -2,6 +2,7 @@ version: "3.9"
 
 volumes:
   kaprien-mq-data:
+  kaprien-rest-api-data:
   kaprien-storage:
   kaprien-keystorage:
   kaprien-settings:
@@ -27,6 +28,7 @@ services:
   kaprien-rest-api:
     image: ghcr.io/kaprien/kaprien-rest-api:dev
     volumes:
+      - kaprien-rest-api-data:/opt/kaprien-rest-api/database
       - kaprien-storage:/var/opt/kaprien/storage
       - kaprien-keystorage:/var/opt/kaprien/keystorage
       - kaprien-settings:/var/opt/kaprien/settings/
@@ -39,6 +41,8 @@ services:
       - KAPRIEN_LOCAL_STORAGE_BACKEND_PATH="/var/opt/kaprien/storage"
       - KAPRIEN_LOCAL_KEYVAULT_PATH="/var/opt/kaprien/keystorage"
       - KAPRIEN_RABBITMQ_SERVER="guest:guest@kaprien-mq:5672"
+      - KAPRIEN_SECRETS_TOKEN_KEY="secret"
+      - KAPRIEN_SECRETS_ADMIN_PASSWORD="secret"
     depends_on:
       kaprien-mq:
         condition: service_healthy
