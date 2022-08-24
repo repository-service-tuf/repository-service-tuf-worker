@@ -1,22 +1,23 @@
 #!/bin/env python3
 #
-# Copyright (c) 2020 Kairo de Araujo
+# Copyright (c) 2022 Kairo de Araujo
 #
 #
-import importlib
 import json
 import logging
-from dataclasses import dataclass
+import os
 from enum import Enum
 
 import redis
 from celery import Celery, signals
 from dynaconf import Dynaconf
 
-from repo_worker import services  # noqa
-from repo_worker.tuf import IKeyVault, IStorage, MetadataRepository
+from repo_worker import kaprien
+
+SETTINGS_FILE = os.getenv("SETTINGS_FILE", "settings.ini")
 
 worker_settings = Dynaconf(
+    settings_files=[SETTINGS_FILE],
     envvar_prefix="KAPRIEN",
     environments=True,
 )
@@ -64,105 +65,21 @@ app = Celery(
 )
 
 
+@app.task(serializer="json")
+def kaprien_repo_worker(action, settings, payload):
+    return kaprien.main(
+        action=action,
+        payload=payload,
+        worker_settings=worker_settings,
+        task_settings=settings,
+    )
+
+
 def _publish_backend(status, task_id):
     redis_backend.set(
         f"celery-task-meta-{task_id}",
         json.dumps({"status": status.value, "task_id": task_id}),
     )
-
-
-@dataclass
-class WorkerConfig:
-    settings: Dynaconf
-    repository: MetadataRepository
-
-
-def _get_config(settings):
-    worker_settings.update(settings)
-    settings = worker_settings
-    storage_backends = [
-        storage.__name__.upper() for storage in IStorage.__subclasses__()
-    ]
-
-    if settings.STORAGE_BACKEND.upper() not in storage_backends:
-        raise ValueError(
-            f"Invalid Storage Backend {settings.STORAGE_BACKEND}. Supported "
-            f"Storage Backends {', '.join(storage_backends)}"
-        )
-    else:
-        settings.STORAGE_BACKEND = getattr(
-            importlib.import_module("repo_worker.services"),
-            settings.STORAGE_BACKEND,
-        )
-
-        if missing := [
-            s.name
-            for s in settings.STORAGE_BACKEND.settings()
-            if s.required and s.name not in settings
-        ]:
-            raise AttributeError(
-                f"'Settings' object has not attribute(s) {', '.join(missing)}"
-            )
-
-        settings.STORAGE_BACKEND.configure(settings)
-        storage_kwargs = {
-            s.argument: settings.store[s.name]
-            for s in settings.STORAGE_BACKEND.settings()
-        }
-
-    keyvault_backends = [
-        keyvault.__name__.upper() for keyvault in IKeyVault.__subclasses__()
-    ]
-    if settings.KEYVAULT_BACKEND.upper() not in keyvault_backends:
-        raise ValueError(
-            f"Invalid Key Vault Backend {settings.KEYVAULT_BACKEND}. "
-            f"Supported Key Vault Backends: {', '.join(keyvault_backends)}"
-        )
-    else:
-        settings.KEYVAULT_BACKEND = getattr(
-            importlib.import_module("repo_worker.services"),
-            settings.KEYVAULT_BACKEND,
-        )
-
-        if missing := [
-            s.name
-            for s in settings.KEYVAULT_BACKEND.settings()
-            if s.required and s.name not in settings
-        ]:
-            raise AttributeError(
-                f"'Settings' object has not attribute(s) {', '.join(missing)}"
-            )
-
-        settings.KEYVAULT_BACKEND.configure(settings)
-        keyvault_kwargs = {
-            s.argument: settings.store[s.name]
-            for s in settings.KEYVAULT_BACKEND.settings()
-        }
-
-    storage = settings.STORAGE_BACKEND(**storage_kwargs)
-    keyvault = settings.KEYVAULT_BACKEND(**keyvault_kwargs)
-
-    repository = MetadataRepository(storage, keyvault, settings)
-
-    return WorkerConfig(settings=settings, repository=repository)
-
-
-@app.task(serializer="json")
-def kaprien_repo_worker(action, settings, payload):
-
-    config = _get_config(settings)
-    if action == "add_initial_metadata":
-        repository_function = getattr(config.repository, action)
-        repository_function(payload.get("metadata"))
-
-    elif action == "add_targets":
-        repository_function = getattr(config.repository, action)
-        repository_function(payload.get("targets"))
-
-    else:
-        raise AttributeError(
-            f"module 'MetadataRepository' has no attribute '{action}'"
-        )
 
 
 @signals.task_prerun.connect(sender=kaprien_repo_worker)

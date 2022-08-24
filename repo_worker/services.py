@@ -128,7 +128,7 @@ class LocalKeyVault(IKeyVault):
             key_vault_data.append(
                 {
                     "key": ed25519_key,
-                    "filename": key["filename"].split("/"),
+                    "filename": key["filename"].split("/")[-1],
                     "password": key["password"],
                 }
             )
@@ -138,5 +138,4 @@ class LocalKeyVault(IKeyVault):
         loaders.write(
             self._secrets_file,
             DynaBox(data).to_dict(),
-            env=self.keyvault.current_env,
         )
