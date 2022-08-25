@@ -11,6 +11,7 @@
 # limitations under the License.
 
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 
@@ -49,18 +50,9 @@ class MetadataRepository:
         self._storage_backend = storage_service
         self._key_storage_backend = keyvault_service
         self._settings = settings
-
-    def _is_initialized(self) -> bool:
-        """
-        Returns True if any top-level role metadata exists, Falseotherwise.
-        """
-        try:
-            if any(role for role in TOP_LEVEL_ROLE_NAMES if self._load(role)):
-                return True
-        except StorageError:
-            pass
-
-        return False
+        self._hours_before_expire: int = self._settings.get(
+            "HOURS_BEFORE_EXPIRE", 1
+        )
 
     def _load(self, role_name: str) -> Metadata:
         """
@@ -132,6 +124,8 @@ class MetadataRepository:
         self._sign(timestamp, Timestamp.type)
         self._persist(timestamp, Timestamp.type)
 
+        return timestamp
+
     def _update_snapshot(
         self, targets_meta: List[Tuple[str, int]]
     ) -> Metadata[Snapshot]:
@@ -155,16 +149,16 @@ class MetadataRepository:
     def add_initial_metadata(
         self, metadata: Dict[str, Dict[str, Any]]
     ) -> bool:
-        if self._is_initialized() is True:
-            return False
-
         r = redis.StrictRedis.from_url("redis://redis")
         with r.lock("TUF_REPO_LOCK"):
             for role_name, data in metadata.items():
                 metadata = Metadata.from_dict(data)
                 metadata.to_file(
-                    role_name, JSONSerializer(), self._storage_backend
+                    f"{role_name}.json",
+                    JSONSerializer(),
+                    self._storage_backend,
                 )
+                logging.debug(f"{role_name}.json saved")
 
         return True
 
@@ -216,7 +210,7 @@ class MetadataRepository:
 
             self._update_timestamp(self._update_snapshot(targets_meta))
 
-    def bump_bins_roles(self):
+    def bump_bins_roles(self) -> bool:
         """
         Bumps version and expiration date of 'bins' role metadata (multiple).
 
@@ -226,21 +220,54 @@ class MetadataRepository:
 
         Updating 'bins' also updates 'snapshot' and 'timestamp'.
         """
-        hash_bins = self._get_hash_bins()
-        targets_meta = []
-        for bins_name, _ in hash_bins.generate():
-            bins_role = self._load(bins_name)
+        r = redis.StrictRedis.from_url("redis://redis")
+        with r.lock("TUF_REPO_LOCK"):
+            try:
+                bin = self._load(BIN)
+            except StorageError:
+                logging.error("Snapshot not found, not bumping.")
+                return False
+            bin_succinct_roles = bin.signed.delegations.succinct_roles
+            targets_meta = []
+            for bins_name in bin_succinct_roles.get_roles():
+                bins_role = self._load(bins_name)
 
-            self._bump_expiry(bins_role, BINS)
-            self._bump_version(bins_role)
-            self._sign(bins_role, BINS)
-            self._persist(bins_role, bins_name)
+                if (bins_role.signed.expires - datetime.now()) < timedelta(
+                    hours=self._hours_before_expire
+                ):
+                    self._bump_expiry(bins_role, BINS)
+                    self._bump_version(bins_role)
+                    self._sign(bins_role, BINS)
+                    self._persist(bins_role, bins_name)
+                    targets_meta.append((bins_name, bins_role.signed.version))
 
-            targets_meta.append((bins_name, bins_role.signed.version))
+            if len(targets_meta) > 0:
+                logging.info(
+                    "[scheduled bins bump] BINS roles version bumped: "
+                    f"{targets_meta}"
+                )
+                timestamp = self._update_timestamp(
+                    self._update_snapshot(targets_meta)
+                )
+                logging.info(
+                    "[scheduled bins bump] Snapshot version bumped: "
+                    f"{timestamp.signed.snapshot_meta.version}"
+                )
+                logging.info(
+                    "[scheduled bins bump] Timestamp version bumped: "
+                    f"{timestamp.signed.version} new expire "
+                    f"{timestamp.signed.expires}"
+                )
+            else:
+                logging.debug(
+                    "[scheduled bins bump] All more than "
+                    f"{self._hours_before_expire} hour(s) to expire, "
+                    "skipping"
+                )
 
-        self._update_timestamp(self._update_snapshot(targets_meta))
+        return True
 
-    def bump_snapshot(self):
+    def bump_snapshot(self) -> bool:
         """
         Bumps version and expiration date of TUF 'snapshot' role metadata.
 
@@ -250,4 +277,34 @@ class MetadataRepository:
 
         Updating 'snapshot' also updates 'timestamp'.
         """
-        self._update_timestamp(self._update_snapshot([]))
+        r = redis.StrictRedis.from_url("redis://redis")
+        with r.lock("TUF_REPO_LOCK"):
+            try:
+                snapshot = self._load(Snapshot.type)
+            except StorageError:
+                logging.error("Snapshot not found, not bumping.")
+                return False
+
+            if (snapshot.signed.expires - datetime.now()) < timedelta(
+                hours=self._hours_before_expire
+            ):
+                timestamp = self._update_timestamp(self._update_snapshot([]))
+                logging.info(
+                    "[scheduled snapshot bump] Snapshot version bumped: "
+                    f"{snapshot.signed.version}, new expire "
+                    f"{snapshot.signed.expires}"
+                )
+                logging.info(
+                    "[scheduled snapshot bump] Timestamp version bumped: "
+                    f"{timestamp.signed.version}, new expire "
+                    f"{snapshot.signed.expires}"
+                )
+
+            else:
+                logging.debug(
+                    f"[scheduled snapshot bump] Expires "
+                    f"{snapshot.signed.expires}. More than "
+                    f"{self._hours_before_expire} hour, skipping"
+                )
+
+        return True

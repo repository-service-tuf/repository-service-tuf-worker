@@ -37,6 +37,12 @@ def main(
     elif action == "add_targets":
         config.repository.add_targets(payload.get("targets"))
 
+    elif action == "bump_snapshot":
+        config.repository.bump_snapshot()
+
+    elif action == "bump_bins_roles":
+        config.repository.bump_bins_roles()
+
     else:
         raise AttributeError(f"Invalid action attribute '{action}'")
 

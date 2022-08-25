@@ -67,6 +67,7 @@ app = Celery(
 
 @app.task(serializer="json")
 def kaprien_repo_worker(action, settings, payload):
+    logging.debug(f"{action} received")
     return kaprien.main(
         action=action,
         payload=payload,
