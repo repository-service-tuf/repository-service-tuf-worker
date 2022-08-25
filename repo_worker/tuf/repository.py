@@ -93,9 +93,9 @@ class MetadataRepository:
         with a version number.
         """
         filename = f"{role_name}.json"
-
         if role_name != Timestamp.type:
-            filename = f"{role.signed.version}.{filename}"
+            if filename.startswith(f"{role.signed.version}.") is False:
+                filename = f"{role.signed.version}.{filename}"
 
         role.to_file(filename, JSONSerializer(), self._storage_backend)
 
@@ -162,7 +162,9 @@ class MetadataRepository:
         with r.lock("TUF_REPO_LOCK"):
             for role_name, data in metadata.items():
                 metadata = Metadata.from_dict(data)
-                self._persist(metadata, role_name)
+                metadata.to_file(
+                    role_name, JSONSerializer(), self._storage_backend
+                )
 
         return True
 

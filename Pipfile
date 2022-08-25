@@ -5,12 +5,12 @@ name = "pypi"
 
 [packages]
 celery = "*"
-dynaconf = "*"
 watchdog = "*"
 cryptography = "*"
 pynacl = "*"
 redis = "*"
 tuf = "==2.0.0"
+dynaconf = {extras = ["ini"], version = "*"}
 
 [dev-packages]
 tox = "*"
