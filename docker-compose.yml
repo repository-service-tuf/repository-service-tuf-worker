@@ -26,23 +26,19 @@ services:
     tty: true
 
   kaprien-rest-api:
-    image: ghcr.io/kaprien/kaprien-rest-api:dev
+    #image: ghcr.io/kaprien/kaprien-rest-api:dev
+    image: kaprien-rest-api:dev
     volumes:
       - kaprien-rest-api-data:/opt/kaprien-rest-api/database
-      - kaprien-storage:/var/opt/kaprien/storage
-      - kaprien-keystorage:/var/opt/kaprien/keystorage
       - kaprien-settings:/var/opt/kaprien/settings/
     command: uvicorn app:kaprien_app --host 0.0.0.0 --port 8000 --reload
     ports:
       - 80:8000
     environment:
-      - KAPRIEN_STORAGE_BACKEND="LocalStorage"
-      - KAPRIEN_KEYVAULT_BACKEND="LocalKeyVault"
-      - KAPRIEN_LOCAL_STORAGE_BACKEND_PATH="/var/opt/kaprien/storage"
-      - KAPRIEN_LOCAL_KEYVAULT_PATH="/var/opt/kaprien/keystorage"
+      - SETTINGS_FILE=/var/opt/kaprien/settings/settings.ini
       - KAPRIEN_RABBITMQ_SERVER="guest:guest@kaprien-mq:5672"
-      - KAPRIEN_SECRETS_TOKEN_KEY="secret"
-      - KAPRIEN_SECRETS_ADMIN_PASSWORD="secret"
+      - SECRETS_KAPRIEN_TOKEN_KEY="secret"
+      - SECRETS_KAPRIEN_ADMIN_PASSWORD="secret"
     depends_on:
       kaprien-mq:
         condition: service_healthy

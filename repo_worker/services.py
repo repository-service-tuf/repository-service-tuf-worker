@@ -93,7 +93,6 @@ class LocalKeyVault(IKeyVault):
         self.keyvault = Dynaconf(
             envvar_prefix="LOCALKEYVAULT",
             settings_files=[self._secrets_file],
-            environments=True,
         )
 
     @classmethod
