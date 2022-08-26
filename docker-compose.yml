@@ -9,14 +9,13 @@ volumes:
   kaprien-redis-data:
 
 services:
-  kaprien-mq:
+  rabbitmq:
     image: rabbitmq:3.10.7-management-alpine
     container_name: kaprien-mq
     volumes:
      - "kaprien-mq-data:/var/lib/rabbitmq"
      - "kaprien-storage:/var/opt/kaprien/storage"
      - "kaprien-keystorage:/var/opt/kaprien/keystorage"
-     - "kaprien-settings:/var/opt/kaprien/settings/"
     ports:
       - 5672:5672
       - 15672:15672
@@ -26,21 +25,20 @@ services:
     tty: true
 
   kaprien-rest-api:
-    #image: ghcr.io/kaprien/kaprien-rest-api:dev
+    # image: ghcr.io/kaprien/kaprien-rest-api:dev
     image: kaprien-rest-api:dev
     volumes:
-      - kaprien-rest-api-data:/opt/kaprien-rest-api/database
-      - kaprien-settings:/var/opt/kaprien/settings/
+      - kaprien-rest-api-data:/data
     command: uvicorn app:kaprien_app --host 0.0.0.0 --port 8000 --reload
     ports:
       - 80:8000
     environment:
-      - SETTINGS_FILE=/var/opt/kaprien/settings/settings.ini
       - KAPRIEN_RABBITMQ_SERVER="guest:guest@kaprien-mq:5672"
+      - KAPRIEN_REDIS_SERVER="redis://redis"
       - SECRETS_KAPRIEN_TOKEN_KEY="secret"
       - SECRETS_KAPRIEN_ADMIN_PASSWORD="secret"
     depends_on:
-      kaprien-mq:
+      rabbitmq:
         condition: service_healthy
   web:
     image: python:3.10-slim-buster
@@ -60,19 +58,20 @@ services:
   kaprien-repo-worker:
     build:
       context: .
-    command: "watchmedo auto-restart -d /opt/kaprien-repo-worker -R -p '*.py' -- celery -A app worker -l debug -Q metadata_repository -n kaprien@dev"
+    command: "watchmedo auto-restart -d /opt/kaprien-repo-worker -R -p '*.py' -- celery -A app worker -B -l debug -Q metadata_repository -n kaprien@dev"
     environment:
+      - DATA_DIR=./data
       - KAPRIEN_STORAGE_BACKEND="LocalStorage"
       - KAPRIEN_KEYVAULT_BACKEND="LocalKeyVault"
       - KAPRIEN_LOCAL_STORAGE_BACKEND_PATH="/var/opt/kaprien/storage"
       - KAPRIEN_LOCAL_KEYVAULT_PATH="/var/opt/kaprien/keystorage"
-      - KAPRIEN_RABBITMQ_SERVER="guest:guest@kaprien-mq:5672"
+      - KAPRIEN_RABBITMQ_SERVER="guest:guest@rabbitmq:5672"
+      - KAPRIEN_REDIS_SERVER="redis://redis"
       - KAPRIEN_WORKER_ID="dev"
     volumes:
       - ./:/opt/kaprien-repo-worker:z
       - kaprien-storage:/var/opt/kaprien/storage
       - kaprien-keystorage:/var/opt/kaprien/keystorage
-      - kaprien-settings:/var/opt/kaprien/settings/
     depends_on:
-      kaprien-mq:
+      rabbitmq:
         condition: service_healthy
