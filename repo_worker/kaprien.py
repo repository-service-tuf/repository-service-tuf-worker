@@ -1,8 +1,10 @@
+import logging
 from typing import Any, Dict
 
+import redis
 from dynaconf import Dynaconf
 
-from repo_worker.worker_settings import get_config
+from repo_worker.worker_settings import config
 
 
 def store_online_keys(
@@ -12,7 +14,7 @@ def store_online_keys(
         for rolename, items in role_settings.items():
             # store keys in Key Vault
             if keys := items.get("keys"):
-                worker_config.settings.KEYVAULT.put(rolename, keys.values())
+                worker_config.KEYVAULT.put(rolename, keys.values())
     else:
         return False
 
@@ -25,23 +27,36 @@ def main(
     worker_settings: Dynaconf,
     task_settings: Dynaconf,
 ) -> bool:
-    config = get_config(worker_settings, task_settings)
 
     if action == "add_initial_metadata":
         # Initialize the TUF Metadata
-        config.repository.add_initial_metadata(payload.get("metadata"))
+        config.update(worker_settings, task_settings)
+        config.get.repository.add_initial_metadata(payload.get("metadata"))
 
         # Store online keys to the Key Vault
-        store_online_keys(payload.get("settings"), config)
+        store_online_keys(payload.get("settings"), config.get.settings)
 
     elif action == "add_targets":
-        config.repository.add_targets(payload.get("targets"))
+        config.update(worker_settings, task_settings)
+        config.get.repository.add_targets(payload.get("targets"))
 
-    elif action == "bump_snapshot":
-        config.repository.bump_snapshot()
+    elif action == "automatic_version_bump":
+        r = redis.StrictRedis.from_url(config.get.settings.REDIS_SERVER)
+        with r.lock("TUF_REPO_LOCK"):
+            logging.debug(
+                f"[{action}] starting with settings "
+                f"{config.get.settings.to_dict()}"
+            )
+            if config.get.settings.get("BOOTSTRAP") is None:
+                logging.info(
+                    "[automatic_version_bump] No bootstrap, skipping..."
+                )
+                return None
 
-    elif action == "bump_bins_roles":
-        config.repository.bump_bins_roles()
+            config.get.repository.bump_snapshot()
+            config.get.repository.bump_bins_roles()
+
+            return True
 
     else:
         raise AttributeError(f"Invalid action attribute '{action}'")

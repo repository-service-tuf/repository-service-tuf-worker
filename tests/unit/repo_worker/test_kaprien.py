@@ -19,11 +19,7 @@ class TestKaprien:
         }
 
         test_worker_config = pretend.stub(
-            settings=pretend.stub(
-                KEYVAULT=pretend.stub(
-                    put=pretend.call_recorder(lambda *a: True)
-                )
-            )
+            KEYVAULT=pretend.stub(put=pretend.call_recorder(lambda *a: True))
         )
 
         result = kaprien.store_online_keys(
@@ -44,9 +40,13 @@ class TestKaprien:
         fake_config = pretend.stub(
             repository=pretend.stub(
                 add_initial_metadata=pretend.call_recorder(lambda *a: None)
-            )
+            ),
+            settings=pretend.call_recorder(lambda: None),
         )
-        kaprien.get_config = pretend.call_recorder(lambda *a: fake_config)
+        kaprien.config = pretend.stub(
+            update=pretend.call_recorder(lambda *a: None),
+            get=fake_config,
+        )
         kaprien.store_online_keys = pretend.call_recorder(lambda *a: None)
 
         test_payload = {"settings": {"k": "v"}, "metadata": {"k": "v"}}
@@ -63,20 +63,21 @@ class TestKaprien:
         assert fake_config.repository.add_initial_metadata.calls == [
             pretend.call(test_payload.get("metadata"))
         ]
-        assert kaprien.get_config.calls == [
+        assert kaprien.config.update.calls == [
             pretend.call(test_worker_dynaconf, test_task_settings)
-        ]
-        assert kaprien.store_online_keys.calls == [
-            pretend.call(test_payload.get("settings"), kaprien.get_config())
         ]
 
     def test_main_add_targets(self):
         fake_config = pretend.stub(
             repository=pretend.stub(
                 add_targets=pretend.call_recorder(lambda *a: None)
-            )
+            ),
+            settings=pretend.call_recorder(lambda: None),
         )
-        kaprien.get_config = pretend.call_recorder(lambda *a: fake_config)
+        kaprien.config = pretend.stub(
+            update=pretend.call_recorder(lambda *a: None),
+            get=fake_config,
+        )
 
         test_payload = {"targets": {"k": "v"}}
         test_worker_dynaconf = kaprien.Dynaconf()
@@ -92,13 +93,8 @@ class TestKaprien:
         assert fake_config.repository.add_targets.calls == [
             pretend.call(test_payload.get("targets"))
         ]
-        assert kaprien.get_config.calls == [
-            pretend.call(test_worker_dynaconf, test_task_settings)
-        ]
 
     def test_main_invalid_action(self):
-        kaprien.get_config = pretend.call_recorder(lambda *a: None)
-
         test_payload = {"targets": {"k": "v"}}
         test_worker_dynaconf = kaprien.Dynaconf()
         test_task_settings = kaprien.Dynaconf()
@@ -112,6 +108,3 @@ class TestKaprien:
                 test_task_settings,
             )
         assert f"Invalid action attribute '{action}'" in str(err)
-        assert kaprien.get_config.calls == [
-            pretend.call(test_worker_dynaconf, test_task_settings)
-        ]

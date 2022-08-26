@@ -16,6 +16,7 @@ stop:
 clean:
 	$(MAKE) stop
 	docker-compose rm --force
+	rm -rf ./data
 
 purge:
 	$(MAKE) clean

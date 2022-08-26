@@ -28,7 +28,7 @@ COPY --from=builder /root/.local/lib/python3.10/site-packages /usr/local/lib/pyt
 FROM pre-final
 
 WORKDIR /opt/kaprien-repo-worker
-
+RUN mkdir /data
 COPY app.py /opt/kaprien-repo-worker
 COPY repo_worker /opt/kaprien-repo-worker/repo_worker
 
