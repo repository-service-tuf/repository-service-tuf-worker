@@ -13,7 +13,7 @@ from celery import Celery, schedules, signals
 from dynaconf import Dynaconf
 
 from repo_worker import kaprien
-from repo_worker.worker_settings import config
+from repo_worker.config import runner
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -120,4 +120,4 @@ app.conf.beat_schedule = {
     },
 }
 
-config.update(worker_settings)
+runner.update(worker_settings)

@@ -4,7 +4,7 @@ from typing import Any, Dict
 import redis
 from dynaconf import Dynaconf
 
-from repo_worker.worker_settings import config
+from repo_worker.config import runner
 
 
 def store_online_keys(
@@ -30,31 +30,34 @@ def main(
 
     if action == "add_initial_metadata":
         # Initialize the TUF Metadata
-        config.update(worker_settings, task_settings)
-        config.get.repository.add_initial_metadata(payload.get("metadata"))
+        runner.update(worker_settings, task_settings)
+        runner.get.repository.add_initial_metadata(payload.get("metadata"))
 
         # Store online keys to the Key Vault
-        store_online_keys(payload.get("settings"), config.get.settings)
+        if settings := payload.get("settings"):
+            store_online_keys(settings, runner.get.settings)
+        else:
+            raise(ValueError("No settings in the payload"))
 
     elif action == "add_targets":
-        config.update(worker_settings, task_settings)
-        config.get.repository.add_targets(payload.get("targets"))
+        runner.update(worker_settings, task_settings)
+        runner.get.repository.add_targets(payload.get("targets"))
 
     elif action == "automatic_version_bump":
-        r = redis.StrictRedis.from_url(config.get.settings.REDIS_SERVER)
+        r = redis.StrictRedis.from_url(runner.get.settings.REDIS_SERVER)
         with r.lock("TUF_REPO_LOCK"):
             logging.debug(
                 f"[{action}] starting with settings "
-                f"{config.get.settings.to_dict()}"
+                f"{runner.get.settings.to_dict()}"
             )
-            if config.get.settings.get("BOOTSTRAP") is None:
+            if runner.get.settings.get("BOOTSTRAP") is None:
                 logging.info(
                     "[automatic_version_bump] No bootstrap, skipping..."
                 )
-                return None
+                return False
 
-            config.get.repository.bump_snapshot()
-            config.get.repository.bump_bins_roles()
+            runner.get.repository.bump_snapshot()
+            runner.get.repository.bump_bins_roles()
 
             return True
 

@@ -33,7 +33,7 @@ class Configuration:
         self,
         worker_settings: Dynaconf,
         task_settings: Optional[Dynaconf] = None,
-    ) -> WorkerConfig:
+    ):
         if task_settings is not None:
             worker_settings.update(task_settings)
             last_task_settings.update(task_settings)
@@ -136,4 +136,4 @@ class Configuration:
         return self.config
 
 
-config = Configuration()
+runner = Configuration()
