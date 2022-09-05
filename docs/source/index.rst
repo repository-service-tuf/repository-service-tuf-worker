@@ -12,8 +12,8 @@ Documentation List
 .. toctree::
    :maxdepth: 1
 
+   guide/index
    devel/index
-
 
 .. toctree::
    :maxdepth: 4
