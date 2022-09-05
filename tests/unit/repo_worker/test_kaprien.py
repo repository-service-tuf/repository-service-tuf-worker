@@ -1,6 +1,9 @@
+from contextlib import contextmanager
+
 import pretend
 import pytest
 
+from app import worker_settings
 from repo_worker import kaprien
 
 
@@ -41,30 +44,45 @@ class TestKaprien:
             repository=pretend.stub(
                 add_initial_metadata=pretend.call_recorder(lambda *a: None)
             ),
-            settings=pretend.call_recorder(lambda: None),
+            settings=worker_settings,
         )
-        kaprien.config = pretend.stub(
+        kaprien.runner = pretend.stub(
             update=pretend.call_recorder(lambda *a: None),
             get=fake_config,
+        )
+
+        @contextmanager
+        def mocked_lock(lock):
+            yield lock
+
+        mocked_redis_session = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock)
+        )
+        kaprien.redis = pretend.stub(
+            StrictRedis=pretend.stub(
+                from_url=pretend.call_recorder(lambda *a: mocked_redis_session)
+            )
         )
         kaprien.store_online_keys = pretend.call_recorder(lambda *a: None)
 
         test_payload = {"settings": {"k": "v"}, "metadata": {"k": "v"}}
-        test_worker_dynaconf = kaprien.Dynaconf()
-        test_task_settings = kaprien.Dynaconf()
+        test_task_settings = kaprien.Dynaconf(
+            settings_files=["test_worker_settings.ini"]
+        )
+        test_task_settings.BOOTSTRAP = "done"
 
         result = kaprien.main(
             "add_initial_metadata",
             test_payload,
-            test_worker_dynaconf,
+            worker_settings,
             test_task_settings,
         )
         assert result is True
         assert fake_config.repository.add_initial_metadata.calls == [
             pretend.call(test_payload.get("metadata"))
         ]
-        assert kaprien.config.update.calls == [
-            pretend.call(test_worker_dynaconf, test_task_settings)
+        assert kaprien.runner.update.calls == [
+            pretend.call(worker_settings, test_task_settings)
         ]
 
     def test_main_add_targets(self):
@@ -72,21 +90,35 @@ class TestKaprien:
             repository=pretend.stub(
                 add_targets=pretend.call_recorder(lambda *a: None)
             ),
-            settings=pretend.call_recorder(lambda: None),
+            settings=worker_settings,
         )
-        kaprien.config = pretend.stub(
+        kaprien.runner = pretend.stub(
             update=pretend.call_recorder(lambda *a: None),
             get=fake_config,
         )
 
+        @contextmanager
+        def mocked_lock(lock):
+            yield lock
+
+        mocked_redis_session = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock)
+        )
+        kaprien.redis = pretend.stub(
+            StrictRedis=pretend.stub(
+                from_url=pretend.call_recorder(lambda *a: mocked_redis_session)
+            )
+        )
         test_payload = {"targets": {"k": "v"}}
-        test_worker_dynaconf = kaprien.Dynaconf()
-        test_task_settings = kaprien.Dynaconf()
+        test_task_settings = kaprien.Dynaconf(
+            settings_files=["test_worker_settings.ini"]
+        )
+        test_task_settings.BOOTSTRAP = "done"
 
         result = kaprien.main(
             "add_targets",
             test_payload,
-            test_worker_dynaconf,
+            worker_settings,
             test_task_settings,
         )
         assert result is True

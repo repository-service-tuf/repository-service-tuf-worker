@@ -29,19 +29,23 @@ def main(
 ) -> bool:
 
     if action == "add_initial_metadata":
-        # Initialize the TUF Metadata
-        runner.update(worker_settings, task_settings)
-        runner.get.repository.add_initial_metadata(payload.get("metadata"))
+        r = redis.StrictRedis.from_url(runner.get.settings.REDIS_SERVER)
+        with r.lock("TUF_REPO_LOCK"):
+            # Initialize the TUF Metadata
+            runner.update(worker_settings, task_settings)
+            runner.get.repository.add_initial_metadata(payload.get("metadata"))
 
-        # Store online keys to the Key Vault
-        if settings := payload.get("settings"):
-            store_online_keys(settings, runner.get.settings)
-        else:
-            raise(ValueError("No settings in the payload"))
+            # Store online keys to the Key Vault
+            if settings := payload.get("settings"):
+                store_online_keys(settings, runner.get.settings)
+            else:
+                raise (ValueError("No settings in the payload"))
 
     elif action == "add_targets":
-        runner.update(worker_settings, task_settings)
-        runner.get.repository.add_targets(payload.get("targets"))
+        r = redis.StrictRedis.from_url(runner.get.settings.REDIS_SERVER)
+        with r.lock("TUF_REPO_LOCK"):
+            runner.update(worker_settings, task_settings)
+            runner.get.repository.add_targets(payload.get("targets"))
 
     elif action == "automatic_version_bump":
         r = redis.StrictRedis.from_url(runner.get.settings.REDIS_SERVER)
