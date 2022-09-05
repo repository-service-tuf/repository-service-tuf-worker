@@ -15,7 +15,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 
-import redis
 from securesystemslib.exceptions import StorageError  # type: ignore
 from securesystemslib.signer import SSlibSigner  # type: ignore
 from tuf.api.metadata import (  # noqa
@@ -149,16 +148,14 @@ class MetadataRepository:
     def add_initial_metadata(
         self, metadata: Dict[str, Dict[str, Any]]
     ) -> bool:
-        r = redis.StrictRedis.from_url(self._settings.REDIS_SERVER)
-        with r.lock("TUF_REPO_LOCK"):
-            for role_name, data in metadata.items():
-                metadata = Metadata.from_dict(data)
-                metadata.to_file(
-                    f"{role_name}.json",
-                    JSONSerializer(),
-                    self._storage_backend,
-                )
-                logging.debug(f"{role_name}.json saved")
+        for role_name, data in metadata.items():
+            metadata = Metadata.from_dict(data)
+            metadata.to_file(
+                f"{role_name}.json",
+                JSONSerializer(),
+                self._storage_backend,
+            )
+            logging.debug(f"{role_name}.json saved")
 
         return True
 
@@ -173,42 +170,36 @@ class MetadataRepository:
 
         Updating 'bins' also updates 'snapshot' and 'timestamp'.
         """
-        r = redis.StrictRedis.from_url(self._settings.REDIS_SERVER)
-        with r.lock("TUF_REPO_LOCK"):
-            # Group target files by responsible 'bins' roles
-            bin = self._load(BIN)
-            bin_succinct_roles = bin.signed.delegations.succinct_roles
-            bin_target_groups = {}
-            for target in targets:
-                bins_name = bin_succinct_roles.get_role_for_target(
-                    target["path"]
-                )
+        # Group target files by responsible 'bins' roles
+        bin = self._load(BIN)
+        bin_succinct_roles = bin.signed.delegations.succinct_roles
+        bin_target_groups = {}
+        for target in targets:
+            bins_name = bin_succinct_roles.get_role_for_target(target["path"])
 
-                if bins_name not in bin_target_groups:
-                    bin_target_groups[bins_name] = []
+            if bins_name not in bin_target_groups:
+                bin_target_groups[bins_name] = []
 
-                target_file = TargetFile.from_dict(
-                    target["info"], target["path"]
-                )
-                bin_target_groups[bins_name].append(target_file)
+            target_file = TargetFile.from_dict(target["info"], target["path"])
+            bin_target_groups[bins_name].append(target_file)
 
-            # Update target file info in responsible 'bins' roles, bump
-            # version and expiry and sign and persist
-            targets_meta = []
-            for bins_name, target_files in bin_target_groups.items():
-                bins_role = self._load(bins_name)
+        # Update target file info in responsible 'bins' roles, bump
+        # version and expiry and sign and persist
+        targets_meta = []
+        for bins_name, target_files in bin_target_groups.items():
+            bins_role = self._load(bins_name)
 
-                for target_file in target_files:
-                    bins_role.signed.targets[target_file.path] = target_file
+            for target_file in target_files:
+                bins_role.signed.targets[target_file.path] = target_file
 
-                self._bump_expiry(bins_role, BINS)
-                self._bump_version(bins_role)
-                self._sign(bins_role, BINS)
-                self._persist(bins_role, bins_name)
+            self._bump_expiry(bins_role, BINS)
+            self._bump_version(bins_role)
+            self._sign(bins_role, BINS)
+            self._persist(bins_role, bins_name)
 
-                targets_meta.append((bins_name, bins_role.signed.version))
+            targets_meta.append((bins_name, bins_role.signed.version))
 
-            self._update_timestamp(self._update_snapshot(targets_meta))
+        self._update_timestamp(self._update_snapshot(targets_meta))
 
     def bump_bins_roles(self) -> bool:
         """
