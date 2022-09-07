@@ -1,3 +1,5 @@
+.PHONY: build-dev run-dev stop clean purge reformat tests requirements coverage docs
+
 build-dev:
 	docker build -t kaprien-repo-worker:dev .
 
@@ -7,8 +9,6 @@ run-dev:
 	docker pull ghcr.io/kaprien/kaprien-rest-api:dev
 	docker-compose up --remove-orphans
 
-init-repository:
-	docker-compose run --rm kaprien-rest-api bash -c "apt update && apt install curl -y && curl -X POST http://kaprien-rest-api:8000/api/v1/bootstrap/ -H 'Content-Type: application/json' -d @tests/data_examples/bootstrap/payload.json"
 
 stop:
 	docker-compose down -v
@@ -36,3 +36,6 @@ requirements:
 coverage:
 	coverage report
 	coverage html -i
+
+docs:
+	tox -e docs

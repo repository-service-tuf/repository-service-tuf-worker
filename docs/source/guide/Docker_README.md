@@ -31,7 +31,7 @@ docker run --env="KAPRIEN_WORKER_ID=worker1" \
     --env="KAPRIEN_LOCAL_STORAGE_BACKEND_PATH=storage" \
     --env="KAPRIEN_KEYVAULT_BACKEND=LocalKeyVault" \
     --env="KAPRIEN_LOCAL_KEYVAULT_PATH=keyvault" \
-    --env="KAPRIEN_RABBITMQ_SERVER=guest:guest@rabbitmq:5672" \
+    --env="KAPRIEN_BROKER_SERVER=guest:guest@rabbitmq:5672" \
     --env="KAPRIEN_REDIS_SERVER=redis://redis" \
     ghcr.io/kaprien/kaprien-repo-worker:latest \
     celery -A app worker -B -l debug -Q metadata_repository -n kaprien@dev
@@ -40,21 +40,21 @@ docker run --env="KAPRIEN_WORKER_ID=worker1" \
 
 ### Environment Variables
 
-#### `KAPRIEN_RABBITMQ_SERVER`
+#### (Required) `KAPRIEN_BROKER_SERVER`
 
-Broker server address. This is required.
+Broker server address.
 
 Example: `guest:guest@rabbitmq:5672`
 
-#### `KAPRIEN_REDIS_SERVER`
+#### (Required) `KAPRIEN_REDIS_SERVER`
 
-Description: Redis server address.. This is required.
+Description: Redis server address.
 
 Example: `redis://redis`
 
-#### `KAPRIEN_STORAGE_BACKEND`
+#### (Required) `KAPRIEN_STORAGE_BACKEND`
 
-Select a supported type of Storage Service. This is required.
+Select a supported type of Storage Service.
 
 Available types:
 
@@ -62,9 +62,9 @@ Available types:
     - Requires variable ``KAPRIEN_LOCAL_STORAGE_BACKEND_PATH``
       - Define the directory where the data will be saved, example: `storage`
 
-#### `KAPRIEN_KEYVAULT_BACKEND`
+#### (Required) `KAPRIEN_KEYVAULT_BACKEND`
 
-Select a supported type of Key Vault Service. This is required.
+Select a supported type of Key Vault Service.
 
 Available types:
 
@@ -73,9 +73,9 @@ Available types:
     - Define the directory where the data will be saved, example: `keyvault`
 
 
-#### `DATA_DIR`
+#### (Optional) `DATA_DIR`
 
-Optional, new data directory. Default: `/data`
+Container data directory. Default: `/data`
 
 ### Volumes
 

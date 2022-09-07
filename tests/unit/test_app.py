@@ -9,7 +9,7 @@ class TestApp:
         monkeypatch.setenv(
             "KAPRIEN_LOCAL_STORAGE_BACKEND_PATH", tempfile.gettempdir()
         )
-        monkeypatch.setenv("KAPRIEN_RABBITMQ_SERVER", "fake-rabbitmq")
+        monkeypatch.setenv("KAPRIEN_BROKER_SERVER", "fake-rabbitmq")
         monkeypatch.setenv(
             "KAPRIEN_LOCAL_KEYVAULT_PATH", tempfile.gettempdir()
         )

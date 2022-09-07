@@ -57,7 +57,7 @@ redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
 
 app = Celery(
     f"kaprien_repo_worker_{worker_settings.WORKER_ID}",
-    broker=f"amqp://{worker_settings.RABBITMQ_SERVER}",
+    broker=worker_settings.BROKER_SERVER,
     backend=worker_settings.REDIS_SERVER,
     result_persistent=True,
     task_acks_late=True,
