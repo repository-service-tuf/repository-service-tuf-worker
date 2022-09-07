@@ -29,7 +29,9 @@ def main(
 ) -> bool:
 
     if action == "add_initial_metadata":
-        r = redis.StrictRedis.from_url(runner.get.settings.REDIS_SERVER)
+        r = redis.StrictRedis.from_url(
+            runner.get.settings.RESULT_BACKEND_SERVER
+        )
         with r.lock("TUF_REPO_LOCK"):
             # Initialize the TUF Metadata
             runner.update(worker_settings, task_settings)
@@ -42,13 +44,17 @@ def main(
                 raise (ValueError("No settings in the payload"))
 
     elif action == "add_targets":
-        r = redis.StrictRedis.from_url(runner.get.settings.REDIS_SERVER)
+        r = redis.StrictRedis.from_url(
+            runner.get.settings.RESULT_BACKEND_SERVER
+        )
         with r.lock("TUF_REPO_LOCK"):
             runner.update(worker_settings, task_settings)
             runner.get.repository.add_targets(payload.get("targets"))
 
     elif action == "automatic_version_bump":
-        r = redis.StrictRedis.from_url(runner.get.settings.REDIS_SERVER)
+        r = redis.StrictRedis.from_url(
+            runner.get.settings.RESULT_BACKEND_SERVER
+        )
         with r.lock("TUF_REPO_LOCK"):
             logging.debug(
                 f"[{action}] starting with settings "
