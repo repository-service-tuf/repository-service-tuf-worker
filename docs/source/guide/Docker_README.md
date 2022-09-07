@@ -16,13 +16,9 @@ In order to run this container you'll need docker installed.
 Some required services:
 
 * kaprien-rest-api
-* Compatible Borker Service with [Celery](http://docs.celeryq.dev/),
-  recommended [RabbitMQ](https://www.rabbitmq.com) or
-  [Redis](https://redis.com)
-* Compatible Result Backend Service with [Celery](http://docs.celeryq.dev/),
-  recommended [RabbitMQ](https://www.rabbitmq.com) or
-  [Redis](https://redis.com)
-
+* Compatible Borker and Result Backend Service with
+  [Celery](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/index.html).
+  Recomended: [RabbitMQ](https://www.rabbitmq.com) or [Redis](https://redis.com)
 
 ## Usage
 
