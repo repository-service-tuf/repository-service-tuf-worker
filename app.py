@@ -45,7 +45,7 @@ class status(Enum):
     FAILURE = "FAILURE"
 
 
-redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
+redis_backend = redis.StrictRedis.from_url(worker_settings.RESULT_BACKEND_SERVER)
 
 # TODO: Issue https://github.com/KAPRIEN/kaprien/issues/6
 # BROKER_USE_SSL = {
@@ -58,7 +58,7 @@ redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
 app = Celery(
     f"kaprien_repo_worker_{worker_settings.WORKER_ID}",
     broker=worker_settings.BROKER_SERVER,
-    backend=worker_settings.REDIS_SERVER,
+    backend=worker_settings.RESULT_BACKEND_SERVER,
     result_persistent=True,
     task_acks_late=True,
     task_track_started=True,

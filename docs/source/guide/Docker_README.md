@@ -19,6 +19,9 @@ Some required services:
 * Compatible Borker Service with [Celery](http://docs.celeryq.dev/),
   recommended [RabbitMQ](https://www.rabbitmq.com) or
   [Redis](https://redis.com)
+* Compatible Result Backend Service with [Celery](http://docs.celeryq.dev/),
+  recommended [RabbitMQ](https://www.rabbitmq.com) or
+  [Redis](https://redis.com)
 
 
 ## Usage
@@ -32,7 +35,7 @@ docker run --env="KAPRIEN_WORKER_ID=worker1" \
     --env="KAPRIEN_KEYVAULT_BACKEND=LocalKeyVault" \
     --env="KAPRIEN_LOCAL_KEYVAULT_PATH=keyvault" \
     --env="KAPRIEN_BROKER_SERVER=guest:guest@rabbitmq:5672" \
-    --env="KAPRIEN_REDIS_SERVER=redis://redis" \
+    --env="KAPRIEN_RESULT_BACKEND_SERVER=redis://redis" \
     ghcr.io/kaprien/kaprien-repo-worker:latest \
     celery -A app worker -B -l debug -Q metadata_repository -n kaprien@dev
 ```
@@ -44,11 +47,17 @@ docker run --env="KAPRIEN_WORKER_ID=worker1" \
 
 Broker server address.
 
+The broker must to be compatible with Celery.
+See [Celery Broker Instructions](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/index.html#broker-instructions)
+
 Example: `guest:guest@rabbitmq:5672`
 
-#### (Required) `KAPRIEN_REDIS_SERVER`
+#### (Required) `KAPRIEN_RESULT_BACKEND_SERVER`
 
-Description: Redis server address.
+Redis server address.
+
+The result backend must to be compatible with Celery. See
+[Celery Task result backend settings](https://docs.celeryq.dev/en/stable/userguide/configuration.html#task-result-backend-settings)
 
 Example: `redis://redis`
 
