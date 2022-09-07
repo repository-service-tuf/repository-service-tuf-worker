@@ -45,7 +45,9 @@ class status(Enum):
     FAILURE = "FAILURE"
 
 
-redis_backend = redis.StrictRedis.from_url(worker_settings.RESULT_BACKEND_SERVER)
+redis_backend = redis.StrictRedis.from_url(
+    worker_settings.RESULT_BACKEND_SERVER
+)
 
 # TODO: Issue https://github.com/KAPRIEN/kaprien/issues/6
 # BROKER_USE_SSL = {
