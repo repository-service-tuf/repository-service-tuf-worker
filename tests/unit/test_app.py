@@ -17,7 +17,7 @@ class TestApp:
 
         assert app.Celery.__name__ == "Celery"
 
-    def test_kaprien_repo_worker(self, monkeypatch):
+    def test_kaprien_repo_worker(self):
         import app
 
         app.kaprien = pretend.stub(
@@ -41,29 +41,29 @@ class TestApp:
     def test_task_pre_run_notifier(self):
         import app
 
-        app._publish_backend = pretend.call_recorder(lambda *a: None)
+        app._publish_signals = pretend.call_recorder(lambda *a: None)
         app.task_pre_run_notifier(**{"task_id": "001"})
 
-        assert app._publish_backend.calls == [
+        assert app._publish_signals.calls == [
             pretend.call(app.status.PRE_RUN, "001")
         ]
 
     def test_task_unknown_notifier(self):
         import app
 
-        app._publish_backend = pretend.call_recorder(lambda *a: None)
+        app._publish_signals = pretend.call_recorder(lambda *a: None)
         app.task_unknown_notifier(**{"task_id": "001"})
 
-        assert app._publish_backend.calls == [
+        assert app._publish_signals.calls == [
             pretend.call(app.status.UNKNOWN, "001")
         ]
 
-    def test_task_failure_notifier(self):
+    def test_task_received_notifier(self):
         import app
 
-        app._publish_backend = pretend.call_recorder(lambda *a: None)
-        app.task_failure_notifier(**{"task_id": "001"})
+        app._publish_signals = pretend.call_recorder(lambda *a: None)
+        app.task_received_notifier(**{"task_id": "001"})
 
-        assert app._publish_backend.calls == [
-            pretend.call(app.status.FAILURE, "001")
+        assert app._publish_signals.calls == [
+            pretend.call(app.status.RECEIVED, "001")
         ]

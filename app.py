@@ -7,6 +7,7 @@ import json
 import logging
 import os
 from enum import Enum
+from typing import Optional
 
 import redis
 from celery import Celery, schedules, signals
@@ -38,6 +39,7 @@ logging.basicConfig(
 
 
 class status(Enum):
+    RECEIVED = "RECEIVED"
     PRE_RUN = "PRE_RUN"
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
@@ -45,6 +47,7 @@ class status(Enum):
     FAILURE = "FAILURE"
 
 
+# FIXME: issue #34
 redis_backend = redis.StrictRedis.from_url(
     worker_settings.RESULT_BACKEND_SERVER
 )
@@ -80,29 +83,44 @@ def kaprien_repo_worker(action, settings, payload):
     )
 
 
-def _publish_backend(status, task_id):
+def _publish_signals(
+    status: status, task_id: str, result: Optional[str] = None
+):
+    """
+    Publishes Signals to the Result Backend.
+
+    Args:
+        status: Task status
+        task_id: Task identification
+        result: Result about the Task
+    """
     redis_backend.set(
         f"celery-task-meta-{task_id}",
-        json.dumps({"status": status.value, "task_id": task_id}),
+        json.dumps(
+            {"status": status.value, "task_id": task_id, "result": result}
+        ),
     )
 
 
 @signals.task_prerun.connect(sender=kaprien_repo_worker)
 def task_pre_run_notifier(**kwargs):
+    """Publishes Signal when task is in PRE_RUN state"""
     logging.debug((f"{status.PRE_RUN.value}: {kwargs.get('task_id')}"))
-    _publish_backend(status.PRE_RUN, kwargs.get("task_id"))
+    _publish_signals(status.PRE_RUN, kwargs.get("task_id"))
 
 
 @signals.task_unknown.connect(sender=kaprien_repo_worker)
 def task_unknown_notifier(**kwargs):
+    """Publishes Signal when task is in UNKNOWN state"""
     logging.debug((f"{status.UNKNOWN.value}: {kwargs.get('task_id')}"))
-    _publish_backend(status.UNKNOWN, kwargs.get("task_id"))
+    _publish_signals(status.UNKNOWN, kwargs.get("task_id"))
 
 
-@signals.task_failure.connect(sender=kaprien_repo_worker)
-def task_failure_notifier(**kwargs):
-    logging.debug((f"{status.FAILURE.value}: {kwargs.get('task_id')}"))
-    _publish_backend(status.FAILURE, kwargs.get("task_id"))
+@signals.task_received.connect(sender=kaprien_repo_worker)
+def task_received_notifier(**kwargs):
+    """Publishes Signal when task is in RECEIVED state"""
+    logging.debug((f"{status.RECEIVED}: {kwargs.get('task_id')}"))
+    _publish_signals(status.RECEIVED, kwargs.get("task_id"))
 
 
 app.conf.beat_schedule = {
