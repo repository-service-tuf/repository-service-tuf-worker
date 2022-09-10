@@ -50,6 +50,7 @@ def main(
     elif action == "automatic_version_bump":
         r = redis.StrictRedis.from_url(runner.get.settings.REDIS_SERVER)
         with r.lock("TUF_REPO_LOCK"):
+            runner.update(worker_settings)
             logging.debug(
                 f"[{action}] starting with settings "
                 f"{runner.get.settings.to_dict()}"
