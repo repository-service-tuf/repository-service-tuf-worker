@@ -41,6 +41,8 @@ class Configuration:
                 last_task_settings.SETTINGS_FILE_FOR_DYNACONF[0],
                 last_task_settings.to_dict(),
             )
+        else:
+            worker_settings.update(last_task_settings)
 
         settings = worker_settings
 

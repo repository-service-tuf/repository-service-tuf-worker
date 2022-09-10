@@ -56,6 +56,7 @@ def main(
             runner.get.settings.RESULT_BACKEND_SERVER
         )
         with r.lock("TUF_REPO_LOCK"):
+            runner.update(worker_settings)
             logging.debug(
                 f"[{action}] starting with settings "
                 f"{runner.get.settings.to_dict()}"
