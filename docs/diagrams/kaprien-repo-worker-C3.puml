@@ -59,7 +59,8 @@ System_Boundary(kaprien_repo_worker, "KAPRIEN-REPO-WORKER") #APPLICATION {
     ContainerDb(data_dir, "/data", "File System", "Service settings\nRepository settings\nUsers db", $tags="storage_service")
 }
 ' Container(kaprien_rest_api, "KAPRIEN-REST-API", $tags="rest_api")
-Container_Ext(broker, "Broker/Backend", "RabbitMQ, Redis, etc", $tags="queue") #Grey
+Container_Ext(broker, "Broker", "RabbitMQ, Redis, etc", $tags="queue") #Grey
+Container_Ext(redis, "Redis", "Redis Server", $tags="queue") #Grey
 Container_Ext(storage, "Metadata Storage", "specific technology", $tags="key_service") #Grey
 Container_Ext(key_storage, "Key Vault Storage", "specific technology", $tags="storage_service") #Grey
 
@@ -71,6 +72,7 @@ Rel(exceptions, services, " ")
 Rel(kaprien, config, " ")
 Rel(config, repository, " ")
 Rel(config, interfaces, " ")
+Rel_U(dynaconf, redis, "Write data")
 Rel_L(config, dynaconf, " ")
 Rel_U(kaprien, celery, " ")
 Rel_D(celery, broker, "Publisher")
