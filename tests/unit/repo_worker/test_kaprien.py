@@ -39,6 +39,28 @@ class TestKaprien:
         )
         assert result is False
 
+    def test_main_add_initial_metadata_no_settings(self):
+        fake_config = pretend.stub(
+            repository=pretend.stub(
+                add_initial_metadata=pretend.call_recorder(lambda *a: None)
+            ),
+            settings=worker_settings,
+        )
+        kaprien.runner = pretend.stub(
+            update=pretend.call_recorder(lambda *a: None),
+            get=fake_config,
+        )
+
+        test_payload = {"metadata": {"k": "v"}}
+
+        with pytest.raises(ValueError) as err:
+            kaprien.main(
+                "add_initial_metadata",
+                test_payload,
+                worker_settings,
+            )
+        assert "No settings in the payload" in str(err)
+
     def test_main_add_initial_metadata(self):
         fake_config = pretend.stub(
             repository=pretend.stub(
@@ -66,29 +88,22 @@ class TestKaprien:
         kaprien.store_online_keys = pretend.call_recorder(lambda *a: None)
 
         test_payload = {"settings": {"k": "v"}, "metadata": {"k": "v"}}
-        test_task_settings = kaprien.Dynaconf(
-            settings_files=["test_worker_settings.ini"]
-        )
-        test_task_settings.BOOTSTRAP = "done"
 
         result = kaprien.main(
             "add_initial_metadata",
             test_payload,
             worker_settings,
-            test_task_settings,
         )
         assert result is True
         assert fake_config.repository.add_initial_metadata.calls == [
             pretend.call(test_payload.get("metadata"))
         ]
-        assert kaprien.runner.update.calls == [
-            pretend.call(worker_settings, test_task_settings)
-        ]
+        assert kaprien.runner.update.calls == [pretend.call(worker_settings)]
 
     def test_main_add_targets(self):
         fake_config = pretend.stub(
             repository=pretend.stub(
-                add_targets=pretend.call_recorder(lambda *a: None)
+                add_targets=pretend.call_recorder(lambda *a: [("bin_a", "2")])
             ),
             settings=worker_settings,
         )
@@ -102,7 +117,9 @@ class TestKaprien:
             yield lock
 
         mocked_redis_session = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock)
+            lock=pretend.call_recorder(mocked_lock),
+            exists=pretend.call_recorder(lambda key_name: False),
+            set=pretend.call_recorder(lambda *a: None),
         )
         kaprien.redis = pretend.stub(
             StrictRedis=pretend.stub(
@@ -119,17 +136,146 @@ class TestKaprien:
             "add_targets",
             test_payload,
             worker_settings,
-            test_task_settings,
         )
         assert result is True
         assert fake_config.repository.add_targets.calls == [
             pretend.call(test_payload.get("targets"))
         ]
+        assert fake_config.repository.add_targets.calls == [
+            pretend.call({"k": "v"})
+        ]
+        assert mocked_redis_session.lock.calls == [
+            pretend.call("TUF_BINS_HASHED"),
+            pretend.call("TUF_TARGETS_META"),
+        ]
+        assert mocked_redis_session.exists.calls == [
+            pretend.call("umpublished_metas")
+        ]
+        assert mocked_redis_session.set.calls == [
+            pretend.call("umpublished_metas", "bin_a")
+        ]
+
+    def test_main_add_targets_existing_umpublished_metas(self):
+        fake_config = pretend.stub(
+            repository=pretend.stub(
+                add_targets=pretend.call_recorder(lambda *a: [("bin_a", "2")])
+            ),
+            settings=worker_settings,
+        )
+        kaprien.runner = pretend.stub(
+            update=pretend.call_recorder(lambda *a: None),
+            get=fake_config,
+        )
+
+        @contextmanager
+        def mocked_lock(lock):
+            yield lock
+
+        mocked_redis_session = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+            exists=pretend.call_recorder(lambda key_name: True),
+            get=pretend.call_recorder(lambda *a: b"bin_b"),
+            append=pretend.call_recorder(lambda *a: None),
+        )
+        kaprien.redis = pretend.stub(
+            StrictRedis=pretend.stub(
+                from_url=pretend.call_recorder(lambda *a: mocked_redis_session)
+            )
+        )
+        test_payload = {"targets": {"k": "v"}}
+        test_task_settings = kaprien.Dynaconf(
+            settings_files=["test_worker_settings.ini"]
+        )
+        test_task_settings.BOOTSTRAP = "done"
+
+        result = kaprien.main(
+            "add_targets",
+            test_payload,
+            worker_settings,
+        )
+        assert result is True
+        assert fake_config.repository.add_targets.calls == [
+            pretend.call(test_payload.get("targets"))
+        ]
+        assert fake_config.repository.add_targets.calls == [
+            pretend.call({"k": "v"})
+        ]
+        assert mocked_redis_session.lock.calls == [
+            pretend.call("TUF_BINS_HASHED"),
+            pretend.call("TUF_TARGETS_META"),
+        ]
+        assert mocked_redis_session.exists.calls == [
+            pretend.call("umpublished_metas")
+        ]
+        assert mocked_redis_session.get.calls == [
+            pretend.call("umpublished_metas")
+        ]
+        assert mocked_redis_session.append.calls == [
+            pretend.call("umpublished_metas", ", bin_a")
+        ]
+
+    def test_main_add_targets_existing_umpublished_metas_and_delegate_role(
+        self,
+    ):
+        fake_config = pretend.stub(
+            repository=pretend.stub(
+                add_targets=pretend.call_recorder(lambda *a: [("bin_b", "2")])
+            ),
+            settings=worker_settings,
+        )
+        kaprien.runner = pretend.stub(
+            update=pretend.call_recorder(lambda *a: None),
+            get=fake_config,
+        )
+
+        @contextmanager
+        def mocked_lock(lock):
+            yield lock
+
+        mocked_redis_session = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+            exists=pretend.call_recorder(lambda key_name: True),
+            get=pretend.call_recorder(lambda *a: b"bin_b"),
+            append=pretend.call_recorder(lambda *a: None),
+        )
+        kaprien.redis = pretend.stub(
+            StrictRedis=pretend.stub(
+                from_url=pretend.call_recorder(lambda *a: mocked_redis_session)
+            )
+        )
+        test_payload = {"targets": {"k": "v"}}
+        test_task_settings = kaprien.Dynaconf(
+            settings_files=["test_worker_settings.ini"]
+        )
+        test_task_settings.BOOTSTRAP = "done"
+
+        result = kaprien.main(
+            "add_targets",
+            test_payload,
+            worker_settings,
+        )
+        assert result is True
+        assert fake_config.repository.add_targets.calls == [
+            pretend.call(test_payload.get("targets"))
+        ]
+        assert fake_config.repository.add_targets.calls == [
+            pretend.call({"k": "v"})
+        ]
+        assert mocked_redis_session.lock.calls == [
+            pretend.call("TUF_BINS_HASHED"),
+            pretend.call("TUF_TARGETS_META"),
+        ]
+        assert mocked_redis_session.exists.calls == [
+            pretend.call("umpublished_metas")
+        ]
+        assert mocked_redis_session.get.calls == [
+            pretend.call("umpublished_metas")
+        ]
+        assert mocked_redis_session.append.calls == []
 
     def test_main_invalid_action(self):
         test_payload = {"targets": {"k": "v"}}
         test_worker_dynaconf = kaprien.Dynaconf()
-        test_task_settings = kaprien.Dynaconf()
 
         action = "invalid_action"
         with pytest.raises(AttributeError) as err:
@@ -137,6 +283,5 @@ class TestKaprien:
                 "invalid_action",
                 test_payload,
                 test_worker_dynaconf,
-                test_task_settings,
             )
         assert f"Invalid action attribute '{action}'" in str(err)

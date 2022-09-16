@@ -24,9 +24,9 @@ class TestApp:
             main=pretend.call_recorder(lambda *a, **kw: True)
         )
 
-        task_settings = app.Dynaconf()
         result = app.kaprien_repo_worker(
-            "test_action", task_settings, {"k": "v"}
+            "test_action",
+            payload={"k": "v"},
         )
         assert result is True
         assert app.kaprien.main.calls == [
@@ -34,7 +34,6 @@ class TestApp:
                 action="test_action",
                 payload={"k": "v"},
                 worker_settings=app.worker_settings,
-                task_settings=task_settings,
             )
         ]
 

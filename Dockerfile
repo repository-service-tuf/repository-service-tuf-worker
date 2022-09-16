@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ADD requirements.txt /builder/requirements.txt
 
 WORKDIR /builder
-RUN apt-get update && apt-get install libpq-dev gcc -y
+RUN apt-get update && apt-get install gcc -y
 RUN apt-get remove gcc --purge -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean autoclean \
@@ -29,5 +29,6 @@ FROM pre-final
 WORKDIR /opt/kaprien-repo-worker
 RUN mkdir /data
 COPY app.py /opt/kaprien-repo-worker
+COPY supervisor.conf /data/
 COPY repo_worker /opt/kaprien-repo-worker/repo_worker
-
+ENTRYPOINT ["supervisord", "-c", "/data/supervisor.conf"]

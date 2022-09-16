@@ -16,28 +16,28 @@ Requirments
 - Pipenv
 - Docker
 
-Preparing development environment
-=================================
 
-After installing Python, install the pipenv tool
+Intalling project requirements
+==============================
 
-.. code:: shell
+This repository has the ``requirements.txt`` and the ``requirements-dev.txt``
+files to help build your virtual environment.
 
-    $ pip install pipenv
-
-
-Creating a virtual environment for this project.
+We also recommend using `Pipenv <https://pipenv.pypa.io/en/latest/>`_ to manage
+your virtual environment.
 
 .. code:: shell
 
-    $ pipenv shell
+  $ pip install pipenv
+  $ pipenv shell
 
-Install requirements from Pipfile.lock
-The flag -d will install the development requirements
 
-.. code:: Shell
+Install development requirements
 
-    $ pipenv install -d
+
+.. code:: shell
+
+  $ pipenv install -d
 
 
 .. note::
@@ -66,41 +66,57 @@ This token requires only
 
 Save the token hash
 
-Starting
-========
-
-.. code:: shell
-
-    $ make run-dev
-
-
-Wait until the message above
-
-.. code:: shell
-
-    kaprien-rest-api_1  | INFO:     Will watch for changes in these directories: ['/opt/kaprien-rest-api']
-    kaprien-rest-api_1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-    kaprien-rest-api_1  | INFO:     Started reloader process [1] using StatReload
-    kaprien-rest-api_1  | INFO:     Started server process [8]
-    kaprien-rest-api_1  | INFO:     Waiting for application startup.
-    kaprien-rest-api_1  | INFO:     Application startup complete.
-
-
-Run in another shell
-
-.. code:: shell
-
-    $ make init-repository
-
-
-When you see the ``201 Created`` is ready to use
-
-.. code:: shell
-
-    kaprien-rest-api_1  | INFO:     192.168.80.4:52666 - "POST /api/v1/bootstrap/ HTTP/1.1" 201 Created
-
 .. note::
 
-    You don't need run ``make init-repository`` every time, only when you
-    have empty Repository Metadata.
+    You can also build locally the
+    `kaprien-rest-api <https://github.com/kaprien/kaprien-rest-api>`_
+    image and change the `docker-compose.yml` to use the local image.
 
+
+Runing the API locally
+
+.. code:: shell
+
+  $ make run-dev
+
+
+See Makefile for more options
+
+Tests
+=====
+
+We use `Tox <ttps://tox.wiki/en/latest/>`_ to manage running the tests.
+
+Running tests
+
+.. code:: shell
+
+  $ tox
+
+
+Managing requirements
+=====================
+
+Installing new requirements
+............................
+
+Project requirements
+
+.. code:: shell
+
+  $ pipenv install {package}
+
+
+Development requirements
+
+.. code:: shell
+
+  $ pipenv install -d {package}
+
+
+Updating requirements files from Pipenv
+.......................................
+
+.. code:: shell
+
+  $ make requirements
