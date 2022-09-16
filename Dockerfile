@@ -29,6 +29,7 @@ FROM pre-final
 WORKDIR /opt/kaprien-repo-worker
 RUN mkdir /data
 COPY app.py /opt/kaprien-repo-worker
-COPY supervisor.conf /data/
+COPY entrypoint.sh /opt/kaprien-repo-worker
+COPY supervisor.conf ${DATA_DIR}/
 COPY repo_worker /opt/kaprien-repo-worker/repo_worker
-ENTRYPOINT ["supervisord", "-c", "/data/supervisor.conf"]
+ENTRYPOINT ["bash", "entrypoint.sh"]

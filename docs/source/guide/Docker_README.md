@@ -33,7 +33,6 @@ docker run --env="KAPRIEN_WORKER_ID=worker1" \
     --env="KAPRIEN_BROKER_SERVER=guest:guest@rabbitmq:5672" \
     --env="KAPRIEN_REDIS_SERVER=redis://redis" \
     ghcr.io/kaprien/kaprien-repo-worker:latest \
-    celery -A app worker -B -l debug -Q metadata_repository -n kaprien@dev
 ```
 
 
@@ -97,6 +96,13 @@ Available types:
 
 Container data directory. Default: `/data`
 
-### Volumes
+### Persistent data
 
-* `/data` - File location
+* `$DATA_DIR`. Default: `/data`
+
+### Customization/Tuning
+
+The `kaprien-repo-worker` uses supervisord and uses a `supervisor.conf`
+from `$DATA_DIR`.
+
+It can be used to customize/tuning performance of Celery.
