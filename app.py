@@ -5,26 +5,14 @@
 #
 import json
 import logging
-import os
 from enum import Enum
 from typing import Optional
 
 import redis
 from celery import Celery, schedules, signals
-from dynaconf import Dynaconf
 
 from repo_worker import kaprien
-from repo_worker.config import runner
-
-DATA_DIR = os.getenv("DATA_DIR", "/data")
-os.makedirs(DATA_DIR, exist_ok=True)
-SETTINGS_FILE = os.path.join(DATA_DIR, "settings.ini")
-
-worker_settings = Dynaconf(
-    settings_files=[SETTINGS_FILE],
-    envvar_prefix="KAPRIEN",
-    environments=True,
-)
+from repo_worker.config import runner, worker_settings
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -48,9 +36,7 @@ class status(Enum):
 
 
 # FIXME: issue #34
-redis_backend = redis.StrictRedis.from_url(
-    worker_settings.RESULT_BACKEND_SERVER
-)
+redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
 
 # TODO: Issue https://github.com/KAPRIEN/kaprien/issues/6
 # BROKER_USE_SSL = {
@@ -63,7 +49,7 @@ redis_backend = redis.StrictRedis.from_url(
 app = Celery(
     f"kaprien_repo_worker_{worker_settings.WORKER_ID}",
     broker=worker_settings.BROKER_SERVER,
-    backend=worker_settings.RESULT_BACKEND_SERVER,
+    backend=worker_settings.REDIS_SERVER,
     result_persistent=True,
     task_acks_late=True,
     task_track_started=True,
@@ -74,12 +60,11 @@ app = Celery(
 
 
 @app.task(serializer="json")
-def kaprien_repo_worker(action, settings, payload):
+def kaprien_repo_worker(action, payload):
     return kaprien.main(
         action=action,
         payload=payload,
         worker_settings=worker_settings,
-        task_settings=settings,
     )
 
 
@@ -130,11 +115,23 @@ app.conf.beat_schedule = {
         "kwargs": {
             "action": "automatic_version_bump",
             "payload": {},
-            "settings": {},
         },
         "options": {
             "task_id": "automatic_version_bump",
-            "queue": "metadata_repository",
+            "queue": "kaprien_internals",
+            "acks_late": True,
+        },
+    },
+    "publish_targets_meta": {
+        "task": "app.kaprien_repo_worker",
+        "schedule": schedules.crontab(minute="*/1"),
+        "kwargs": {
+            "action": "publish_targets_meta",
+            "payload": {},
+        },
+        "options": {
+            "task_id": "publish_targets_meta",
+            "queue": "kaprien_internals",
             "acks_late": True,
         },
     },

@@ -2,9 +2,8 @@ import importlib
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
 
-from dynaconf import Dynaconf, loaders
+from dynaconf import Dynaconf
 
 # the 'service import is used by get_config() for automatically discovery
 from repo_worker import services  # noqa
@@ -13,9 +12,23 @@ from repo_worker.tuf.interfaces import IKeyVault, IStorage
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
-TASK_SETTINGS_FILE = os.path.join(DATA_DIR, "task_settings.ini")
-last_task_settings = Dynaconf(
-    settings_files=[TASK_SETTINGS_FILE],
+SETTINGS_FILE = os.path.join(DATA_DIR, "settings.ini")
+
+worker_settings = Dynaconf(
+    settings_files=[SETTINGS_FILE],
+    envvar_prefix="KAPRIEN",
+)
+
+
+SETTINGS_REPOSITORY_FILE = os.path.join(DATA_DIR, "task_settings.ini")
+repository_settings = Dynaconf(
+    redis_enabled=True,
+    redis={
+        "host": worker_settings.REDIS_SERVER.split("redis://")[1],
+        "port": worker_settings.get("KAPRIEN_REDIS_SERVER_PORT", 6379),
+        "db": worker_settings.get("KAPRIEN_REDIS_SERVER_DB_REPO_SETTINGS", 1),
+        "decode_responses": True,
+    },
 )
 
 
@@ -26,23 +39,21 @@ class WorkerConfig:
 
 
 class Configuration:
+    """Repository Configuration"""
+
     def __init__(self):
         self.config: WorkerConfig
 
     def update(
         self,
         worker_settings: Dynaconf,
-        task_settings: Optional[Dynaconf] = None,
     ):
-        if task_settings is not None:
-            worker_settings.update(task_settings)
-            last_task_settings.update(task_settings)
-            loaders.write(
-                last_task_settings.SETTINGS_FILE_FOR_DYNACONF[0],
-                last_task_settings.to_dict(),
-            )
-        else:
-            worker_settings.update(last_task_settings)
+        """
+        Update the config ``WorkerConfig``
+
+        (Re-)creates the Repository Metadata object with the Worker Settings
+        and Repository Settings (from Redis)
+        """
 
         settings = worker_settings
 
@@ -128,7 +139,7 @@ class Configuration:
             settings.KEYVAULT = settings.KEYVAULT_BACKEND(**keyvault_kwargs)
 
         repository = MetadataRepository(
-            settings.STORAGE, settings.KEYVAULT, settings
+            settings.STORAGE, settings.KEYVAULT, repository_settings
         )
 
         self.config = WorkerConfig(settings=settings, repository=repository)

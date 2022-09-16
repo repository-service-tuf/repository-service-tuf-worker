@@ -49,7 +49,7 @@ class MetadataRepository:
         self._storage_backend = storage_service
         self._key_storage_backend = keyvault_service
         self._settings = settings
-        self._hours_before_expire: int = self._settings.get(
+        self._hours_before_expire: int = self._settings.get_fresh(
             "HOURS_BEFORE_EXPIRE", 1
         )
 
@@ -104,7 +104,9 @@ class MetadataRepository:
         # https://www.python.org/dev/peps/pep-0458/#producing-consistent-snapshots
         role.signed.expires = datetime.now().replace(
             microsecond=0
-        ) + timedelta(days=int(self._settings[f"{expiry_id}_EXPIRATION"]))
+        ) + timedelta(
+            days=int(self._settings.get_fresh(f"{expiry_id}_EXPIRATION"))
+        )
 
     def _bump_version(self, role: Metadata) -> None:
         """Bumps metadata version by 1."""
@@ -159,7 +161,9 @@ class MetadataRepository:
 
         return True
 
-    def add_targets(self, targets):
+    def add_targets(
+        self, targets: List[Dict[str, Any]]
+    ) -> List[Tuple[str, str]]:
         """
         Updates 'bins' roles metadata, assigning each passed target to the
         correct bin.
@@ -167,13 +171,11 @@ class MetadataRepository:
         Assignment is based on the hash prefix of the target file path. All
         metadata is signed and persisted using the configured key and storage
         services.
-
-        Updating 'bins' also updates 'snapshot' and 'timestamp'.
         """
         # Group target files by responsible 'bins' roles
         bin = self._load(BIN)
         bin_succinct_roles = bin.signed.delegations.succinct_roles
-        bin_target_groups = {}
+        bin_target_groups: Dict[str, List[TargetFile]] = {}
         for target in targets:
             bins_name = bin_succinct_roles.get_role_for_target(target["path"])
 
@@ -199,7 +201,31 @@ class MetadataRepository:
 
             targets_meta.append((bins_name, bins_role.signed.version))
 
-        self._update_timestamp(self._update_snapshot(targets_meta))
+        return targets_meta
+
+    def publish_targets_metas(self, bins_names=List[str]):
+        """
+        Publishes Targets metas.
+
+        Add new Targets to the Snapshot Role, bump Snapshot Role and Timestamp
+        Role.
+        """
+        snapshot = self._load(Snapshot.type)
+        targets_meta = []
+        for bins_name in bins_names:
+            bins_role = self._load(bins_name)
+            if (
+                snapshot.signed.meta[f"{bins_name}.json"]
+                != bins_role.signed.version
+            ):
+                targets_meta.append((bins_name, bins_role.signed.version))
+
+        if len(targets_meta) != 0:
+            self._update_timestamp(self._update_snapshot(targets_meta))
+        else:
+            logging.info(
+                "[publish targets meta] Latest Snapshot is already updated."
+            )
 
     def bump_bins_roles(self) -> bool:
         """
