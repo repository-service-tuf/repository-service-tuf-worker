@@ -14,5 +14,7 @@ kaprien-repo-worker component level
    :maxdepth: 4
 
    repo_worker
-   repo_worker.tuf
+   repo_worker.services
+   repo_worker.services.storage
+   repo_worker.services.keyvault
    modules

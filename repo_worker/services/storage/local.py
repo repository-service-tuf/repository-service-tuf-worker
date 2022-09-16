@@ -3,15 +3,12 @@ import os
 import shutil
 from contextlib import contextmanager
 from io import BufferedReader, TextIOBase
-from typing import Any, Dict, List
+from typing import List
 
-from dynaconf import Dynaconf, loaders
-from dynaconf.utils.boxing import DynaBox
-from dynaconf.vendor.box.exceptions import BoxKeyError
-from securesystemslib.keys import decrypt_key, encrypt_key
+from securesystemslib.exceptions import StorageError  # noqa
 
-from repo_worker.tuf import ServiceSettings, Timestamp, exceptions
-from repo_worker.tuf.interfaces import IKeyVault, IStorage
+from repo_worker.interfaces import IStorage, ServiceSettings
+from repo_worker.repository import Timestamp
 
 
 class LocalStorage(IStorage):
@@ -63,7 +60,7 @@ class LocalStorage(IStorage):
             file_object = open(filename, "rb")
             yield file_object
         except OSError:
-            raise exceptions.StorageError(f"Can't open {filename}")
+            raise StorageError(f"Can't open Role '{role}'")
         finally:
             if file_object is not None:
                 file_object.close()
@@ -83,58 +80,4 @@ class LocalStorage(IStorage):
                 destination_file.flush()
                 os.fsync(destination_file.fileno())
         except OSError:
-            raise exceptions.StorageError(f"Can't write file {filename}")
-
-
-class LocalKeyVault(IKeyVault):
-    def __init__(self, path: str):
-        self._path: str = path
-        self._secrets_file: str = os.path.join(self._path, ".secrets.yaml")
-        self.keyvault = Dynaconf(
-            envvar_prefix="LOCALKEYVAULT",
-            settings_files=[self._secrets_file],
-        )
-
-    @classmethod
-    def configure(cls, settings):
-        os.makedirs(settings.LOCAL_KEYVAULT_PATH, exist_ok=True)
-
-    @classmethod
-    def settings(cls):
-        return [
-            ServiceSettings(
-                name="LOCAL_KEYVAULT_PATH",
-                argument="path",
-                required=True,
-            ),
-        ]
-
-    def get(self, rolename: str):
-        try:
-            keys: Dict[str, Any] = self.keyvault.store[rolename]
-        except BoxKeyError:
-            raise exceptions.KeyVaultError(f"{rolename} not found.")
-        keys_sslib_format: List[Dict[str, Any]] = []
-        for key in keys:
-            keys_sslib_format.append(decrypt_key(key["key"], key["password"]))
-
-        return keys_sslib_format
-
-    def put(self, rolename: str, keys: List[Dict[str, Any]]):
-        key_vault_data: list = []
-        for key in keys:
-            ed25519_key = encrypt_key(key.get("key"), key.get("password"))
-            key_vault_data.append(
-                {
-                    "key": ed25519_key,
-                    "filename": key["filename"].split("/")[-1],
-                    "password": key["password"],
-                }
-            )
-
-        self.keyvault.store[rolename.upper()] = key_vault_data
-        data = self.keyvault.as_dict(env=self.keyvault.current_env)
-        loaders.write(
-            self._secrets_file,
-            DynaBox(data).to_dict(),
-        )
+            raise StorageError(f"Can't write role file '{filename}'")

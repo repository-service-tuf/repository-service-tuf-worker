@@ -7,31 +7,23 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   repo_worker.tuf
+   repo_worker.services
 
 Submodules
 ----------
 
-repo\_worker.config module
---------------------------
+repo\_worker.interfaces module
+------------------------------
 
-.. automodule:: repo_worker.config
+.. automodule:: repo_worker.interfaces
    :members:
    :undoc-members:
    :show-inheritance:
 
-repo\_worker.kaprien module
----------------------------
+repo\_worker.repository module
+------------------------------
 
-.. automodule:: repo_worker.kaprien
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-repo\_worker.services module
-----------------------------
-
-.. automodule:: repo_worker.services
+.. automodule:: repo_worker.repository
    :members:
    :undoc-members:
    :show-inheritance:
