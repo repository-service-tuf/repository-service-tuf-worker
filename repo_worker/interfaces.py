@@ -23,6 +23,8 @@ from tuf.api.metadata import (  # type: ignore
 
 @dataclass
 class ServiceSettings:
+    """Dataclass for service settings."""
+
     name: str
     argument: str
     required: bool
@@ -32,19 +34,19 @@ class IKeyVault(ABC):
     @classmethod
     def configure(cls, settings):
         """
-        Run actions to test, configure using the settings
+        Run actions to test, configure using the settings.
         """
         raise NotImplementedError
 
     @classmethod
     def settings(cls):
         """
-        Define all the ServiceSettings required in settings
+        Define all the ServiceSettings required in settings.
         """
         raise NotImplementedError
 
     def get(self, rolename: List[str]) -> Dict[str, Any]:
-        """Return a key from specific rolename"""
+        """Return a key from specific rolename."""
         raise NotImplementedError
 
     def put(self, file_object: str, filename: str) -> None:
@@ -58,14 +60,14 @@ class IStorage(StorageBackendInterface):
     @classmethod
     def configure(cls, settings: Any):
         """
-        Run actions to test, configure using the settings
+        Run actions to test, configure using the settings.
         """
         raise NotImplementedError
 
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
         """
-        Define all the ServiceSettings required in settings
+        Define all the ServiceSettings required in settings.
         """
         raise NotImplementedError
 

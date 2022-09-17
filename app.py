@@ -6,13 +6,13 @@
 import json
 import logging
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import redis
 from celery import Celery, schedules, signals
 
-from repo_worker import kaprien
-from repo_worker.config import runner, worker_settings
+from repo_worker import worker_settings
+from repo_worker.repository import MetadataRepository
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -35,7 +35,6 @@ class status(Enum):
     FAILURE = "FAILURE"
 
 
-# FIXME: issue #34
 redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
 
 # TODO: Issue https://github.com/KAPRIEN/kaprien/issues/6
@@ -60,12 +59,19 @@ app = Celery(
 
 
 @app.task(serializer="json")
-def kaprien_repo_worker(action, payload):
-    return kaprien.main(
-        action=action,
-        payload=payload,
-        worker_settings=worker_settings,
-    )
+def kaprien_repo_worker(action: str, payload: Optional[Dict[str, Any]] = None):
+    """
+    Kaprien Metadata Repository Worker
+    """
+    repository.refresh_settings(worker_settings)
+    repository_action = getattr(repository, action)
+
+    if payload is None:
+        result = repository_action()
+    else:
+        result = repository_action(payload)
+
+    return result
 
 
 def _publish_signals(
@@ -109,15 +115,14 @@ def task_received_notifier(**kwargs):
 
 
 app.conf.beat_schedule = {
-    "automatic_version_bump": {
+    "bump_online_roles": {
         "task": "app.kaprien_repo_worker",
         "schedule": schedules.crontab(minute="*/10"),
         "kwargs": {
-            "action": "automatic_version_bump",
-            "payload": {},
+            "action": "bump_online_roles",
         },
         "options": {
-            "task_id": "automatic_version_bump",
+            "task_id": "bump_online_roles",
             "queue": "kaprien_internals",
             "acks_late": True,
         },
@@ -127,7 +132,6 @@ app.conf.beat_schedule = {
         "schedule": schedules.crontab(minute="*/1"),
         "kwargs": {
             "action": "publish_targets_meta",
-            "payload": {},
         },
         "options": {
             "task_id": "publish_targets_meta",
@@ -137,4 +141,4 @@ app.conf.beat_schedule = {
     },
 }
 
-runner.update(worker_settings)
+repository = MetadataRepository.create_service()

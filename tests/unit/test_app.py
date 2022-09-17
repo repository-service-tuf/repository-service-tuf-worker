@@ -20,8 +20,9 @@ class TestApp:
     def test_kaprien_repo_worker(self):
         import app
 
-        app.kaprien = pretend.stub(
-            main=pretend.call_recorder(lambda *a, **kw: True)
+        app.repository = pretend.stub(
+            refresh_settings=pretend.call_recorder(lambda *a: None),
+            test_action=pretend.call_recorder(lambda *a, **kw: True),
         )
 
         result = app.kaprien_repo_worker(
@@ -29,11 +30,48 @@ class TestApp:
             payload={"k": "v"},
         )
         assert result is True
-        assert app.kaprien.main.calls == [
+        assert app.repository.test_action.calls == [
+            pretend.call({"k": "v"}),
+        ]
+
+    def test_kaprien_repo_worker_no_payload(self):
+        import app
+
+        app.repository = pretend.stub(
+            refresh_settings=pretend.call_recorder(lambda *a: None),
+            test_action=pretend.call_recorder(lambda *a, **kw: True),
+        )
+
+        result = app.kaprien_repo_worker(
+            "test_action",
+        )
+        assert result is True
+        assert app.repository.test_action.calls == [
+            pretend.call(),
+        ]
+
+    def test__publish_signals(self):
+        import app
+
+        app.redis_backend = pretend.stub(
+            set=pretend.call_recorder(lambda *a: None)
+        )
+
+        result = app._publish_signals(
+            app.status.RECEIVED, "01234567890abcdef", "done"
+        )
+
+        assert result is None
+        assert app.redis_backend.set.calls == [
             pretend.call(
-                action="test_action",
-                payload={"k": "v"},
-                worker_settings=app.worker_settings,
+                "celery-task-meta-01234567890abcdef",
+                app.json.dumps(
+                    {
+                        "status": "RECEIVED",
+                        "task_id": "01234567890abcdef",
+                        "result": "done",
+                    }
+                ),
             )
         ]
 
