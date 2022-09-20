@@ -212,6 +212,86 @@ class TestMetadataRepository:
             pretend.call(mocked_snapshot, repository.Roles.SNAPSHOT.value)
         ]
 
+    def test__get_path_succinct_role(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        fake_bin = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    succinct_roles=pretend.stub(
+                        get_role_for_target=pretend.call_recorder(
+                            lambda *a: "bin-e"
+                        )
+                    )
+                ),
+            )
+        )
+        test_repo._load = pretend.call_recorder(lambda *a: fake_bin)
+        result = test_repo._get_path_succinct_role("v0.0.1/test_path.tar.gz")
+
+        assert result == "bin-e"
+        assert (
+            fake_bin.signed.delegations.succinct_roles.get_role_for_target.calls  # noqa
+            == [pretend.call("v0.0.1/test_path.tar.gz")]
+        )
+
+    def test__add_to_unpublished_metas(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        @contextmanager
+        def mocked_lock(lock):
+            yield lock
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+            exists=pretend.call_recorder(lambda *a: True),
+            get=pretend.call_recorder(lambda *a: b"bins-a, bins-b"),
+            append=pretend.call_recorder(lambda *a: None),
+        )
+
+        result = test_repo._add_to_unpublished_metas(
+            [("bin-e", 3), ("bin-2", 6)]
+        )
+
+        assert result is None
+
+        assert test_repo._redis.exists.calls == [
+            pretend.call("unpublished_metas")
+        ]
+        assert test_repo._redis.get.calls == [
+            pretend.call("unpublished_metas")
+        ]
+        assert test_repo._redis.append.calls == [
+            pretend.call("unpublished_metas", ", bin-e"),
+            pretend.call("unpublished_metas", ", bin-2"),
+        ]
+
+    def test__add_to_unpublished_metas_empty_unpublished_metas(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        @contextmanager
+        def mocked_lock(lock):
+            yield lock
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+            exists=pretend.call_recorder(lambda *a: False),
+            set=pretend.call_recorder(lambda *a: None),
+        )
+
+        result = test_repo._add_to_unpublished_metas(
+            [("bin-e", 3), ("bin-2", 6)]
+        )
+
+        assert result is None
+
+        assert test_repo._redis.exists.calls == [
+            pretend.call("unpublished_metas")
+        ]
+        assert test_repo._redis.set.calls == [
+            pretend.call("unpublished_metas", "bin-e, bin-2")
+        ]
+
     def test_bootstrap(self):
         test_repo = repository.MetadataRepository.create_service()
 
@@ -295,36 +375,22 @@ class TestMetadataRepository:
 
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock),
-            exists=pretend.call_recorder(lambda *a: True),
-            get=pretend.call_recorder(lambda *a: b"bins-a, bins-b"),
-            append=pretend.call_recorder(lambda *a: None),
         )
 
-        fake_bin = pretend.stub(
-            signed=pretend.stub(
-                delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_role_for_target=pretend.call_recorder(
-                            lambda *a: "bin-n-3d"
-                        )
-                    )
-                ),
-            )
+        test_repo._get_path_succinct_role = pretend.call_recorder(
+            lambda *a: "bin-e"
         )
-        fake_bins = pretend.stub(signed=pretend.stub(targets={}, version=4))
 
-        def mocked_load(role):
-            if role == "bin":
-                return fake_bin
-            else:
-                return fake_bins
+        fake_bins = pretend.stub(signed=pretend.stub(targets={}, version=41))
 
-        test_repo._load = pretend.call_recorder(lambda r: mocked_load(r))
+        test_repo._load = pretend.call_recorder(lambda r: fake_bins)
         test_repo._bump_version = pretend.call_recorder(lambda *a: None)
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._sign = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
-
+        test_repo._add_to_unpublished_metas = pretend.call_recorder(
+            lambda *a: None
+        )
         payload = {
             "targets": [
                 {
@@ -342,116 +408,23 @@ class TestMetadataRepository:
         result = test_repo.add_targets(payload)
 
         assert result is None
+        assert test_repo._get_path_succinct_role.calls == [
+            pretend.call("file1.tar.gz")
+        ]
         assert test_repo._load.calls == [
-            pretend.call("bin"),
-            pretend.call("bin-n-3d"),
+            pretend.call("bin-e"),
         ]
         assert test_repo._bump_version.calls == [pretend.call(fake_bins)]
         assert test_repo._redis.lock.calls == [
             pretend.call("TUF_BINS_HASHED"),
-            pretend.call("TUF_TARGETS_META"),
         ]
-        assert test_repo._redis.exists.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._redis.get.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._redis.append.calls == [
-            pretend.call("unpublished_metas", ", bin-n-3d"),
-        ]
-        assert (
-            fake_bin.signed.delegations.succinct_roles.get_role_for_target.calls  # noqa
-            == [pretend.call("file1.tar.gz")]
-        )
         assert test_repo._bump_expiry.calls == [
             pretend.call(fake_bins, "bins")
         ]
         assert test_repo._sign.calls == [pretend.call(fake_bins, "bins")]
-        assert test_repo._persist.calls == [
-            pretend.call(fake_bins, "bin-n-3d")
-        ]
-
-    def test_add_targets_without_unpublished(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        @contextmanager
-        def mocked_lock(lock):
-            yield lock
-
-        test_repo._redis = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock),
-            exists=pretend.call_recorder(lambda *a: False),
-            set=pretend.call_recorder(lambda *a: b"bins-a, bins-b"),
-        )
-
-        fake_bin = pretend.stub(
-            signed=pretend.stub(
-                delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_role_for_target=pretend.call_recorder(
-                            lambda *a: "bin-n-3d"
-                        )
-                    )
-                ),
-            )
-        )
-        fake_bins = pretend.stub(signed=pretend.stub(targets={}, version=4))
-
-        def mocked_load(role):
-            if role == "bin":
-                return fake_bin
-            else:
-                return fake_bins
-
-        test_repo._load = pretend.call_recorder(lambda r: mocked_load(r))
-        test_repo._bump_version = pretend.call_recorder(lambda *a: None)
-        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
-        test_repo._sign = pretend.call_recorder(lambda *a: None)
-        test_repo._persist = pretend.call_recorder(lambda *a: None)
-
-        payload = {
-            "targets": [
-                {
-                    "info": {
-                        "length": 11342,
-                        "hashes": {
-                            "blake2b-256": "716f6e863f744b9ac22c97ec7b76ea5"
-                        },
-                        "custom": {"task_id": "12345"},
-                    },
-                    "path": "file1.tar.gz",
-                },
-            ]
-        }
-        result = test_repo.add_targets(payload)
-
-        assert result is None
-        assert test_repo._load.calls == [
-            pretend.call("bin"),
-            pretend.call("bin-n-3d"),
-        ]
-        assert test_repo._bump_version.calls == [pretend.call(fake_bins)]
-        assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_BINS_HASHED"),
-            pretend.call("TUF_TARGETS_META"),
-        ]
-        assert test_repo._redis.exists.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._redis.set.calls == [
-            pretend.call("unpublished_metas", "bin-n-3d")
-        ]
-        assert (
-            fake_bin.signed.delegations.succinct_roles.get_role_for_target.calls  # noqa
-            == [pretend.call("file1.tar.gz")]
-        )
-        assert test_repo._bump_expiry.calls == [
-            pretend.call(fake_bins, "bins")
-        ]
-        assert test_repo._sign.calls == [pretend.call(fake_bins, "bins")]
-        assert test_repo._persist.calls == [
-            pretend.call(fake_bins, "bin-n-3d")
+        assert test_repo._persist.calls == [pretend.call(fake_bins, "bin-e")]
+        assert test_repo._add_to_unpublished_metas.calls == [
+            pretend.call([("bin-e", 41)])
         ]
 
     def test_add_targets_without_targets(self):
@@ -476,6 +449,86 @@ class TestMetadataRepository:
             test_repo.add_targets(payload)
 
         assert "No targets in the payload" in str(err)
+
+    def test_remove_targets(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        @contextmanager
+        def mocked_lock(lock):
+            yield lock
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+
+        test_repo._get_path_succinct_role = pretend.call_recorder(
+            lambda *a: "bin-e"
+        )
+
+        fake_bins = pretend.stub(
+            signed=pretend.stub(
+                targets={"file1.tar.gz": "TargetFileObject"}, version=4
+            )
+        )
+
+        test_repo._load = pretend.call_recorder(lambda r: fake_bins)
+        test_repo._bump_version = pretend.call_recorder(lambda *a: None)
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        test_repo._add_to_unpublished_metas = pretend.call_recorder(
+            lambda *a: None
+        )
+        payload = {
+            "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"]
+        }
+
+        result = test_repo.remove_targets(payload)
+
+        assert result == {
+            "deleted_targets": ["file1.tar.gz"],
+            "not_found_targets": ["file2.tar.gz", "release-v0.1.0.yaml"],
+        }
+        assert test_repo._get_path_succinct_role.calls == [
+            pretend.call("file1.tar.gz"),
+            pretend.call("file2.tar.gz"),
+            pretend.call("release-v0.1.0.yaml"),
+        ]
+        assert test_repo._load.calls == [
+            pretend.call("bin-e"),
+        ]
+        assert test_repo._bump_version.calls == [pretend.call(fake_bins)]
+        assert test_repo._redis.lock.calls == [
+            pretend.call("TUF_BINS_HASHED"),
+        ]
+        assert test_repo._bump_expiry.calls == [
+            pretend.call(fake_bins, "bins")
+        ]
+        assert test_repo._sign.calls == [pretend.call(fake_bins, "bins")]
+        assert test_repo._persist.calls == [pretend.call(fake_bins, "bin-e")]
+        assert test_repo._add_to_unpublished_metas.calls == [
+            pretend.call([("bin-e", 4)])
+        ]
+
+    def test_remove_targets_without_targets(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        payload = {"paths": []}
+
+        with pytest.raises(ValueError) as err:
+            test_repo.remove_targets(payload)
+
+        assert "No targets in the payload" in str(err)
+
+    def test_remove_targets_empty_targets(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        payload = {"targets": []}
+
+        with pytest.raises(IndexError) as err:
+            test_repo.remove_targets(payload)
+
+        assert "At list one target is required" in str(err)
 
     def test_publish_targets_meta(self):
         test_repo = repository.MetadataRepository.create_service()
