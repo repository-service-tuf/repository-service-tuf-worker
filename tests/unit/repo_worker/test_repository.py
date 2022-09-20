@@ -758,7 +758,7 @@ class TestMetadataRepository:
             lock=pretend.call_recorder(mocked_lock)
         )
         test_repo._settings = pretend.stub(
-            get=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
         test_repo.bump_snapshot = pretend.call_recorder(lambda: None)
         test_repo.bump_bins_roles = pretend.call_recorder(lambda: None)
@@ -768,7 +768,9 @@ class TestMetadataRepository:
         assert test_repo._redis.lock.calls == [
             pretend.call("TUF_SNAPSHOT_TIMESTAMP")
         ]
-        assert test_repo._settings.get.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
         assert test_repo.bump_snapshot.calls == [pretend.call()]
         assert test_repo.bump_bins_roles.calls == [pretend.call()]
 
@@ -783,7 +785,7 @@ class TestMetadataRepository:
             lock=pretend.call_recorder(mocked_lock)
         )
         test_repo._settings = pretend.stub(
-            get=pretend.call_recorder(lambda *a: None)
+            get_fresh=pretend.call_recorder(lambda *a: None)
         )
 
         result = test_repo.bump_online_roles()
@@ -791,7 +793,9 @@ class TestMetadataRepository:
         assert test_repo._redis.lock.calls == [
             pretend.call("TUF_SNAPSHOT_TIMESTAMP")
         ]
-        assert test_repo._settings.get.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
 
     def test_store_online_keys(self):
         test_repo = repository.MetadataRepository.create_service()
