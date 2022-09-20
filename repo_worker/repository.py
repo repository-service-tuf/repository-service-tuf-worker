@@ -504,7 +504,7 @@ class MetadataRepository:
     def bump_online_roles(self) -> bool:
         """Bump online Roles (Snapshot, Timestamp, BINS)."""
         with self._redis.lock("TUF_SNAPSHOT_TIMESTAMP"):
-            if self._settings.get("BOOTSTRAP") is None:
+            if self._settings.get_fresh("BOOTSTRAP") is None:
                 logging.info(
                     "[automatic_version_bump] No bootstrap, skipping..."
                 )
