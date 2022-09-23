@@ -270,6 +270,30 @@ class MetadataRepository:
 
         return snapshot.signed.version
 
+    def _get_path_succinct_role(self, target_path: str) -> str:
+        bin_role = self._load(BIN)
+        bin_succinct_roles = bin_role.signed.delegations.succinct_roles
+        bins_name = bin_succinct_roles.get_role_for_target(target_path)
+
+        return bins_name
+
+    def _add_to_unpublished_metas(self, targets_meta: List[Tuple[str, int]]):
+        with self._redis.lock("TUF_TARGETS_META"):
+            if self._redis.exists("unpublished_metas"):
+                targets_waiting_commmit = self._redis.get(
+                    "unpublished_metas"
+                ).decode("utf-8")
+                for bins_name, _ in targets_meta:
+                    if bins_name not in targets_waiting_commmit:
+                        self._redis.append(
+                            "unpublished_metas", f", {bins_name}"
+                        )
+            else:
+                self._redis.set(
+                    "unpublished_metas",
+                    ", ".join(bins_name for bins_name, _ in targets_meta),
+                )
+
     def add_initial_metadata(self, payload: Dict[str, Dict[str, Any]]) -> bool:
         warnings.warn(
             "Use bootstrap instead add_initial_metadata", DeprecationWarning
@@ -319,14 +343,9 @@ class MetadataRepository:
 
         with self._redis.lock("TUF_BINS_HASHED"):
             # Group target files by responsible 'bins' roles
-            bin = self._load(BIN)
-            bin_succinct_roles = bin.signed.delegations.succinct_roles
             bin_target_groups: Dict[str, List[TargetFile]] = {}
             for target in targets:
-                bins_name = bin_succinct_roles.get_role_for_target(
-                    target["path"]
-                )
-
+                bins_name = self._get_path_succinct_role(target.get("path"))
                 if bins_name not in bin_target_groups:
                     bin_target_groups[bins_name] = []
 
@@ -339,8 +358,8 @@ class MetadataRepository:
             # version and expiry and sign and persist
             targets_meta = []
             for bins_name, target_files in bin_target_groups.items():
+                logging.debug(f"Adding targets to {bins_name}")
                 bins_role = self._load(bins_name)
-
                 for target_file in target_files:
                     bins_role.signed.targets[target_file.path] = target_file
 
@@ -351,22 +370,58 @@ class MetadataRepository:
 
                 targets_meta.append((bins_name, bins_role.signed.version))
 
-        with self._redis.lock("TUF_TARGETS_META"):
-            if self._redis.exists("unpublished_metas"):
-                targets_waiting_commmit = self._redis.get(
-                    "unpublished_metas"
-                ).decode("utf-8")
-                for bins_name, _ in targets_meta:
-                    if bins_name not in targets_waiting_commmit:
-                        self._redis.append(
-                            "unpublished_metas", f", {bins_name}"
+        self._add_to_unpublished_metas(targets_meta)
+
+    def remove_targets(self, payload: Dict[str, List[str]]) -> Dict[str, Any]:
+        targets = payload.get("targets")
+        if targets is None:
+            raise ValueError("No targets in the payload")
+
+        if len(targets) == 0:
+            raise IndexError("At list one target is required")
+
+        deleted_targets: List[str] = []
+        not_found_targets: List[str] = []
+
+        # Group target files by responsible 'bins' roles.
+        bin_target_groups: Dict[str, List[str]] = {}
+        for target in targets:
+            bins_name = self._get_path_succinct_role(target)
+            if bins_name not in bin_target_groups:
+                bin_target_groups[bins_name] = []
+
+            bin_target_groups[bins_name].append(target)
+
+        # Update target file info in responsible 'bins' roles, bump
+        # version and expiry and sign and persist.
+        targets_meta = []
+        with self._redis.lock("TUF_BINS_HASHED"):
+            for bins_name, paths in bin_target_groups.items():
+                bins_role = self._load(bins_name)
+                for path in paths:
+                    if path in bins_role.signed.targets:
+                        bins_role.signed.targets.pop(path)
+                        deleted_targets.append(path)
+                        self._bump_expiry(bins_role, BINS)
+                        self._bump_version(bins_role)
+                        self._sign(bins_role, BINS)
+                        self._persist(bins_role, bins_name)
+                        targets_meta.append(
+                            (bins_name, bins_role.signed.version)
                         )
 
-            else:
-                self._redis.set(
-                    "unpublished_metas",
-                    ", ".join(bins_name for bins_name, _ in targets_meta),
-                )
+                    else:
+                        not_found_targets.append(path)
+
+        self._add_to_unpublished_metas(targets_meta)
+
+        response = {
+            "deleted_targets": deleted_targets,
+            "not_found_targets": not_found_targets,
+        }
+
+        logging.debug(f"Delete targets. {response}")
+        return response
 
     def publish_targets_meta(self):
         """
