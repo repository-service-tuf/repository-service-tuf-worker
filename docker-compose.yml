@@ -24,8 +24,8 @@ services:
     restart: always
 
   kaprien-rest-api:
-    #image: ghcr.io/kaprien/kaprien-rest-api:dev
-    image: kaprien-rest-api:dev
+    image: ghcr.io/kaprien/kaprien-rest-api:dev
+    # image: kaprien-rest-api:dev
     volumes:
       - kaprien-rest-api-data:/data
     ports:
