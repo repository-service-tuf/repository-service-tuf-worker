@@ -15,6 +15,7 @@ import enum
 import importlib
 import logging
 import warnings
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -68,6 +69,12 @@ OFFLINE_KEYS = {
 BIN = "bin"
 BINS = "bins"
 SPEC_VERSION: str = ".".join(SPECIFICATION_VERSION)
+
+
+@dataclass
+class ResultDetails:
+    message: str
+    details: Optional[Dict[str, Any]]
 
 
 class MetadataRepository:
@@ -278,6 +285,10 @@ class MetadataRepository:
         return bins_name
 
     def _add_to_unpublished_metas(self, targets_meta: List[Tuple[str, int]]):
+        if len(targets_meta) == 0:
+            logging.info("Nothing to send to be published")
+            return None
+
         with self._redis.lock("TUF_TARGETS_META"):
             if self._redis.exists("unpublished_metas"):
                 targets_waiting_commmit = self._redis.get(
@@ -370,7 +381,19 @@ class MetadataRepository:
 
                 targets_meta.append((bins_name, bins_role.signed.version))
 
-        self._add_to_unpublished_metas(targets_meta)
+        if len(targets_meta) > 0:
+            self._add_to_unpublished_metas(targets_meta)
+
+        result = ResultDetails(
+            message="Task sent for publishing stage.",
+            details={
+                "targets": [target.get("path") for target in targets],
+                "target_to_publish": [t_role for t_role in bin_target_groups],
+            },
+        )
+
+        logging.debug(f"Added targets. {result}")
+        return asdict(result)
 
     def remove_targets(self, payload: Dict[str, List[str]]) -> Dict[str, Any]:
         targets = payload.get("targets")
@@ -413,15 +436,22 @@ class MetadataRepository:
                     else:
                         not_found_targets.append(path)
 
-        self._add_to_unpublished_metas(targets_meta)
+        if len(targets_meta) > 0:
+            self._add_to_unpublished_metas(targets_meta)
+            msg = "Task sent for publishing stage."
+        else:
+            msg = "Task finished."
 
-        response = {
-            "deleted_targets": deleted_targets,
-            "not_found_targets": not_found_targets,
-        }
+        result = ResultDetails(
+            message=msg,
+            details={
+                "deleted_targets": deleted_targets,
+                "not_found_targets": not_found_targets,
+            },
+        )
 
-        logging.debug(f"Delete targets. {response}")
-        return response
+        logging.debug(f"Delete targets. {result}")
+        return asdict(result)
 
     def publish_targets_meta(self):
         """

@@ -266,6 +266,13 @@ class TestMetadataRepository:
             pretend.call("unpublished_metas", ", bin-2"),
         ]
 
+    def test__add_to_unpublished_metas_empty(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        result = test_repo._add_to_unpublished_metas([])
+
+        assert result is None
+
     def test__add_to_unpublished_metas_empty_unpublished_metas(self):
         test_repo = repository.MetadataRepository.create_service()
 
@@ -407,7 +414,13 @@ class TestMetadataRepository:
         }
         result = test_repo.add_targets(payload)
 
-        assert result is None
+        assert result == {
+            "details": {
+                "target_to_publish": ["bin-e"],
+                "targets": ["file1.tar.gz"],
+            },
+            "message": "Task sent for publishing stage.",
+        }
         assert test_repo._get_path_succinct_role.calls == [
             pretend.call("file1.tar.gz")
         ]
@@ -486,8 +499,11 @@ class TestMetadataRepository:
         result = test_repo.remove_targets(payload)
 
         assert result == {
-            "deleted_targets": ["file1.tar.gz"],
-            "not_found_targets": ["file2.tar.gz", "release-v0.1.0.yaml"],
+            "message": "Task sent for publishing stage.",
+            "details": {
+                "deleted_targets": ["file1.tar.gz"],
+                "not_found_targets": ["file2.tar.gz", "release-v0.1.0.yaml"],
+            },
         }
         assert test_repo._get_path_succinct_role.calls == [
             pretend.call("file1.tar.gz"),
@@ -508,6 +524,58 @@ class TestMetadataRepository:
         assert test_repo._persist.calls == [pretend.call(fake_bins, "bin-e")]
         assert test_repo._add_to_unpublished_metas.calls == [
             pretend.call([("bin-e", 4)])
+        ]
+
+    def test_remove_targets_all_not_found(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        @contextmanager
+        def mocked_lock(lock):
+            yield lock
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+
+        test_repo._get_path_succinct_role = pretend.call_recorder(
+            lambda *a: "bin-e"
+        )
+
+        fake_bins = pretend.stub(
+            signed=pretend.stub(
+                targets={"file1.tar.gz": "TargetFileObject"}, version=4
+            )
+        )
+
+        test_repo._load = pretend.call_recorder(lambda r: fake_bins)
+
+        payload = {
+            "targets": ["file2.tar.gz", "file3.tar.gz", "release-v0.1.0.yaml"]
+        }
+
+        result = test_repo.remove_targets(payload)
+
+        assert result == {
+            "message": "Task finished.",
+            "details": {
+                "deleted_targets": [],
+                "not_found_targets": [
+                    "file2.tar.gz",
+                    "file3.tar.gz",
+                    "release-v0.1.0.yaml",
+                ],
+            },
+        }
+        assert test_repo._get_path_succinct_role.calls == [
+            pretend.call("file2.tar.gz"),
+            pretend.call("file3.tar.gz"),
+            pretend.call("release-v0.1.0.yaml"),
+        ]
+        assert test_repo._load.calls == [
+            pretend.call("bin-e"),
+        ]
+        assert test_repo._redis.lock.calls == [
+            pretend.call("TUF_BINS_HASHED"),
         ]
 
     def test_remove_targets_without_targets(self):
