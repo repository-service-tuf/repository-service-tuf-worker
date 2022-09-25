@@ -31,7 +31,9 @@ class TestApp:
         )
         assert result is True
         assert app.repository.test_action.calls == [
-            pretend.call({"k": "v"}),
+            pretend.call(
+                {"k": "v"}, update_state=app.kaprien_repo_worker.update_state
+            ),
         ]
 
     def test_kaprien_repo_worker_no_payload(self):
