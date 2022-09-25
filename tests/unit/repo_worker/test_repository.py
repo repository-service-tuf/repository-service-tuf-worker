@@ -299,6 +299,36 @@ class TestMetadataRepository:
             pretend.call("unpublished_metas", "bin-e, bin-2")
         ]
 
+    def test__publish_meta_state(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        fake_snapshot = pretend.stub(
+            signed=pretend.stub(
+                meta={
+                    "bin-e.json": pretend.stub(version=1),
+                    "bin-a.json": pretend.stub(version=5),
+                }
+            )
+        )
+
+        test_repo._load = pretend.call_recorder(lambda *a: fake_snapshot)
+
+        fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
+        result = test_repo._publish_meta_state(
+            [("bin-e", 1), ("bin-a", 5)], fake_update_state
+        )
+        assert result is None
+        assert test_repo._load.calls == [
+            pretend.call("snapshot"),
+            pretend.call("snapshot"),
+        ]
+        assert fake_update_state.calls == [
+            pretend.call(
+                state="PUBLISHING",
+                meta={"unpublished_roles": ["bin-a version 5"]},
+            )
+        ]
+
     def test_bootstrap(self):
         test_repo = repository.MetadataRepository.create_service()
 
@@ -398,6 +428,8 @@ class TestMetadataRepository:
         test_repo._add_to_unpublished_metas = pretend.call_recorder(
             lambda *a: None
         )
+        test_repo._publish_meta_state = pretend.call_recorder(lambda *a: None)
+
         payload = {
             "targets": [
                 {
@@ -412,14 +444,15 @@ class TestMetadataRepository:
                 },
             ]
         }
-        result = test_repo.add_targets(payload)
+        fake_ue = pretend.stub()
+        result = test_repo.add_targets(payload, update_state=fake_ue)
 
         assert result == {
             "details": {
-                "target_to_publish": ["bin-e"],
+                "target_roles": ["bin-e"],
                 "targets": ["file1.tar.gz"],
             },
-            "message": "Task sent for publishing stage.",
+            "message": "Task finished.",
         }
         assert test_repo._get_path_succinct_role.calls == [
             pretend.call("file1.tar.gz")
@@ -438,6 +471,9 @@ class TestMetadataRepository:
         assert test_repo._persist.calls == [pretend.call(fake_bins, "bin-e")]
         assert test_repo._add_to_unpublished_metas.calls == [
             pretend.call([("bin-e", 41)])
+        ]
+        assert test_repo._publish_meta_state.calls == [
+            pretend.call([("bin-e", 41)], fake_ue)
         ]
 
     def test_add_targets_without_targets(self):
@@ -459,7 +495,7 @@ class TestMetadataRepository:
         }
 
         with pytest.raises(ValueError) as err:
-            test_repo.add_targets(payload)
+            test_repo.add_targets(payload, update_state=pretend.stub())
 
         assert "No targets in the payload" in str(err)
 
@@ -492,14 +528,15 @@ class TestMetadataRepository:
         test_repo._add_to_unpublished_metas = pretend.call_recorder(
             lambda *a: None
         )
+        test_repo._publish_meta_state = pretend.call_recorder(lambda *a: None)
         payload = {
             "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"]
         }
-
-        result = test_repo.remove_targets(payload)
+        fake_ue = pretend.stub()
+        result = test_repo.remove_targets(payload, update_state=fake_ue)
 
         assert result == {
-            "message": "Task sent for publishing stage.",
+            "message": "Task finished.",
             "details": {
                 "deleted_targets": ["file1.tar.gz"],
                 "not_found_targets": ["file2.tar.gz", "release-v0.1.0.yaml"],
@@ -524,6 +561,9 @@ class TestMetadataRepository:
         assert test_repo._persist.calls == [pretend.call(fake_bins, "bin-e")]
         assert test_repo._add_to_unpublished_metas.calls == [
             pretend.call([("bin-e", 4)])
+        ]
+        assert test_repo._publish_meta_state.calls == [
+            pretend.call([("bin-e", 4)], fake_ue)
         ]
 
     def test_remove_targets_all_not_found(self):
@@ -553,7 +593,7 @@ class TestMetadataRepository:
             "targets": ["file2.tar.gz", "file3.tar.gz", "release-v0.1.0.yaml"]
         }
 
-        result = test_repo.remove_targets(payload)
+        result = test_repo.remove_targets(payload, update_state=pretend.stub())
 
         assert result == {
             "message": "Task finished.",
@@ -584,7 +624,7 @@ class TestMetadataRepository:
         payload = {"paths": []}
 
         with pytest.raises(ValueError) as err:
-            test_repo.remove_targets(payload)
+            test_repo.remove_targets(payload, update_state=pretend.stub())
 
         assert "No targets in the payload" in str(err)
 
@@ -594,7 +634,7 @@ class TestMetadataRepository:
         payload = {"targets": []}
 
         with pytest.raises(IndexError) as err:
-            test_repo.remove_targets(payload)
+            test_repo.remove_targets(payload, update_state=pretend.stub())
 
         assert "At list one target is required" in str(err)
 

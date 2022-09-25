@@ -14,6 +14,7 @@
 import enum
 import importlib
 import logging
+import time
 import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -285,6 +286,10 @@ class MetadataRepository:
         return bins_name
 
     def _add_to_unpublished_metas(self, targets_meta: List[Tuple[str, int]]):
+        """
+        Add to the Redis "unpublished_meta" the edited roles.
+        """
+        logging.debug(f"Adding to unpublished meta {targets_meta}")
         if len(targets_meta) == 0:
             logging.info("Nothing to send to be published")
             return None
@@ -304,6 +309,41 @@ class MetadataRepository:
                     "unpublished_metas",
                     ", ".join(bins_name for bins_name, _ in targets_meta),
                 )
+
+    def _publish_meta_state(
+        self, targets_meta: List[Tuple[str, int]], update_state: Optional[str]
+    ) -> List[Optional[Tuple[str, int]]]:
+        """
+        Publish to the task the "PUBLISHING" state with details if the meta
+        still not published in the latest Snapshot. It runs every 3 seconds.
+        """
+        logging.debug(f"waiting metas to be published {targets_meta}")
+
+        def _update_state(targets_meta: List[Tuple[str, int]]):
+            unpublised_roles = [
+                f"{role} version {version}" for role, version in targets_meta
+            ]
+
+            update_state(
+                state="PUBLISHING",
+                meta={"unpublished_roles": unpublised_roles},
+            )
+
+        while True:
+            snapshot = self._load(Roles.SNAPSHOT.value)
+            for target_meta in targets_meta:
+                snapshot_meta_file = snapshot.signed.meta[
+                    f"{target_meta[0]}.json"
+                ]
+                if snapshot_meta_file.version == target_meta[1]:
+                    logging.debug(f"Found published meta {target_meta}")
+                    targets_meta.remove(target_meta)
+
+            if len(targets_meta) > 0:
+                _update_state(targets_meta)
+                time.sleep(3)
+            else:
+                return None
 
     def add_initial_metadata(self, payload: Dict[str, Dict[str, Any]]) -> bool:
         warnings.warn(
@@ -339,7 +379,7 @@ class MetadataRepository:
 
         return True
 
-    def add_targets(self, payload: Dict[str, Any]) -> None:
+    def add_targets(self, payload: Dict[str, Any], update_state: str) -> None:
         """
         Updates 'bins' roles metadata, assigning each passed target to the
         correct bin.
@@ -383,19 +423,24 @@ class MetadataRepository:
 
         if len(targets_meta) > 0:
             self._add_to_unpublished_metas(targets_meta)
+            self._publish_meta_state(targets_meta, update_state)
 
         result = ResultDetails(
-            message="Task sent for publishing stage.",
+            message="Task finished.",
             details={
                 "targets": [target.get("path") for target in targets],
-                "target_to_publish": [t_role for t_role in bin_target_groups],
+                "target_roles": [t_role for t_role in bin_target_groups],
             },
         )
-
         logging.debug(f"Added targets. {result}")
         return asdict(result)
 
-    def remove_targets(self, payload: Dict[str, List[str]]) -> Dict[str, Any]:
+    def remove_targets(
+        self, payload: Dict[str, List[str]], update_state: str
+    ) -> Dict[str, Any]:
+        """
+        Remove targets from the metadata roles.
+        """
         targets = payload.get("targets")
         if targets is None:
             raise ValueError("No targets in the payload")
@@ -438,12 +483,10 @@ class MetadataRepository:
 
         if len(targets_meta) > 0:
             self._add_to_unpublished_metas(targets_meta)
-            msg = "Task sent for publishing stage."
-        else:
-            msg = "Task finished."
+            self._publish_meta_state(targets_meta, update_state)
 
         result = ResultDetails(
-            message=msg,
+            message="Task finished.",
             details={
                 "deleted_targets": deleted_targets,
                 "not_found_targets": not_found_targets,

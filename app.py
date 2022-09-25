@@ -58,8 +58,10 @@ app = Celery(
 )
 
 
-@app.task(serializer="json")
-def kaprien_repo_worker(action: str, payload: Optional[Dict[str, Any]] = None):
+@app.task(serializer="json", bind=True)
+def kaprien_repo_worker(
+    self, action: str, payload: Optional[Dict[str, Any]] = None
+):
     """
     Kaprien Metadata Repository Worker
     """
@@ -69,7 +71,7 @@ def kaprien_repo_worker(action: str, payload: Optional[Dict[str, Any]] = None):
     if payload is None:
         result = repository_action()
     else:
-        result = repository_action(payload)
+        result = repository_action(payload, update_state=self.update_state)
 
     return result
 
