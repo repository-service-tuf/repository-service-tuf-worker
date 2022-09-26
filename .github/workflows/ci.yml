@@ -22,3 +22,12 @@ jobs:
 
     - name: Run Python tests
       run: tox
+
+    - name: Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV}}
+        files: coverage.xml
+        fail_ci_if_error: false
+        verbose: true
+
