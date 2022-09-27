@@ -2,7 +2,20 @@
 kaprien-repo-worker
 ###################
 
-Kaprien Repository Worker
+|Test Docker Image build| |Tests and Lint| |Coverage|
+
+.. |Test Docker Image build| image:: https://github.com/kaprien/kaprien-repo-worker/actions/workflows/test_docker_build.yml/badge.svg
+  :target: https://github.com/kaprien/kaprien-repo-worker/actions/workflows/test_docker_build.yml
+.. |Tests and Lint| image:: https://github.com/kaprien/kaprien-repo-worker/actions/workflows/ci.yml/badge.svg
+  :target: https://github.com/kaprien/kaprien-repo-worker/actions/workflows/ci.yml
+.. |Coverage| image:: https://codecov.io/gh/kaprien/kaprien-repo-worker/branch/main/graph/badge.svg
+  :target: https://codecov.io/gh/kaprien/kaprien-repo-worker
+
+
+Kaprien Repository Worker is part of Kaprien.
+
+`Kaprien Repository Worker specific documentation
+<https://kaprien-repo-worker.readthedocs.org>`_
 
 
 Development
