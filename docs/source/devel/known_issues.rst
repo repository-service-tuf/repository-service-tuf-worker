@@ -1,20 +1,17 @@
-=========================
-Known Issues/Improvements
-=========================
 
-The issues are available in the  http://github.com/kaprien
+(Solved) Scalability
+====================
 
-This document is designed for complex and critical issue that
-requires discussion
+ `[Issue 17] <https://github.com/kaprien/kaprien/issues/17>`_
 
 
-``kaprien-repo-worker`` Scalability
-===================================
+The problem
+-----------
 
-- `Issue 17 <https://github.com/kaprien/kaprien/issues/17>`_
-
-Suggestions for this problem can be added to the `opened issue
+The Issue is solved, but still open for improvement. Suggestions for this
+problem can be added to the `opened issue
 <https://github.com/kaprien/kaprien/issues/17>`_.
+
 
 The scalability works well for ``kaprien-rest-api`` once you can scale
 horizontally, having multiple instances of the Server API sending all
@@ -89,6 +86,9 @@ order once we use a `lock`.
     worker2 --> worker2: run <back:cyan>task 08</back>
     & worker2 -> broker: finish <back:cyan>task 08</back>
     @enduml
+
+The behavior
+------------
 
 The problem is the process of writing the role metadata files.
 
@@ -278,7 +278,9 @@ writing metadata process.
     end
     @enduml
 
-The best scenario:
+The expected behavior
+---------------------
+
 
 .. uml::
 
