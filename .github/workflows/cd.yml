@@ -73,7 +73,7 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GPR_TOKEN }}
 
-      - name: Build the hello-docker Docker image
+      - name: Publish Docker Image on GitHub Registry
         run: |
           docker load -i /tmp/kaprien-repo-worker.${{ github.ref_name }}.tar
           docker push ghcr.io/kaprien/kaprien-repo-worker:${{ github.ref_name }}
