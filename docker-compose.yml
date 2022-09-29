@@ -11,7 +11,6 @@ volumes:
 services:
   rabbitmq:
     image: rabbitmq:3.10.7-management-alpine
-    container_name: kaprien-mq
     volumes:
      - "kaprien-mq-data:/var/lib/rabbitmq"
      - "kaprien-storage:/var/opt/kaprien/storage"

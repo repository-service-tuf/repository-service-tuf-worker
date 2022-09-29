@@ -15,19 +15,43 @@ kaprien-repo-worker
 Kaprien Repository Worker is part of Kaprien.
 
 `Kaprien Repository Worker specific documentation
-<https://kaprien-repo-worker.readthedocs.org>`_
+<https://docs.kaprien.com/kaprien-repo-worker/>`_
 
 
 Development
 ###########
 
-Requirments
-===========
+Requirements
+============
 
 - Python >=3.10
 - pip
 - Pipenv
 - Docker
+
+Getting source code
+===================
+
+`Fork <https://docs.github.com/en/get-started/quickstart/fork-a-repo>`_ the
+repository on `GitHub <https://github.com/kaprien/kaprien-repo-worker>`_ and
+`clone <https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository>`_
+it to your local machine:
+
+.. code-block:: console
+
+    git clone git@github.com:YOUR-USERNAME/kaprien-repo-worker.git
+
+Add a `remote
+<https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/configuring-a-remote-for-a-fork>`_ and
+regularly `sync <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork>`_ to make sure
+you stay up-to-date with our repository:
+
+.. code-block:: console
+
+    git remote add upstream https://github.com/kaprien-repo-worker
+    git checkout main
+    git fetch upstream
+    git merge upstream/main
 
 
 Intalling project requirements
@@ -111,7 +135,7 @@ Managing requirements
 =====================
 
 Installing new requirements
-............................
+---------------------------
 
 Project requirements
 
@@ -128,7 +152,7 @@ Development requirements
 
 
 Updating requirements files from Pipenv
-.......................................
+---------------------------------------
 
 .. code:: shell
 
