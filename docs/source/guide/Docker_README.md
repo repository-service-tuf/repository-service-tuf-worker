@@ -1,8 +1,8 @@
-# kaprien-repo-worker
+# tuf-repository-service-worker
 
-Kaprien Repository Worker
+TUF Repository Service Worker
 
-kaprien-repo-worker is part of Kaprien
+tuf-repository-service-worker is part of TUF Repository Service (TRS)
 
 ## Getting Started
 
@@ -15,7 +15,7 @@ In order to run this container you'll need docker installed.
 
 Some required services:
 
-* kaprien-rest-api
+* tuf-repository-service-api
 * Compatible Borker and Result Backend Service with
   [Celery](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/index.html).
   Recomended: [RabbitMQ](https://www.rabbitmq.com) or [Redis](https://redis.com)
@@ -25,20 +25,20 @@ Some required services:
 ### Container Parameters
 
 ```shell
-docker run --env="KAPRIEN_WORKER_ID=worker1" \
-    --env="KAPRIEN_STORAGE_BACKEND=LocalStorage" \
-    --env="KAPRIEN_LOCAL_STORAGE_BACKEND_PATH=storage" \
-    --env="KAPRIEN_KEYVAULT_BACKEND=LocalKeyVault" \
-    --env="KAPRIEN_LOCAL_KEYVAULT_PATH=keyvault" \
-    --env="KAPRIEN_BROKER_SERVER=guest:guest@rabbitmq:5672" \
-    --env="KAPRIEN_REDIS_SERVER=redis://redis" \
-    ghcr.io/kaprien/kaprien-repo-worker:latest \
+docker run --env="TRS_WORKER_ID=worker1" \
+    --env="TRS_STORAGE_BACKEND=LocalStorage" \
+    --env="TRS_LOCAL_STORAGE_BACKEND_PATH=storage" \
+    --env="TRS_KEYVAULT_BACKEND=LocalKeyVault" \
+    --env="TRS_LOCAL_KEYVAULT_PATH=keyvault" \
+    --env="TRS_BROKER_SERVER=guest:guest@rabbitmq:5672" \
+    --env="TRS_REDIS_SERVER=redis://redis" \
+    ghcr.io/kaprien/tuf-repository-service-worker:latest \
 ```
 
 
 ### Environment Variables
 
-#### (Required) `KAPRIEN_BROKER_SERVER`
+#### (Required) `TRS_BROKER_SERVER`
 
 Broker server address.
 
@@ -47,7 +47,7 @@ See [Celery Broker Instructions](https://docs.celeryq.dev/en/stable/getting-star
 
 Example: `guest:guest@rabbitmq:5672`
 
-#### (Required) `KAPRIEN_REDIS_SERVER`
+#### (Required) `TRS_REDIS_SERVER`
 
 Redis server address.
 
@@ -56,39 +56,39 @@ The result backend must to be compatible with Celery. See
 
 Example: `redis://redis`
 
-#### (Optional) `KAPRIEN_REDIS_SERVER_PORT`
+#### (Optional) `TRS_REDIS_SERVER_PORT`
 
 Redis Server port number. Default: 6379
 
-#### (Optional) `KAPRIEN_REDIS_SERVER_DB_RESULT`
+#### (Optional) `TRS_REDIS_SERVER_DB_RESULT`
 
 Redis Server DB number for Result Backend (tasks). Default: 0
 
-#### (Optional) `KAPRIEN_REDIS_SERVER_DB_REPO_SETTINGS`
+#### (Optional) `TRS_REDIS_SERVER_DB_REPO_SETTINGS`
 
 Redis Server DB number for repository settings. Default: 1
 
 This settings are shared accress the Repository Workers
-(``kaprien-repo-worker``) to have dynamic configuration.
+(``tuf-repository-service-worker``) to have dynamic configuration.
 
-#### (Required) `KAPRIEN_STORAGE_BACKEND`
+#### (Required) `TRS_STORAGE_BACKEND`
 
 Select a supported type of Storage Service.
 
 Available types:
 
 * LocalStorage (local file system)
-    - Requires variable ``KAPRIEN_LOCAL_STORAGE_BACKEND_PATH``
+    - Requires variable ``TRS_LOCAL_STORAGE_BACKEND_PATH``
       - Define the directory where the data will be saved, example: `storage`
 
-#### (Required) `KAPRIEN_KEYVAULT_BACKEND`
+#### (Required) `TRS_KEYVAULT_BACKEND`
 
 Select a supported type of Key Vault Service.
 
 Available types:
 
 * LocalKeyVault (local file system)
-  - Requires variable ``KAPRIEN_LOCAL_KEYVAULT_PATH``
+  - Requires variable ``TRS_LOCAL_KEYVAULT_PATH``
     - Define the directory where the data will be saved, example: `keyvault`
 
 
@@ -102,7 +102,7 @@ Container data directory. Default: `/data`
 
 ### Customization/Tuning
 
-The `kaprien-repo-worker` uses supervisord and uses a `supervisor.conf`
+The `tuf-repository-service-worker` uses supervisord and uses a `supervisor.conf`
 from `$DATA_DIR`.
 
 It can be used to customize/tuning performance of Celery.

@@ -1,12 +1,12 @@
 .PHONY: build-dev run-dev stop clean purge reformat tests requirements coverage docs
 
 build-dev:
-	docker build -t kaprien-repo-worker:dev .
+	docker build -t tuf-repository-service-worker:dev .
 
 run-dev:
 	$(MAKE) build-dev
 	docker login ghcr.io
-	docker pull ghcr.io/kaprien/kaprien-rest-api:dev
+	docker pull ghcr.io/kaprien/tuf-repository-service-api:dev
 	docker-compose up --remove-orphans
 
 
@@ -20,7 +20,7 @@ clean:
 
 purge:
 	$(MAKE) clean
-	docker rmi kaprien-repo-worker_kaprien-repo-worker --force
+	docker rmi tuf-repository-service-worker_tuf-repository-service-worker --force
 
 reformat:
 	black -l 79 .

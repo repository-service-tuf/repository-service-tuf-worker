@@ -8,7 +8,7 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.ini")
 
 worker_settings = Dynaconf(
     settings_files=[SETTINGS_FILE],
-    envvar_prefix="KAPRIEN",
+    envvar_prefix="TRS",
 )
 
 
@@ -17,8 +17,8 @@ repository_settings = Dynaconf(
     redis_enabled=True,
     redis={
         "host": worker_settings.REDIS_SERVER.split("redis://")[1],
-        "port": worker_settings.get("KAPRIEN_REDIS_SERVER_PORT", 6379),
-        "db": worker_settings.get("KAPRIEN_REDIS_SERVER_DB_REPO_SETTINGS", 1),
+        "port": worker_settings.get("REDIS_SERVER_PORT", 6379),
+        "db": worker_settings.get("REDIS_SERVER_DB_REPO_SETTINGS", 1),
         "decode_responses": True,
     },
 )
