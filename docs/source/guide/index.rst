@@ -1,6 +1,6 @@
-=========================
-Kaprien Repository Worker
-=========================
+========================================
+TUF Repository Service Repository Worker
+========================================
 
 
 .. toctree::

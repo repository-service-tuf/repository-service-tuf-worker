@@ -5,19 +5,17 @@ import pretend
 
 class TestApp:
     def test_app(self, monkeypatch):
-        monkeypatch.setenv("KAPRIEN_WORKER_ID", "test")
+        monkeypatch.setenv("TRS_WORKER_ID", "test")
         monkeypatch.setenv(
-            "KAPRIEN_LOCAL_STORAGE_BACKEND_PATH", tempfile.gettempdir()
+            "TRS_LOCAL_STORAGE_BACKEND_PATH", tempfile.gettempdir()
         )
-        monkeypatch.setenv("KAPRIEN_BROKER_SERVER", "fake-rabbitmq")
-        monkeypatch.setenv(
-            "KAPRIEN_LOCAL_KEYVAULT_PATH", tempfile.gettempdir()
-        )
+        monkeypatch.setenv("TRS_BROKER_SERVER", "fake-rabbitmq")
+        monkeypatch.setenv("TRS_LOCAL_KEYVAULT_PATH", tempfile.gettempdir())
         import app
 
         assert app.Celery.__name__ == "Celery"
 
-    def test_kaprien_repo_worker(self):
+    def test_tuf_repository_service_worker(self):
         import app
 
         app.repository = pretend.stub(
@@ -25,18 +23,19 @@ class TestApp:
             test_action=pretend.call_recorder(lambda *a, **kw: True),
         )
 
-        result = app.kaprien_repo_worker(
+        result = app.tuf_repository_service_worker(
             "test_action",
             payload={"k": "v"},
         )
         assert result is True
         assert app.repository.test_action.calls == [
             pretend.call(
-                {"k": "v"}, update_state=app.kaprien_repo_worker.update_state
+                {"k": "v"},
+                update_state=app.tuf_repository_service_worker.update_state,
             ),
         ]
 
-    def test_kaprien_repo_worker_no_payload(self):
+    def test_tuf_repository_service_worker_no_payload(self):
         import app
 
         app.repository = pretend.stub(
@@ -44,7 +43,7 @@ class TestApp:
             test_action=pretend.call_recorder(lambda *a, **kw: True),
         )
 
-        result = app.kaprien_repo_worker(
+        result = app.tuf_repository_service_worker(
             "test_action",
         )
         assert result is True

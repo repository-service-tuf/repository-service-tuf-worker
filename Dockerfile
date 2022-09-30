@@ -26,10 +26,10 @@ COPY --from=builder /root/.local/lib/python3.10/site-packages /usr/local/lib/pyt
 # Final stage
 FROM pre-final
 
-WORKDIR /opt/kaprien-repo-worker
+WORKDIR /opt/tuf-repository-service-worker
 RUN mkdir /data
-COPY app.py /opt/kaprien-repo-worker
-COPY entrypoint.sh /opt/kaprien-repo-worker
+COPY app.py /opt/tuf-repository-service-worker
+COPY entrypoint.sh /opt/tuf-repository-service-worker
 COPY supervisor.conf ${DATA_DIR}/
-COPY repo_worker /opt/kaprien-repo-worker/repo_worker
+COPY tuf_repository_service_worker /opt/tuf-repository-service-worker/tuf_repository_service_worker
 ENTRYPOINT ["bash", "entrypoint.sh"]
