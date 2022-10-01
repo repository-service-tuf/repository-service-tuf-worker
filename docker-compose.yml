@@ -23,15 +23,15 @@ services:
     restart: always
 
   tuf-repository-service-api:
-    image: ghcr.io/tuf-repository-service/tuf-repository-service-api:dev
-    # image: tuf-repository-service-api:dev
+    #image: ghcr.io/kaprien/tuf-repository-service-api:dev
+    image: tuf-repository-service-api:dev
     volumes:
       - tuf-repository-service-api-data:/data
     ports:
       - 80:80
     environment:
       - TRS_BOOTSTRAP_NODE=true
-      - TRS_BROKER_SERVER="amqp://guest:guest@tuf-repository-service-mq:5672"
+      - TRS_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
       - TRS_REDIS_SERVER="redis://redis"
       - SECRETS_TRS_TOKEN_KEY="secret"
       - SECRETS_TRS_ADMIN_PASSWORD="secret"

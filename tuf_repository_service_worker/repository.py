@@ -349,19 +349,31 @@ class MetadataRepository:
             else:
                 return None
 
-    def add_initial_metadata(self, payload: Dict[str, Dict[str, Any]]) -> bool:
+    def add_initial_metadata(
+        self,
+        payload: Dict[str, Dict[str, Any]],
+        update_state: Optional[str] = None,
+    ) -> bool:
         warnings.warn(
             "Use bootstrap instead add_initial_metadata", DeprecationWarning
         )
-        self.bootstrap(payload)
+        self.bootstrap(payload, update_state)
 
-    def bootstrap(self, payload: Dict[str, Dict[str, Any]]) -> bool:
+    def bootstrap(
+        self,
+        payload: Dict[str, Dict[str, Any]],
+        update_state: Optional[str] = None,
+    ) -> bool:
         """
         Bootstrap the Metadata Repository
 
         Add the online Keys to the Key Storage backend and the Signed Metadata
         to the Storage Backend.
         """
+        # the update_state is not used for bootstrap
+        if update_state:
+            pass
+
         # Store online keys to the Key Vault
         if settings := payload.get("settings"):
             self.store_online_keys(settings)
