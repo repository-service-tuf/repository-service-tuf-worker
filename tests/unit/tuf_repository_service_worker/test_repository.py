@@ -328,8 +328,11 @@ class TestMetadataRepository:
         ]
         assert fake_update_state.calls == [
             pretend.call(
-                state="PUBLISHING",
-                meta={"unpublished_roles": ["bin-a version 5"]},
+                state="RUNNING",
+                meta={
+                    "unpublished_roles": ["bin-a version 5"],
+                    "status": "Publishing",
+                },
             )
         ]
 
@@ -356,7 +359,10 @@ class TestMetadataRepository:
         }
 
         result = test_repo.bootstrap(payload)
-        assert result is True
+        assert result == {
+            "details": {"bootstrap": True},
+            "status": "Task finished.",
+        }
         assert test_repo.store_online_keys.calls == [pretend.call({"k": "v"})]
         assert repository.Metadata.from_dict.calls == [
             pretend.call({"md_k1": "md_v1"}),
@@ -456,7 +462,7 @@ class TestMetadataRepository:
                 "target_roles": ["bin-e"],
                 "targets": ["file1.tar.gz"],
             },
-            "message": "Task finished.",
+            "status": "Task finished.",
         }
         assert test_repo._get_path_succinct_role.calls == [
             pretend.call("file1.tar.gz")
@@ -540,7 +546,7 @@ class TestMetadataRepository:
         result = test_repo.remove_targets(payload, update_state=fake_ue)
 
         assert result == {
-            "message": "Task finished.",
+            "status": "Task finished.",
             "details": {
                 "deleted_targets": ["file1.tar.gz"],
                 "not_found_targets": ["file2.tar.gz", "release-v0.1.0.yaml"],
@@ -600,7 +606,7 @@ class TestMetadataRepository:
         result = test_repo.remove_targets(payload, update_state=pretend.stub())
 
         assert result == {
-            "message": "Task finished.",
+            "status": "Task finished.",
             "details": {
                 "deleted_targets": [],
                 "not_found_targets": [

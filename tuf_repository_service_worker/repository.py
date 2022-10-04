@@ -74,7 +74,7 @@ SPEC_VERSION: str = ".".join(SPECIFICATION_VERSION)
 
 @dataclass
 class ResultDetails:
-    message: str
+    status: str
     details: Optional[Dict[str, Any]]
 
 
@@ -318,8 +318,8 @@ class MetadataRepository:
         self, targets_meta: List[Tuple[str, int]], update_state: Optional[str]
     ) -> List[Optional[Tuple[str, int]]]:
         """
-        Publish to the task the "PUBLISHING" state with details if the meta
-        still not published in the latest Snapshot. It runs every 3 seconds.
+        Updates the 'RUNNING' state with details if the meta still not
+        published in the latest Snapshot. It runs every 3 seconds.
         """
         logging.debug(f"waiting metas to be published {targets_meta}")
 
@@ -327,10 +327,12 @@ class MetadataRepository:
             unpublised_roles = [
                 f"{role} version {version}" for role, version in targets_meta
             ]
-
             update_state(
-                state="PUBLISHING",
-                meta={"unpublished_roles": unpublised_roles},
+                state="RUNNING",
+                meta={
+                    "unpublished_roles": unpublised_roles,
+                    "status": "Publishing",
+                },
             )
 
         while True:
@@ -353,17 +355,17 @@ class MetadataRepository:
         self,
         payload: Dict[str, Dict[str, Any]],
         update_state: Optional[str] = None,
-    ) -> bool:
+    ) -> Dict[str, Any]:
         warnings.warn(
             "Use bootstrap instead add_initial_metadata", DeprecationWarning
         )
-        self.bootstrap(payload, update_state)
+        return self.bootstrap(payload, update_state)
 
     def bootstrap(
         self,
         payload: Dict[str, Dict[str, Any]],
         update_state: Optional[str] = None,
-    ) -> bool:
+    ) -> Dict[str, Any]:
         """
         Bootstrap the Metadata Repository
 
@@ -393,7 +395,14 @@ class MetadataRepository:
             )
             logging.debug(f"{role_name}.json saved")
 
-        return True
+        result = ResultDetails(
+            status="Task finished.",
+            details={
+                "bootstrap": True,
+            },
+        )
+
+        return asdict(result)
 
     def add_targets(self, payload: Dict[str, Any], update_state: str) -> None:
         """
@@ -442,7 +451,7 @@ class MetadataRepository:
             self._publish_meta_state(targets_meta, update_state)
 
         result = ResultDetails(
-            message="Task finished.",
+            status="Task finished.",
             details={
                 "targets": [target.get("path") for target in targets],
                 "target_roles": [t_role for t_role in bin_target_groups],
@@ -502,7 +511,7 @@ class MetadataRepository:
             self._publish_meta_state(targets_meta, update_state)
 
         result = ResultDetails(
-            message="Task finished.",
+            status="Task finished.",
             details={
                 "deleted_targets": deleted_targets,
                 "not_found_targets": not_found_targets,
