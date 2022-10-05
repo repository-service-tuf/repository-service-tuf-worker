@@ -13,7 +13,10 @@ Component level
 
 
 Component Specific
-..................
+------------------
+
+Adding/Removing targets
+.......................
 
 As mentioned at the container level, the domain of ``tuf-repository-service-worker``
 (Repository Worker) is managing the TUF Repository Metadata.

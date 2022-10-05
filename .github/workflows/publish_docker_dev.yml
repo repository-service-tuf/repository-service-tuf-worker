@@ -4,6 +4,15 @@ on:
   push:
     branches:
       - 'main'
+    paths:
+      - 'tuf_repository_service_worker/**'
+      - 'app.py'
+      - 'entrypoint.sh'
+      - 'supervisor.conf'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'setup.py'
+
   workflow_dispatch:
 
 jobs:
