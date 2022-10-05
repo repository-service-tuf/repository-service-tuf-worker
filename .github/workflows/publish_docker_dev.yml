@@ -10,7 +10,7 @@ on:
       - 'entrypoint.sh'
       - 'supervisor.conf'
       - 'Dockerfile'
-      - 'requirements**'
+      - 'requirements.txt'
       - 'setup.py'
 
   workflow_dispatch:
