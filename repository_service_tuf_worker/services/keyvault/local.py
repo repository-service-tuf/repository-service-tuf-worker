@@ -6,7 +6,7 @@ from dynaconf.utils.boxing import DynaBox
 from dynaconf.vendor.box.exceptions import BoxKeyError
 from securesystemslib.keys import decrypt_key, encrypt_key
 
-from tuf_repository_service_worker.interfaces import IKeyVault, ServiceSettings
+from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
 
 
 class KeyVaultError(Exception):

@@ -7,8 +7,8 @@ from typing import List
 
 from securesystemslib.exceptions import StorageError  # noqa
 
-from tuf_repository_service_worker.interfaces import IStorage, ServiceSettings
-from tuf_repository_service_worker.repository import Timestamp
+from repository_service_tuf_worker.interfaces import IStorage, ServiceSettings
+from repository_service_tuf_worker.repository import Timestamp
 
 
 class LocalStorage(IStorage):

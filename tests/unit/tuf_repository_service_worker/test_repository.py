@@ -4,7 +4,7 @@ from contextlib import contextmanager
 import pretend
 import pytest
 
-from tuf_repository_service_worker import repository
+from repository_service_tuf_worker import repository
 
 
 class TestMetadataRepository:
@@ -119,7 +119,7 @@ class TestMetadataRepository:
             now=pretend.call_recorder(lambda: fake_time)
         )
         monkeypatch.setattr(
-            "tuf_repository_service_worker.repository.datetime", fake_datetime
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         fake_role = pretend.stub(
             signed=pretend.stub(expires=fake_time),
@@ -151,7 +151,7 @@ class TestMetadataRepository:
             lambda *a, **kw: snapshot_version
         )
         monkeypatch.setattr(
-            "tuf_repository_service_worker.repository.MetaFile", fake_metafile
+            "repository_service_tuf_worker.repository.MetaFile", fake_metafile
         )
 
         mocked_timestamp = pretend.stub(signed=pretend.stub(snapshot_meta=2))

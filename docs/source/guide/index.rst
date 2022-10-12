@@ -1,6 +1,6 @@
-========================================
-TUF Repository Service Repository Worker
-========================================
+============================================
+Repository Service for TUF Repository Worker
+============================================
 
 
 .. toctree::

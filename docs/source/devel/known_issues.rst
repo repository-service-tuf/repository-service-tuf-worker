@@ -13,11 +13,11 @@ problem can be added to the `opened issue
 <https://github.com/kaprien/kaprien/issues/17>`_.
 
 
-The scalability works well for ``tuf-repository-service-api`` once you can scale
+The scalability works well for ``repository-service-tuf-api`` once you can scale
 horizontally, having multiple instances of the Server API sending all
 requests to the Broker.
 
-The scalability for ``tuf-repository-service-worker`` is not functional.
+The scalability for ``repository-service-tuf-worker`` is not functional.
 
 The repository workers pick up the tasks randomly, but it is executed in
 order once we use a `lock`.
@@ -28,11 +28,11 @@ order once we use a `lock`.
     !pragma teoz true
 
     participant "Broker queue" as broker
-    participant "tuf-repository-service-worker 1" as worker1
-    participant "tuf-repository-service-worker 2" as worker2
-    participant "tuf-repository-service-worker 3" as worker3
-    participant "tuf-repository-service-worker 4" as worker4
-    participant "tuf-repository-service-worker 5" as worker5
+    participant "repository-service-tuf-worker 1" as worker1
+    participant "repository-service-tuf-worker 2" as worker2
+    participant "repository-service-tuf-worker 3" as worker3
+    participant "repository-service-tuf-worker 4" as worker4
+    participant "repository-service-tuf-worker 5" as worker5
 
     rnote over broker
     task 01
@@ -206,14 +206,14 @@ Exemple
     @enduml
 
 On one level, we optimize it `by grouping all changes for the same delegated hash
-role <https://github.com/kaprien/tuf-repository-service-worker/blob/6ad68ec6d898315fcc42bcddd198619f07618d5e/tuf_repository_service_worker/tuf/repository.py#L173>`_
+role <https://github.com/kaprien/repository-service-tuf-worker/blob/6ad68ec6d898315fcc42bcddd198619f07618d5e/repository_service_tuf_worker/tuf/repository.py#L173>`_
 , avoiding multiple interactions in the same task.
 
 However we still have a problem with the snapshot and ``timestamp``.
 To avoid the problem, we use a lock system with one task per time.
 
 The lock protects against the race condition but does not solve the
-scalability. Even having dozen ``tuf-repository-service-worker`` do not scale the
+scalability. Even having dozen ``repository-service-tuf-worker`` do not scale the
 writing metadata process.
 
 .. uml::
@@ -288,11 +288,11 @@ The expected behavior
     !pragma teoz true
 
     participant "Broker queue" as broker
-    participant "tuf-repository-service-worker 1" as worker1
-    participant "tuf-repository-service-worker 2" as worker2
-    participant "tuf-repository-service-worker 3" as worker3
-    participant "tuf-repository-service-worker 4" as worker4
-    participant "tuf-repository-service-worker 5" as worker5
+    participant "repository-service-tuf-worker 1" as worker1
+    participant "repository-service-tuf-worker 2" as worker2
+    participant "repository-service-tuf-worker 3" as worker3
+    participant "repository-service-tuf-worker 4" as worker4
+    participant "repository-service-tuf-worker 5" as worker5
 
     rnote over broker
     task 01

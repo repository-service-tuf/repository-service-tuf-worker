@@ -1,7 +1,7 @@
 import pretend
 import pytest
 
-from tuf_repository_service_worker.services.storage import local
+from repository_service_tuf_worker.services.storage import local
 
 
 class TestLocalStorageService:

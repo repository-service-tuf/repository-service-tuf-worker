@@ -55,7 +55,7 @@ coverage.xml
 *.mo
 *.pot
 
-# tuf-repository-service-api stuff:
+# repository-service-tuf-api stuff:
 data/
 data-test/
 

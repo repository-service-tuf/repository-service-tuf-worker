@@ -42,13 +42,13 @@ from tuf.api.metadata import (  # noqa
 from tuf.api.serialization.json import JSONSerializer
 
 # the 'service import is used to retrieve sublcasses (Implemented Services)
-from tuf_repository_service_worker import (  # noqa
+from repository_service_tuf_worker import (  # noqa
     Dynaconf,
     repository_settings,
     services,
     worker_settings,
 )
-from tuf_repository_service_worker.interfaces import IKeyVault, IStorage
+from repository_service_tuf_worker.interfaces import IKeyVault, IStorage
 
 
 class Roles(enum.Enum):
@@ -124,7 +124,7 @@ class MetadataRepository:
         else:
             settings.STORAGE_BACKEND = getattr(
                 importlib.import_module(
-                    "tuf_repository_service_worker.services"
+                    "repository_service_tuf_worker.services"
                 ),
                 settings.STORAGE_BACKEND,
             )
@@ -167,7 +167,7 @@ class MetadataRepository:
         else:
             settings.KEYVAULT_BACKEND = getattr(
                 importlib.import_module(
-                    "tuf_repository_service_worker.services"
+                    "repository_service_tuf_worker.services"
                 ),
                 settings.KEYVAULT_BACKEND,
             )

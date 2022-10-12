@@ -26,10 +26,10 @@ COPY --from=builder /root/.local/lib/python3.10/site-packages /usr/local/lib/pyt
 # Final stage
 FROM pre-final
 
-WORKDIR /opt/tuf-repository-service-worker
+WORKDIR /opt/repository-service-tuf-worker
 RUN mkdir /data
-COPY app.py /opt/tuf-repository-service-worker
-COPY entrypoint.sh /opt/tuf-repository-service-worker
+COPY app.py /opt/repository-service-tuf-worker
+COPY entrypoint.sh /opt/repository-service-tuf-worker
 COPY supervisor.conf ${DATA_DIR}/
-COPY tuf_repository_service_worker /opt/tuf-repository-service-worker/tuf_repository_service_worker
+COPY repository_service_tuf_worker /opt/repository-service-tuf-worker/repository_service_tuf_worker
 ENTRYPOINT ["bash", "entrypoint.sh"]

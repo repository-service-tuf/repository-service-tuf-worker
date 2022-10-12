@@ -1,7 +1,7 @@
-tuf_repository_service_worker
+repository_service_tuf_worker
 =============================
 
 .. toctree::
    :maxdepth: 4
 
-   tuf_repository_service_worker
+   repository_service_tuf_worker

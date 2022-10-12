@@ -1,7 +1,7 @@
 import pretend
 import pytest
 
-from tuf_repository_service_worker.services.keyvault import local
+from repository_service_tuf_worker.services.keyvault import local
 
 
 class TestLocalStorageService:
