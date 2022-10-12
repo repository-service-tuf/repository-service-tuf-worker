@@ -11,8 +11,8 @@ from typing import Any, Dict, Optional
 import redis
 from celery import Celery, schedules, signals
 
-from tuf_repository_service_worker import worker_settings
-from tuf_repository_service_worker.repository import MetadataRepository
+from repository_service_tuf_worker import worker_settings
+from repository_service_tuf_worker.repository import MetadataRepository
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -46,7 +46,7 @@ redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
 # }
 
 app = Celery(
-    f"tuf_repository_service_worker_{worker_settings.WORKER_ID}",
+    f"repository_service_tuf_worker_{worker_settings.WORKER_ID}",
     broker=worker_settings.BROKER_SERVER,
     backend=worker_settings.REDIS_SERVER,
     result_persistent=True,
@@ -59,11 +59,11 @@ app = Celery(
 
 
 @app.task(serializer="json", bind=True)
-def tuf_repository_service_worker(
+def repository_service_tuf_worker(
     self, action: str, payload: Optional[Dict[str, Any]] = None
 ):
     """
-    TUF Repository Service Metadata Worker
+    Repository Service for TUF Metadata Worker
     """
     repository.refresh_settings(worker_settings)
     repository_action = getattr(repository, action)
@@ -95,21 +95,21 @@ def _publish_signals(
     )
 
 
-@signals.task_prerun.connect(sender=tuf_repository_service_worker)
+@signals.task_prerun.connect(sender=repository_service_tuf_worker)
 def task_pre_run_notifier(**kwargs):
     """Publishes Signal when task is in PRE_RUN state"""
     logging.debug((f"{status.PRE_RUN.value}: {kwargs.get('task_id')}"))
     _publish_signals(status.PRE_RUN, kwargs.get("task_id"))
 
 
-@signals.task_unknown.connect(sender=tuf_repository_service_worker)
+@signals.task_unknown.connect(sender=repository_service_tuf_worker)
 def task_unknown_notifier(**kwargs):
     """Publishes Signal when task is in UNKNOWN state"""
     logging.debug((f"{status.UNKNOWN.value}: {kwargs.get('task_id')}"))
     _publish_signals(status.UNKNOWN, kwargs.get("task_id"))
 
 
-@signals.task_received.connect(sender=tuf_repository_service_worker)
+@signals.task_received.connect(sender=repository_service_tuf_worker)
 def task_received_notifier(**kwargs):
     """Publishes Signal when task is in RECEIVED state"""
     logging.debug((f"{status.RECEIVED}: {kwargs.get('task_id')}"))
@@ -118,26 +118,26 @@ def task_received_notifier(**kwargs):
 
 app.conf.beat_schedule = {
     "bump_online_roles": {
-        "task": "app.tuf_repository_service_worker",
+        "task": "app.repository_service_tuf_worker",
         "schedule": schedules.crontab(minute="*/10"),
         "kwargs": {
             "action": "bump_online_roles",
         },
         "options": {
             "task_id": "bump_online_roles",
-            "queue": "trs_internals",
+            "queue": "rstuf_internals",
             "acks_late": True,
         },
     },
     "publish_targets_meta": {
-        "task": "app.tuf_repository_service_worker",
+        "task": "app.repository_service_tuf_worker",
         "schedule": schedules.crontab(minute="*/1"),
         "kwargs": {
             "action": "publish_targets_meta",
         },
         "options": {
             "task_id": "publish_targets_meta",
-            "queue": "trs_internals",
+            "queue": "rstuf_internals",
             "acks_late": True,
         },
     },

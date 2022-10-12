@@ -1,13 +1,13 @@
-tuf\_repository\_service\_worker.services.storage package
+repository\_service\_tuf\_worker.services.storage package
 =========================================================
 
 Submodules
 ----------
 
-tuf\_repository\_service\_worker.services.storage.local module
+repository\_service\_tuf\_worker.services.storage.local module
 --------------------------------------------------------------
 
-.. automodule:: tuf_repository_service_worker.services.storage.local
+.. automodule:: repository_service_tuf_worker.services.storage.local
    :members:
    :undoc-members:
    :show-inheritance:
@@ -15,7 +15,7 @@ tuf\_repository\_service\_worker.services.storage.local module
 Module contents
 ---------------
 
-.. automodule:: tuf_repository_service_worker.services.storage
+.. automodule:: repository_service_tuf_worker.services.storage
    :members:
    :undoc-members:
    :show-inheritance:

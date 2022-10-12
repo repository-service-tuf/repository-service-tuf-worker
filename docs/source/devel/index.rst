@@ -9,7 +9,7 @@ Development
 
 Component level
 ---------------
-.. uml:: ../../diagrams/tuf-repository-service-worker-C3.puml
+.. uml:: ../../diagrams/repository-service-tuf-worker-C3.puml
 
 
 Component Specific
@@ -18,10 +18,10 @@ Component Specific
 Adding/Removing targets
 .......................
 
-As mentioned at the container level, the domain of ``tuf-repository-service-worker``
+As mentioned at the container level, the domain of ``repository-service-tuf-worker``
 (Repository Worker) is managing the TUF Repository Metadata.
 The Repository Worker has an Metadata Repository (`MetadataRepository
-<tuf_repository_service_worker.html#tuf_repository_service_worker.repository.MetadataRepository>`_) implementation
+<repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository>`_) implementation
 using `python-tuf <https://theupdateframework.readthedocs.io/en/latest/>`_.
 
 The repository implementation has different methods such as adding new targets,
@@ -35,14 +35,14 @@ To handle the tasks, the Repository Worker uses `Celery
 We have two types of tasks:
 
 - First are tasks that Repository Work consumes from the Broker Server are
-  tasks published by the `TUF Repository Service API
-  <https://github.com/kaprien/tuf-repository-service-api>`_ in the ``repository_metadata``
+  tasks published by the `Repository Service for TUF API
+  <https://github.com/kaprien/repository-service-tuf-api>`_ in the ``repository_metadata``
   queue, sent by an API User.
 - Second are tasks that Repository Work generates in the queue
-  ``trs_internals``. Those are internal tasks for the Repository Worker
+  ``rstuf_internals``. Those are internal tasks for the Repository Worker
   maintenance.
 
-The tasks are defined in the ``tuf-repository-service-worker/app.py```, and uses `Celery
+The tasks are defined in the ``repository-service-tuf-worker/app.py```, and uses `Celery
 Beat <https://docs.celeryq.dev/en/stable/userguide/periodic-tasks.html>`_ as
 scheduler.
 
@@ -90,9 +90,9 @@ We use the 'waiting time' to alternate between tasks.
 .. note::
 
    This is valid flow for the Repository Metadata Methods `add_targets
-   <tuf_repository_service_worker.html#tuf_repository_service_worker.repository.MetadataRepository.add_targets>`_
+   <repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository.add_targets>`_
    and `remove_targets
-   <tuf_repository_service_worker.html#tuf_repository_service_worker.repository.MetadataRepository.remove_targets>`_
+   <repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository.remove_targets>`_
 
 Before the Repository Worker adds/removes the new target and does steps 1 to 3,
 it Locks [#f1]_ specific Hashed Bins Role, for example, bins-a.
@@ -180,8 +180,8 @@ Implementation
 .. toctree::
    :maxdepth: 3
 
-   tuf_repository_service_worker
-   tuf_repository_service_worker.services
-   tuf_repository_service_worker.services.storage
-   tuf_repository_service_worker.services.keyvault
+   repository_service_tuf_worker
+   repository_service_tuf_worker.services
+   repository_service_tuf_worker.services.storage
+   repository_service_tuf_worker.services.keyvault
    modules

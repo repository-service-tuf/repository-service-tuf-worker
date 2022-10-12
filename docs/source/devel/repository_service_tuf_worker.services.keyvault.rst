@@ -1,13 +1,13 @@
-tuf\_repository\_service\_worker.services.keyvault package
+repository\_service\_tuf\_worker.services.keyvault package
 ==========================================================
 
 Submodules
 ----------
 
-tuf\_repository\_service\_worker.services.keyvault.local module
+repository\_service\_tuf\_worker.services.keyvault.local module
 ---------------------------------------------------------------
 
-.. automodule:: tuf_repository_service_worker.services.keyvault.local
+.. automodule:: repository_service_tuf_worker.services.keyvault.local
    :members:
    :undoc-members:
    :show-inheritance:
@@ -15,7 +15,7 @@ tuf\_repository\_service\_worker.services.keyvault.local module
 Module contents
 ---------------
 
-.. automodule:: tuf_repository_service_worker.services.keyvault
+.. automodule:: repository_service_tuf_worker.services.keyvault
    :members:
    :undoc-members:
    :show-inheritance:

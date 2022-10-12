@@ -5,12 +5,12 @@
 from setuptools import find_packages, setup
 
 setup(
-    name="tuf-repository-service-worker",
+    name="repository-service-tuf-worker",
     version="0.0.1",
-    url="https://github.com/kaprien/tuf-repository-service-worker",
+    url="https://github.com/kaprien/repository-service-tuf-worker",
     author="Kairo de Araujo",
     author_email="kairo@dearaujo.nl",
-    description="TUF Repository Service Worker",
+    description="Repository Service for TUF Worker",
     packages=find_packages(),
     install_requires=["celery"],
 )

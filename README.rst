@@ -1,21 +1,21 @@
-#############################
-TUF Repository Service Worker
-#############################
+#################################
+Repository Service for TUF Worker
+#################################
 
 |Test Docker Image build| |Tests and Lint| |Coverage|
 
-.. |Test Docker Image build| image:: https://github.com/kaprien/tuf-repository-service-worker/actions/workflows/test_docker_build.yml/badge.svg
-  :target: https://github.com/kaprien/tuf-repository-service-worker/actions/workflows/test_docker_build.yml
-.. |Tests and Lint| image:: https://github.com/kaprien/tuf-repository-service-worker/actions/workflows/ci.yml/badge.svg
-  :target: https://github.com/kaprien/tuf-repository-service-worker/actions/workflows/ci.yml
-.. |Coverage| image:: https://codecov.io/gh/kaprien/tuf-repository-service-worker/branch/main/graph/badge.svg
-  :target: https://codecov.io/gh/kaprien/tuf-repository-service-worker
+.. |Test Docker Image build| image:: https://github.com/kaprien/repository-service-tuf-worker/actions/workflows/test_docker_build.yml/badge.svg
+  :target: https://github.com/kaprien/repository-service-tuf-worker/actions/workflows/test_docker_build.yml
+.. |Tests and Lint| image:: https://github.com/kaprien/repository-service-tuf-worker/actions/workflows/ci.yml/badge.svg
+  :target: https://github.com/kaprien/repository-service-tuf-worker/actions/workflows/ci.yml
+.. |Coverage| image:: https://codecov.io/gh/kaprien/repository-service-tuf-worker/branch/main/graph/badge.svg
+  :target: https://codecov.io/gh/kaprien/repository-service-tuf-worker
 
 
-TUF Repository Service Worker is part of TUF Repository Service (TRS).
+Repository Service for TUF Worker is part of Repository Service for TUF (RSTUF).
 
-`TUF Repository Service Repository Worker specific documentation
-<https://docs.kaprien.com/tuf-repository-service-worker/>`_
+`Repository Service for TUF Repository Worker specific documentation
+<https://docs.kaprien.com/repository-service-tuf-worker/>`_
 
 
 Development
@@ -33,13 +33,13 @@ Getting source code
 ===================
 
 `Fork <https://docs.github.com/en/get-started/quickstart/fork-a-repo>`_ the
-repository on `GitHub <https://github.com/kaprien/tuf-repository-service-worker>`_ and
+repository on `GitHub <https://github.com/kaprien/repository-service-tuf-worker>`_ and
 `clone <https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository>`_
 it to your local machine:
 
 .. code-block:: console
 
-    git clone git@github.com:YOUR-USERNAME/tuf-repository-service-worker.git
+    git clone git@github.com:YOUR-USERNAME/repository-service-tuf-worker.git
 
 Add a `remote
 <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/configuring-a-remote-for-a-fork>`_ and
@@ -48,7 +48,7 @@ you stay up-to-date with our repository:
 
 .. code-block:: console
 
-    git remote add upstream https://github.com/kaprien/tuf-repository-service-worker
+    git remote add upstream https://github.com/kaprien/repository-service-tuf-worker
     git checkout main
     git fetch upstream
     git merge upstream/main
@@ -93,7 +93,7 @@ Install development requirements
 Github Account Token
 
 For the development environment, you will require a Github Account Token to
-download TUF Repository Service REST API container
+download Repository Service for TUF REST API container
 
 Access the Github page > Settings > Develop Settings > Personal Access tokens >
 Generate new token
@@ -106,7 +106,7 @@ Save the token hash
 .. note::
 
     You can also build locally the
-    `tuf-repository-service-api <https://github.com/kaprien/tuf-repository-service-api>`_
+    `repository-service-tuf-api <https://github.com/kaprien/repository-service-tuf-api>`_
     image and change the `docker-compose.yml` to use the local image.
 
 

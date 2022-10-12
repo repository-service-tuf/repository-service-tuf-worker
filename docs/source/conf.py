@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath("../../"))
 
-from tuf_repository_service_worker.__version__ import (
+from repository_service_tuf_worker.__version__ import (
     author,
     copyright,
     version,
@@ -23,7 +23,7 @@ from tuf_repository_service_worker.__version__ import (
 
 # -- Project information -----------------------------------------------------
 
-project = "TUF Repository Service Worker"
+project = "Repository Service for TUF Worker"
 copyright = copyright
 author = author
 

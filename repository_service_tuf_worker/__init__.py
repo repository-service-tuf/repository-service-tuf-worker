@@ -8,7 +8,7 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.ini")
 
 worker_settings = Dynaconf(
     settings_files=[SETTINGS_FILE],
-    envvar_prefix="TRS",
+    envvar_prefix="RSTUF",
 )
 
 

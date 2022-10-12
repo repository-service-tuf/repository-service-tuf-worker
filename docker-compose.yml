@@ -1,20 +1,20 @@
 version: "3.9"
 
 volumes:
-  tuf-repository-service-mq-data:
-  tuf-repository-service-api-data:
-  tuf-repository-service-storage:
-  tuf-repository-service-keystorage:
-  tuf-repository-service-settings:
-  tuf-repository-service-redis-data:
+  repository-service-tuf-mq-data:
+  repository-service-tuf-api-data:
+  repository-service-tuf-storage:
+  repository-service-tuf-keystorage:
+  repository-service-tuf-settings:
+  repository-service-tuf-redis-data:
 
 services:
   rabbitmq:
     image: rabbitmq:3.10.7-management-alpine
     volumes:
-     - "tuf-repository-service-mq-data:/var/lib/rabbitmq"
-     - "tuf-repository-service-storage:/var/opt/tuf-repository-service/storage"
-     - "tuf-repository-service-keystorage:/var/opt/tuf-repository-service/keystorage"
+     - "repository-service-tuf-mq-data:/var/lib/rabbitmq"
+     - "repository-service-tuf-storage:/var/opt/repository-service-tuf/storage"
+     - "repository-service-tuf-keystorage:/var/opt/repository-service-tuf/keystorage"
     ports:
       - 5672:5672
       - 15672:15672
@@ -22,55 +22,55 @@ services:
       test: "exit 0"
     restart: always
 
-  tuf-repository-service-api:
-    #image: ghcr.io/kaprien/tuf-repository-service-api:dev
-    image: tuf-repository-service-api:dev
+  repository-service-tuf-api:
+    #image: ghcr.io/kaprien/repository-service-tuf-api:dev
+    image: repository-service-tuf-api:dev
     volumes:
-      - tuf-repository-service-api-data:/data
+      - repository-service-tuf-api-data:/data
     ports:
       - 80:80
     environment:
-      - TRS_BOOTSTRAP_NODE=true
-      - TRS_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
-      - TRS_REDIS_SERVER="redis://redis"
-      - SECRETS_TRS_TOKEN_KEY="secret"
-      - SECRETS_TRS_ADMIN_PASSWORD="secret"
+      - RSTUF_BOOTSTRAP_NODE=true
+      - RSTUF_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
+      - RSTUF_REDIS_SERVER="redis://redis"
+      - SECRETS_RSTUF_TOKEN_KEY="secret"
+      - SECRETS_RSTUF_ADMIN_PASSWORD="secret"
     depends_on:
       rabbitmq:
         condition: service_healthy
 
   web:
     image: python:3.10-slim-buster
-    command: python -m http.server -d /var/opt/tuf-repository-service/storage 8080
+    command: python -m http.server -d /var/opt/repository-service-tuf/storage 8080
     volumes:
-      - tuf-repository-service-storage:/var/opt/tuf-repository-service/storage
+      - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
     ports:
       - "8080:8080"
 
   redis:
     image: redis:4.0
     volumes:
-      - tuf-repository-service-redis-data:/data
+      - repository-service-tuf-redis-data:/data
     ports:
       - "6379:6379"
 
-  tuf-repository-service-worker:
+  repository-service-tuf-worker:
     build:
       context: .
-    entrypoint: "watchmedo auto-restart -d /opt/tuf-repository-service-worker -R -p '*.py' -- supervisord -c supervisor-dev.conf"
+    entrypoint: "watchmedo auto-restart -d /opt/repository-service-tuf-worker -R -p '*.py' -- supervisord -c supervisor-dev.conf"
     environment:
       - DATA_DIR=./data
-      - TRS_STORAGE_BACKEND="LocalStorage"
-      - TRS_KEYVAULT_BACKEND="LocalKeyVault"
-      - TRS_LOCAL_STORAGE_BACKEND_PATH="/var/opt/tuf-repository-service/storage"
-      - TRS_LOCAL_KEYVAULT_PATH="/var/opt/tuf-repository-service/keystorage"
-      - TRS_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
-      - TRS_REDIS_SERVER="redis://redis"
-      - TRS_WORKER_ID="dev"
+      - RSTUF_STORAGE_BACKEND="LocalStorage"
+      - RSTUF_KEYVAULT_BACKEND="LocalKeyVault"
+      - RSTUF_LOCAL_STORAGE_BACKEND_PATH="/var/opt/repository-service-tuf/storage"
+      - RSTUF_LOCAL_KEYVAULT_PATH="/var/opt/repository-service-tuf/keystorage"
+      - RSTUF_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
+      - RSTUF_REDIS_SERVER="redis://redis"
+      - RSTUF_WORKER_ID="dev"
     volumes:
-      - ./:/opt/tuf-repository-service-worker:z
-      - tuf-repository-service-storage:/var/opt/tuf-repository-service/storage
-      - tuf-repository-service-keystorage:/var/opt/tuf-repository-service/keystorage
+      - ./:/opt/repository-service-tuf-worker:z
+      - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
+      - repository-service-tuf-keystorage:/var/opt/repository-service-tuf/keystorage
     ports:
       - "6900:6900"
     depends_on:

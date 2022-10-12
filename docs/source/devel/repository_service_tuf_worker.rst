@@ -1,4 +1,4 @@
-tuf\_repository\_service\_worker package
+repository\_service\_tuf\_worker package
 ========================================
 
 Subpackages
@@ -7,23 +7,23 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   tuf_repository_service_worker.services
+   repository_service_tuf_worker.services
 
 Submodules
 ----------
 
-tuf\_repository\_service\_worker.interfaces module
+repository\_service\_tuf\_worker.interfaces module
 --------------------------------------------------
 
-.. automodule:: tuf_repository_service_worker.interfaces
+.. automodule:: repository_service_tuf_worker.interfaces
    :members:
    :undoc-members:
    :show-inheritance:
 
-tuf\_repository\_service\_worker.repository module
+repository\_service\_tuf\_worker.repository module
 --------------------------------------------------
 
-.. automodule:: tuf_repository_service_worker.repository
+.. automodule:: repository_service_tuf_worker.repository
    :members:
    :undoc-members:
    :show-inheritance:
@@ -31,7 +31,7 @@ tuf\_repository\_service\_worker.repository module
 Module contents
 ---------------
 
-.. automodule:: tuf_repository_service_worker
+.. automodule:: repository_service_tuf_worker
    :members:
    :undoc-members:
    :show-inheritance:
