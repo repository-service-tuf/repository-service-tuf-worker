@@ -4,18 +4,18 @@ Repository Service for TUF Worker
 
 |Test Docker Image build| |Tests and Lint| |Coverage|
 
-.. |Test Docker Image build| image:: https://github.com/kaprien/repository-service-tuf-worker/actions/workflows/test_docker_build.yml/badge.svg
-  :target: https://github.com/kaprien/repository-service-tuf-worker/actions/workflows/test_docker_build.yml
-.. |Tests and Lint| image:: https://github.com/kaprien/repository-service-tuf-worker/actions/workflows/ci.yml/badge.svg
-  :target: https://github.com/kaprien/repository-service-tuf-worker/actions/workflows/ci.yml
-.. |Coverage| image:: https://codecov.io/gh/kaprien/repository-service-tuf-worker/branch/main/graph/badge.svg
-  :target: https://codecov.io/gh/kaprien/repository-service-tuf-worker
+.. |Test Docker Image build| image:: https://github.com/vmware/repository-service-tuf-worker/actions/workflows/test_docker_build.yml/badge.svg
+  :target: https://github.com/vmware/repository-service-tuf-worker/actions/workflows/test_docker_build.yml
+.. |Tests and Lint| image:: https://github.com/vmware/repository-service-tuf-worker/actions/workflows/ci.yml/badge.svg
+  :target: https://github.com/vmware/repository-service-tuf-worker/actions/workflows/ci.yml
+.. |Coverage| image:: https://codecov.io/gh/vmware/repository-service-tuf-worker/branch/main/graph/badge.svg
+  :target: https://codecov.io/gh/vmware/repository-service-tuf-worker
 
 
 Repository Service for TUF Worker is part of Repository Service for TUF (RSTUF).
 
 `Repository Service for TUF Repository Worker specific documentation
-<https://docs.kaprien.com/repository-service-tuf-worker/>`_
+<https://docs.vmware.com/repository-service-tuf-worker/>`_
 
 
 Development
@@ -33,7 +33,7 @@ Getting source code
 ===================
 
 `Fork <https://docs.github.com/en/get-started/quickstart/fork-a-repo>`_ the
-repository on `GitHub <https://github.com/kaprien/repository-service-tuf-worker>`_ and
+repository on `GitHub <https://github.com/vmware/repository-service-tuf-worker>`_ and
 `clone <https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository>`_
 it to your local machine:
 
@@ -48,7 +48,7 @@ you stay up-to-date with our repository:
 
 .. code-block:: console
 
-    git remote add upstream https://github.com/kaprien/repository-service-tuf-worker
+    git remote add upstream https://github.com/vmware/repository-service-tuf-worker
     git checkout main
     git fetch upstream
     git merge upstream/main
@@ -106,7 +106,7 @@ Save the token hash
 .. note::
 
     You can also build locally the
-    `repository-service-tuf-api <https://github.com/kaprien/repository-service-tuf-api>`_
+    `repository-service-tuf-api <https://github.com/vmware/repository-service-tuf-api>`_
     image and change the `docker-compose.yml` to use the local image.
 
 
