@@ -7,7 +7,7 @@ from setuptools import find_packages, setup
 setup(
     name="repository-service-tuf-worker",
     version="0.0.1",
-    url="https://github.com/kaprien/repository-service-tuf-worker",
+    url="https://github.com/vmware/repository-service-tuf-worker",
     author="Kairo de Araujo",
     author_email="kairo@dearaujo.nl",
     description="Repository Service for TUF Worker",

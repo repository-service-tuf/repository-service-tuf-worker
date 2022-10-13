@@ -37,7 +37,7 @@ class status(Enum):
 
 redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
 
-# TODO: Issue https://github.com/kaprien/kaprien/issues/6
+# TODO: Issue https://github.com/vmware/vmware/issues/6
 # BROKER_USE_SSL = {
 #     "keyfile": "data/certs/engine_mq.pem",
 #     "certfile": "data/certs/engine_mq.crt",
@@ -54,7 +54,7 @@ app = Celery(
     task_track_started=True,
     broker_heartbeat=0,
     # broker_use_ssl=BROKER_USE_SSL
-    # (https://github.com/kaprien/kaprien/issues/6)
+    # (https://github.com/vmware/vmware/issues/6)
 )
 
 
