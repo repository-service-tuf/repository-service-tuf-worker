@@ -11,7 +11,7 @@ Publisher from the Broker that receives tasks to perform in the
 this Metadata, the ``repository-service-tuf-worker`` uses the *Key Vault Repository
 Service* to access the online keys.
 
-.. uml:: ../../diagrams/repository-service-tuf-worker-C1.puml
+.. image:: /_static/repository-service-tuf-worker-C1.png
 
 
 Container level
@@ -53,4 +53,4 @@ are stored in ``RSTUF_REDIS_SERVER`` to run routine tasks such as bumping
 snapshot and timestamp metadata, etc.
 
 
-.. uml:: ../../diagrams/repository-service-tuf-worker-C2.puml
+.. image:: /_static/repository-service-tuf-worker-C2.png
