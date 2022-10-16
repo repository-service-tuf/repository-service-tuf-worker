@@ -9,7 +9,7 @@ Development
 
 Component level
 ---------------
-.. uml:: ../../diagrams/repository-service-tuf-worker-C3.puml
+.. image:: /_static/repository-service-tuf-worker-C3.png
 
 
 Component Specific
