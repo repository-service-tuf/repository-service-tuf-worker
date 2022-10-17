@@ -1,8 +1,9 @@
 #!/bin/env python3
+
+# SPDX-FileCopyrightText: 2022 VMware Inc
 #
-# Copyright (c) 2022 Kairo de Araujo
-#
-#
+# SPDX-License-Identifier: MIT
+
 import json
 import logging
 from enum import Enum
