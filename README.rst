@@ -2,6 +2,11 @@
 Repository Service for TUF Worker
 #################################
 
+.. note::
+
+  This service is in Experimental stage.
+
+
 |Test Docker Image build| |Tests and Lint| |Coverage|
 
 .. |Test Docker Image build| image:: https://github.com/vmware/repository-service-tuf-worker/actions/workflows/test_docker_build.yml/badge.svg
@@ -12,10 +17,15 @@ Repository Service for TUF Worker
   :target: https://codecov.io/gh/vmware/repository-service-tuf-worker
 
 
-Repository Service for TUF Worker is part of Repository Service for TUF (RSTUF).
+Repository Service for TUF API is part of `Repository Service for TUF
+<https://github.com/vmware/repository-service-tuf>`_.
 
-`Repository Service for TUF Repository Worker specific documentation
-<https://docs.vmware.com/repository-service-tuf-worker/>`_
+
+Usage
+#####
+
+`Repository Service for TUF Repository Worker Docker Image documentation
+<https://repository-service-tuf.readthedocs.io/projects/rstuf-worker/en/latest/guide/Docker_README.html>`_
 
 
 Development
@@ -90,27 +100,11 @@ Install development requirements
         $ LDFLAGS=-L$(brew --prefix libffi)/lib CFLAGS=-I$(brew --prefix libffi)/include pip install cffi cryptography
 
 
-Github Account Token
-
-For the development environment, you will require a Github Account Token to
-download Repository Service for TUF REST API container
-
-Access the Github page > Settings > Develop Settings > Personal Access tokens >
-Generate new token
-
-This token requires only
-``read:packages Download packages from GitHub Package Registry``
-
-Save the token hash
+Runing the development locally
 
 .. note::
 
-    You can also build locally the
-    `repository-service-tuf-api <https://github.com/vmware/repository-service-tuf-api>`_
-    image and change the `docker-compose.yml` to use the local image.
-
-
-Runing the API locally
+  All code changes will reload the Worker container automatically.
 
 .. code:: shell
 
