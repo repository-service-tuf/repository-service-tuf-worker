@@ -19,7 +19,6 @@ import enum
 import importlib
 import logging
 import time
-import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -354,16 +353,6 @@ class MetadataRepository:
                 time.sleep(3)
             else:
                 return None
-
-    def add_initial_metadata(
-        self,
-        payload: Dict[str, Dict[str, Any]],
-        update_state: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        warnings.warn(
-            "Use bootstrap instead add_initial_metadata", DeprecationWarning
-        )
-        return self.bootstrap(payload, update_state)
 
     def bootstrap(
         self,
