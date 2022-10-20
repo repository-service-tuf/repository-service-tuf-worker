@@ -14,7 +14,7 @@ dynaconf = {extras = ["ini"], version = "*"}
 supervisor = "*"
 
 [dev-packages]
-tox = "==3.25.1"
+tox = "==3.26.0"
 flake8 = "==5.0.4"
 coverage = "==6.4.4"
 black = "==22.6.0"
