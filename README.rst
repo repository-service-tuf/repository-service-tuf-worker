@@ -17,7 +17,7 @@ Repository Service for TUF Worker
   :target: https://codecov.io/gh/vmware/repository-service-tuf-worker
 
 
-Repository Service for TUF API is part of `Repository Service for TUF
+Repository Service for TUF Worker is part of `Repository Service for TUF
 <https://github.com/vmware/repository-service-tuf>`_.
 
 
@@ -100,7 +100,7 @@ Install development requirements
         $ LDFLAGS=-L$(brew --prefix libffi)/lib CFLAGS=-I$(brew --prefix libffi)/include pip install cffi cryptography
 
 
-Runing the development locally
+Running the development Worker locally
 
 .. note::
 
