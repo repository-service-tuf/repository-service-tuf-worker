@@ -12,6 +12,7 @@ redis = "*"
 tuf = "==2.0.0"
 dynaconf = {extras = ["ini"], version = "*"}
 supervisor = "*"
+securesystemslib = "==0.23.0"
 
 [dev-packages]
 tox = "==3.25.1"
