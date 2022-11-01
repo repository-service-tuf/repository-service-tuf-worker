@@ -7,7 +7,15 @@ on:
       - v*
 
 jobs:
+  functional-latest:
+    uses: vmware/repository-service-tuf/.github/workflows/functional.yml@main
+    with:
+      worker_version: dev
+      api_version: latest
+      cli_version: latest
+
   release:
+    needs: functional-latest
     runs-on: ubuntu-latest
 
     steps:
@@ -39,8 +47,8 @@ jobs:
       with:
         context: .
         tags: |
-            ghcr.io/vmware/repository-service-tuf-worker:latest
             ghcr.io/vmware/repository-service-tuf-worker:${{ github.ref_name }}
+            ghcr.io/vmware/repository-service-tuf-worker:latest
         outputs: type=docker,dest=/tmp/repository-service-tuf-worker_${{ github.ref_name }}.tar
         cache-to: type=local,dest=/tmp/rstuf_worker_cache
 
@@ -51,8 +59,8 @@ jobs:
         context: .
         push: true
         tags: |
-            ghcr.io/vmware/repository-service-tuf-worker:latest
             ghcr.io/vmware/repository-service-tuf-worker:${{ github.ref_name }}
+            ghcr.io/vmware/repository-service-tuf-worker:latest
         cache-from: type=local,src=/tmp/rstuf_worker_cache
 
     - name: Publish GitHub Release
