@@ -8,7 +8,7 @@ on:
 
 jobs:
   functional-latest:
-    uses: vmware/repository-service-tuf/.github/workflows/functional.yml@simplify_functional
+    uses: vmware/repository-service-tuf/.github/workflows/functional.yml@main
     with:
       worker_version: dev
       api_version: latest
