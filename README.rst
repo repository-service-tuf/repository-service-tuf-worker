@@ -64,7 +64,7 @@ you stay up-to-date with our repository:
     git merge upstream/main
 
 
-Intalling project requirements
+Installing project requirements
 ==============================
 
 This repository has the ``requirements.txt`` and the ``requirements-dev.txt``
@@ -98,6 +98,21 @@ Install development requirements
         $ pip uninstall cryptography cffi -y
         $ pip cache purge
         $ LDFLAGS=-L$(brew --prefix libffi)/lib CFLAGS=-I$(brew --prefix libffi)/include pip install cffi cryptography
+
+
+Running checks with pre-commit:
+
+The pre-commit tool is installed as part of the development requirements.
+
+To automatically run checks before you commit your changes you should run:
+
+.. code:: shell
+
+    $ make precommit
+
+This will install the git hook scripts for the first time, it will update to the
+latest versions of the hooks and run the pre-commit tool.
+Now ``pre-commit`` will run automatically on ``git commit``.
 
 
 Running the development Worker locally
@@ -151,16 +166,3 @@ Updating requirements files from Pipenv
 .. code:: shell
 
   $ make requirements
-
-
-Installing & enabling pre-commit
-================================
-
-The pre-commit tool is installed as part of the development requirements.
-
-To automatically run checks before you commit your changes you should install
-the git hook scripts with **pre-commit**:
-
-.. code:: shell
-
-    $ pre-commit install
