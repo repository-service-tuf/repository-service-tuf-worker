@@ -19,7 +19,7 @@ clean:
 
 purge:
 	$(MAKE) clean
-	docker rmi repository-service-tuf-worker_repository-service-tuf-worker --force
+	docker rmi tuf-repository-service-worker_repository-service-tuf-worker --force
 
 reformat:
 	black -l 79 .
