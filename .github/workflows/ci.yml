@@ -16,6 +16,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8
+
+    - name: Check if any local image is used in docker-compose.yml
+      run: |
+        if [[ "$(egrep -w 'image:\s+repository-service-tuf-api|image:\s+repository-service-tuf-worker' docker-compose.yml -c)" -ne "0" ]]; then echo "Local image has been used in docker-compose.yml" && exit 1; fi
+
     - uses: actions/setup-python@13ae5bb136fac2878aff31522b9efb785519f984
       with:
         python-version: ${{ matrix.python-versions }}
