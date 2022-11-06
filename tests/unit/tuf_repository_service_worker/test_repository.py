@@ -8,7 +8,7 @@ from contextlib import contextmanager
 import pretend
 import pytest
 
-from repository_service_tuf_worker import repository
+from repository_service_tuf_worker import Dynaconf, repository
 
 
 class TestMetadataRepository:
@@ -21,7 +21,7 @@ class TestMetadataRepository:
         test_repo = repository.MetadataRepository.create_service()
         assert isinstance(test_repo, repository.MetadataRepository) is True
 
-    def test_refresh_settings(self):
+    def test_refresh_settings_with_none_arg(self):
         test_repo = repository.MetadataRepository.create_service()
         test_repo.refresh_settings()
 
@@ -30,6 +30,32 @@ class TestMetadataRepository:
             == repository.worker_settings.to_dict()
         )
         assert isinstance(test_repo._settings, repository.Dynaconf) is True
+
+    def test_refresh_settings_with_worker_settings_arg(self):
+        FAKE_SETTINGS_FILE = "/data/mysettings.ini"
+        fake_worker_settings = Dynaconf(
+            settings_files=[FAKE_SETTINGS_FILE],
+            envvar_prefix="RSTUF",
+        )
+
+        test_repo = repository.MetadataRepository.create_service()
+        test_repo.refresh_settings(fake_worker_settings)
+
+        assert (
+            test_repo._worker_settings.to_dict()
+            == fake_worker_settings.to_dict()
+        )
+        assert isinstance(test_repo._settings, repository.Dynaconf) is True
+
+    def test_refresh_settings_with_invalid_storage_backend(self):
+        fake_worker_settings = pretend.stub(
+            STORAGE_BACKEND="INVALID_STORAGE_BACKEND"
+        )
+
+        test_repo = repository.MetadataRepository.create_service()
+
+        with pytest.raises(ValueError):
+            test_repo.refresh_settings(fake_worker_settings)
 
     def test__load(self):
         test_repo = repository.MetadataRepository.create_service()

@@ -13,7 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from abc import ABC
+
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from io import TextIOBase
 from typing import Any, Dict, List
@@ -36,53 +37,61 @@ class ServiceSettings:
 
 class IKeyVault(ABC):
     @classmethod
+    @abstractmethod
     def configure(cls, settings):
         """
         Run actions to test, configure using the settings.
         """
-        raise NotImplementedError
+        pass  # pragma: no cover
 
     @classmethod
+    @abstractmethod
     def settings(cls):
         """
         Define all the ServiceSettings required in settings.
         """
-        raise NotImplementedError
+        pass  # pragma: no cover
 
+    @abstractmethod
     def get(self, rolename: List[str]) -> Dict[str, Any]:
         """Return a key from specific rolename."""
-        raise NotImplementedError
+        pass  # pragma: no cover
 
+    @abstractmethod
     def put(self, file_object: str, filename: str) -> None:
         """
         Stores file object with a specific filename.
         """
-        raise NotImplementedError
+        pass  # pragma: no cover
 
 
 class IStorage(StorageBackendInterface):
     @classmethod
+    @abstractmethod
     def configure(cls, settings: Any):
         """
         Run actions to test, configure using the settings.
         """
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     @classmethod
+    @abstractmethod
     def settings(cls) -> List[ServiceSettings]:
         """
         Define all the ServiceSettings required in settings.
         """
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
+    @abstractmethod
     def get(self, rolename: str, version: int) -> "Metadata[T]":
         """
         Return metadata from specific role name, optionally specific version.
         """
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
+    @abstractmethod
     def put(self, file_object: TextIOBase, filename: str) -> None:
         """
         Stores file object with a specific filename.
         """
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
