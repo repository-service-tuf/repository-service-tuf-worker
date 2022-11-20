@@ -32,9 +32,9 @@ class TestMetadataRepository:
         assert isinstance(test_repo._settings, repository.Dynaconf) is True
 
     def test_refresh_settings_with_worker_settings_arg(self):
-        FAKE_SETTINGS_FILE = "/data/mysettings.ini"
+        FAKE_SETTINGS_FILE_PATH = "/data/mysettings.ini"
         fake_worker_settings = Dynaconf(
-            settings_files=[FAKE_SETTINGS_FILE],
+            settings_files=[FAKE_SETTINGS_FILE_PATH],
             envvar_prefix="RSTUF",
         )
 
