@@ -366,8 +366,6 @@ class MetadataRepository:
         to the Storage Backend.
         """
         # the update_state is not used for bootstrap
-        if update_state:
-            pass
 
         # Store online keys to the Key Vault
         if settings := payload.get("settings"):

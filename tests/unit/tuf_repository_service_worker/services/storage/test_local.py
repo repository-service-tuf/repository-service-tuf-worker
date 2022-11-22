@@ -42,12 +42,12 @@ class TestLocalStorageService:
         service = local.LocalStorage("/path")
 
         local.glob = pretend.stub(
-            glob=pretend.call_recorder(lambda *a: ["1.root.json"])
+            glob=pretend.call_recorder(lambda *a: ["2.root.json"])
         )
         local.os = pretend.stub(
             path=pretend.stub(
                 join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/1.root.json"
+                    lambda *a, **kw: "/path/2.root.json"
                 )
             )
         )
@@ -65,10 +65,10 @@ class TestLocalStorageService:
         assert result == fake_file_object.read()
         assert fake_file_object.close.calls == [pretend.call()]
         assert fake_file_object.read.calls == [pretend.call(), pretend.call()]
-        assert local.glob.glob.calls == [pretend.call("/path/1.root.json")]
+        assert local.glob.glob.calls == [pretend.call("/path/2.root.json")]
         assert local.os.path.join.calls == [
             pretend.call(service._path, "*.root.json"),
-            pretend.call(service._path, "1.root.json"),
+            pretend.call(service._path, "2.root.json"),
         ]
 
     def test_get_timestamp(self, monkeypatch):
@@ -77,7 +77,7 @@ class TestLocalStorageService:
         local.os = pretend.stub(
             path=pretend.stub(
                 join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/1.root.json"
+                    lambda *a, **kw: "/path/2.root.json"
                 )
             )
         )
@@ -116,6 +116,9 @@ class TestLocalStorageService:
             read=pretend.call_recorder(lambda: b"fake_root_data"),
         )
         monkeypatch.setitem(
+            local.__builtins__, "max", pretend.raiser(ValueError)
+        )
+        monkeypatch.setitem(
             local.__builtins__, "open", lambda *a, **kw: fake_file_object
         )
 
@@ -134,12 +137,12 @@ class TestLocalStorageService:
     def test_get_OSError(self, monkeypatch):
         service = local.LocalStorage("/path")
         local.glob = pretend.stub(
-            glob=pretend.call_recorder(lambda *a: ["1.root.json"])
+            glob=pretend.call_recorder(lambda *a: ["2.root.json"])
         )
         local.os = pretend.stub(
             path=pretend.stub(
                 join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/1.root.json"
+                    lambda *a, **kw: "/path/2.root.json"
                 )
             )
         )
@@ -163,9 +166,9 @@ class TestLocalStorageService:
         assert fake_file_object.read.calls == []
         assert local.os.path.join.calls == [
             pretend.call(service._path, "*.root.json"),
-            pretend.call(service._path, "1.root.json"),
+            pretend.call(service._path, "2.root.json"),
         ]
-        assert local.glob.glob.calls == [pretend.call("/path/1.root.json")]
+        assert local.glob.glob.calls == [pretend.call("/path/2.root.json")]
 
     def test_put(self, monkeypatch):
         service = local.LocalStorage("/path")
