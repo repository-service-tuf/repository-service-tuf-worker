@@ -8,6 +8,9 @@ run-dev:
 	docker pull ghcr.io/vmware/repository-service-tuf-api:dev
 	docker-compose up --remove-orphans
 
+db-migration:
+	if [ -z "$(M)" ]; then echo "Use: make db-migration M=\'message here\'"; exit 1; fi
+	docker-compose run --rm --entrypoint='alembic revision --autogenerate -m "$(M)"' repository-service-tuf-worker
 
 stop:
 	docker-compose down -v

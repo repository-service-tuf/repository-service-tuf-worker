@@ -65,7 +65,7 @@ you stay up-to-date with our repository:
 
 
 Installing project requirements
-==============================
+===============================
 
 This repository has the ``requirements.txt`` and the ``requirements-dev.txt``
 files to help build your virtual environment.
@@ -99,8 +99,18 @@ Install development requirements
         $ pip cache purge
         $ LDFLAGS=-L$(brew --prefix libffi)/lib CFLAGS=-I$(brew --prefix libffi)/include pip install cffi cryptography
 
+Database migrations
+===================
+
+Changing database model requires to generate a database migrations with Alembic.
+
+.. code:: shell
+
+  $ make db-migration M="update message"
+
 
 Running checks with pre-commit:
+===============================
 
 The pre-commit tool is installed as part of the development requirements.
 
