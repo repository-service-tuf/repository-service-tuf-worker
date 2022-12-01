@@ -5,7 +5,7 @@ build-dev:
 
 run-dev:
 	$(MAKE) build-dev
-	# docker pull ghcr.io/vmware/repository-service-tuf-api:dev
+	docker pull ghcr.io/vmware/repository-service-tuf-api:dev
 	docker-compose up --remove-orphans
 
 
