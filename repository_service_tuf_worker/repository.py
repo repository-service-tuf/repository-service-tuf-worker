@@ -79,6 +79,7 @@ SPEC_VERSION: str = ".".join(SPECIFICATION_VERSION)
 class ResultDetails:
     status: str
     details: Optional[Dict[str, Any]]
+    last_update: datetime
 
 
 class MetadataRepository:
@@ -335,6 +336,7 @@ class MetadataRepository:
                 meta={
                     "unpublished_roles": unpublised_roles,
                     "status": "Publishing",
+                    "last_update": datetime.now(),
                 },
             )
 
@@ -391,6 +393,7 @@ class MetadataRepository:
             details={
                 "bootstrap": True,
             },
+            last_update=datetime.now(),
         )
 
         return asdict(result)
@@ -447,6 +450,7 @@ class MetadataRepository:
                 "targets": [target.get("path") for target in targets],
                 "target_roles": [t_role for t_role in bin_target_groups],
             },
+            last_update=datetime.now(),
         )
         logging.debug(f"Added targets. {result}")
         return asdict(result)
@@ -507,6 +511,7 @@ class MetadataRepository:
                 "deleted_targets": deleted_targets,
                 "not_found_targets": not_found_targets,
             },
+            last_update=datetime.now(),
         )
 
         logging.debug(f"Delete targets. {result}")

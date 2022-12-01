@@ -23,7 +23,7 @@ services:
     restart: always
 
   repository-service-tuf-api:
-    image: ghcr.io/vmware/repository-service-tuf-api:dev
+    image: repository-service-tuf-api:dev
     volumes:
       - repository-service-tuf-api-data:/data
     ports:

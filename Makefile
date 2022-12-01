@@ -5,7 +5,7 @@ build-dev:
 
 run-dev:
 	$(MAKE) build-dev
-	docker pull ghcr.io/vmware/repository-service-tuf-api:dev
+	# docker pull ghcr.io/vmware/repository-service-tuf-api:dev
 	docker-compose up --remove-orphans
 
 
@@ -19,7 +19,7 @@ clean:
 
 purge:
 	$(MAKE) clean
-	docker rmi tuf-repository-service-worker_repository-service-tuf-worker --force
+	docker rmi repository-service-tuf-worker_repository-service-tuf-worker --force
 
 reformat:
 	black -l 79 .
