@@ -333,7 +333,7 @@ class TestMetadataRepository:
             pretend.call("unpublished_metas", "bin-e, bin-2")
         ]
 
-    def test__publish_meta_state(self):
+    def test__publish_meta_state(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
         fake_snapshot = pretend.stub(
@@ -348,6 +348,14 @@ class TestMetadataRepository:
         test_repo._load = pretend.call_recorder(lambda *a: fake_snapshot)
 
         fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
         result = test_repo._publish_meta_state(
             [("bin-e", 1), ("bin-a", 5)], fake_update_state
         )
@@ -362,11 +370,12 @@ class TestMetadataRepository:
                 meta={
                     "unpublished_roles": ["bin-a version 5"],
                     "status": "Publishing",
+                    "last_update": fake_time,
                 },
             )
         ]
 
-    def test_bootstrap(self):
+    def test_bootstrap(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
         test_repo.store_online_keys = pretend.call_recorder(lambda *s: None)
@@ -380,6 +389,14 @@ class TestMetadataRepository:
         repository.JSONSerializer = pretend.call_recorder(lambda: None)
         test_repo._storage_backend = pretend.stub()
 
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
         payload = {
             "settings": {"k": "v"},
             "metadata": {
@@ -391,6 +408,7 @@ class TestMetadataRepository:
         result = test_repo.bootstrap(payload)
         assert result == {
             "details": {"bootstrap": True},
+            "last_update": fake_time,
             "status": "Task finished.",
         }
         assert test_repo.store_online_keys.calls == [pretend.call({"k": "v"})]
@@ -402,6 +420,7 @@ class TestMetadataRepository:
             pretend.call(),
             pretend.call(),
         ]
+        assert fake_datetime.now.calls == [pretend.call()]
         assert fake_metadata.to_file.calls == [
             pretend.call(
                 "1.root.json",
@@ -443,7 +462,7 @@ class TestMetadataRepository:
 
         assert "No metadata in the payload" in str(err)
 
-    def test_add_targets(self):
+    def test_add_targets(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
         @contextmanager
@@ -470,6 +489,14 @@ class TestMetadataRepository:
         )
         test_repo._publish_meta_state = pretend.call_recorder(lambda *a: None)
 
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
         payload = {
             "targets": [
                 {
@@ -492,6 +519,7 @@ class TestMetadataRepository:
                 "target_roles": ["bin-e"],
                 "targets": ["file1.tar.gz"],
             },
+            "last_update": fake_time,
             "status": "Task finished.",
         }
         assert test_repo._get_path_succinct_role.calls == [
@@ -515,6 +543,7 @@ class TestMetadataRepository:
         assert test_repo._publish_meta_state.calls == [
             pretend.call([("bin-e", 41)], fake_ue)
         ]
+        assert fake_datetime.now.calls == [pretend.call()]
 
     def test_add_targets_without_targets(self):
         test_repo = repository.MetadataRepository.create_service()
@@ -539,7 +568,7 @@ class TestMetadataRepository:
 
         assert "No targets in the payload" in str(err)
 
-    def test_remove_targets(self):
+    def test_remove_targets(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
         @contextmanager
@@ -569,6 +598,13 @@ class TestMetadataRepository:
             lambda *a: None
         )
         test_repo._publish_meta_state = pretend.call_recorder(lambda *a: None)
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
         payload = {
             "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"]
         }
@@ -577,6 +613,7 @@ class TestMetadataRepository:
 
         assert result == {
             "status": "Task finished.",
+            "last_update": fake_time,
             "details": {
                 "deleted_targets": ["file1.tar.gz"],
                 "not_found_targets": ["file2.tar.gz", "release-v0.1.0.yaml"],
@@ -606,7 +643,7 @@ class TestMetadataRepository:
             pretend.call([("bin-e", 4)], fake_ue)
         ]
 
-    def test_remove_targets_all_not_found(self):
+    def test_remove_targets_all_not_found(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
         @contextmanager
@@ -628,7 +665,13 @@ class TestMetadataRepository:
         )
 
         test_repo._load = pretend.call_recorder(lambda r: fake_bins)
-
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
         payload = {
             "targets": ["file2.tar.gz", "file3.tar.gz", "release-v0.1.0.yaml"]
         }
@@ -637,6 +680,7 @@ class TestMetadataRepository:
 
         assert result == {
             "status": "Task finished.",
+            "last_update": fake_time,
             "details": {
                 "deleted_targets": [],
                 "not_found_targets": [
@@ -657,6 +701,7 @@ class TestMetadataRepository:
         assert test_repo._redis.lock.calls == [
             pretend.call("TUF_BINS_HASHED"),
         ]
+        assert fake_datetime.now.calls == [pretend.call()]
 
     def test_remove_targets_without_targets(self):
         test_repo = repository.MetadataRepository.create_service()
