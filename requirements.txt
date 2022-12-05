@@ -15,13 +15,11 @@ cryptography==38.0.4
 dynaconf[ini]==3.1.11
 idna==3.4 ; python_version >= '3.5'
 kombu==5.2.4 ; python_version >= '3.7'
-packaging==21.3 ; python_version >= '3.6'
 prompt-toolkit==3.0.33 ; python_full_version >= '3.6.2'
 pycparser==2.21
 pynacl==1.5.0
-pyparsing==3.0.9 ; python_full_version >= '3.6.8'
 pytz==2022.6
-redis==4.3.5
+redis==4.4.0
 requests==2.28.1 ; python_version >= '3.7' and python_version < '4'
 securesystemslib==0.23.0
 setuptools==65.6.3 ; python_version >= '3.7'
