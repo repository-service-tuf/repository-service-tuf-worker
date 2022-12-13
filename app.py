@@ -76,7 +76,6 @@ def repository_service_tuf_worker(
     """
     repository.refresh_settings(worker_settings)
     repository_action = getattr(repository, action)
-
     if payload is None:
         result = repository_action()
     else:
@@ -138,14 +137,14 @@ app.conf.beat_schedule = {
             "acks_late": True,
         },
     },
-    "publish_targets_meta": {
+    "publish_targets": {
         "task": "app.repository_service_tuf_worker",
         "schedule": schedules.crontab(minute="*/1"),
         "kwargs": {
-            "action": "publish_targets_meta",
+            "action": "publish_targets",
         },
         "options": {
-            "task_id": "publish_targets_meta",
+            "task_id": "publish_targets",
             "queue": "rstuf_internals",
             "acks_late": True,
         },

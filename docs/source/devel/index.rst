@@ -181,6 +181,8 @@ Implementation
    :maxdepth: 3
 
    repository_service_tuf_worker
+   repository_service_tuf_worker.models
+   repository_service_tuf_worker.models.targets
    repository_service_tuf_worker.services
    repository_service_tuf_worker.services.storage
    repository_service_tuf_worker.services.keyvault

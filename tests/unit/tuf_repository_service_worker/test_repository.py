@@ -9,6 +9,7 @@ import pretend
 import pytest
 
 from repository_service_tuf_worker import Dynaconf, repository
+from repository_service_tuf_worker.models import targets_schema
 
 
 class TestMetadataRepository:
@@ -211,6 +212,57 @@ class TestMetadataRepository:
             pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
         ]
 
+    def test__update_timestamp_with_db_targets(self, monkeypatch):
+        test_repo = repository.MetadataRepository.create_service()
+
+        snapshot_version = 3
+        fake_metafile = pretend.call_recorder(
+            lambda *a, **kw: snapshot_version
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.MetaFile", fake_metafile
+        )
+
+        mocked_timestamp = pretend.stub(signed=pretend.stub(snapshot_meta=2))
+        test_repo._load = pretend.call_recorder(lambda *a: mocked_timestamp)
+        test_repo._bump_version = pretend.call_recorder(lambda *a: None)
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        mocked_crud_update_to_publish = pretend.call_recorder(lambda *a: None)
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_to_published",
+            mocked_crud_update_to_publish,
+        )
+        faked_db_target = pretend.stub()
+
+        result = test_repo._update_timestamp(
+            snapshot_version, [faked_db_target]
+        )
+
+        assert result == mocked_timestamp
+        assert mocked_timestamp.signed.snapshot_meta == snapshot_version
+        assert test_repo._load.calls == [
+            pretend.call(repository.Roles.TIMESTAMP.value)
+        ]
+        assert test_repo._bump_version.calls == [
+            pretend.call(mocked_timestamp)
+        ]
+        assert test_repo._bump_expiry.calls == [
+            pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
+        ]
+        assert test_repo._sign.calls == [
+            pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
+        ]
+        assert mocked_crud_update_to_publish.calls == [
+            pretend.call(test_repo._db, faked_db_target)
+        ]
+
     def test__update_snapshot(self):
         test_repo = repository.MetadataRepository.create_service()
 
@@ -269,84 +321,18 @@ class TestMetadataRepository:
             == [pretend.call("v0.0.1/test_path.tar.gz")]
         )
 
-    def test__add_to_unpublished_metas(self):
+    def test__update_task(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
-        @contextmanager
-        def mocked_lock(lock):
-            yield lock
-
-        test_repo._redis = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock),
-            exists=pretend.call_recorder(lambda *a: True),
-            get=pretend.call_recorder(lambda *a: b"bins-a, bins-b"),
-            append=pretend.call_recorder(lambda *a: None),
+        test_repo._db = pretend.stub(
+            refresh=pretend.call_recorder(lambda *a: None)
         )
 
-        result = test_repo._add_to_unpublished_metas(
-            [("bin-e", 3), ("bin-2", 6)]
-        )
-
-        assert result is None
-
-        assert test_repo._redis.exists.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._redis.get.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._redis.append.calls == [
-            pretend.call("unpublished_metas", ", bin-e"),
-            pretend.call("unpublished_metas", ", bin-2"),
-        ]
-
-    def test__add_to_unpublished_metas_empty(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        result = test_repo._add_to_unpublished_metas([])
-
-        assert result is None
-
-    def test__add_to_unpublished_metas_empty_unpublished_metas(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        @contextmanager
-        def mocked_lock(lock):
-            yield lock
-
-        test_repo._redis = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock),
-            exists=pretend.call_recorder(lambda *a: False),
-            set=pretend.call_recorder(lambda *a: None),
-        )
-
-        result = test_repo._add_to_unpublished_metas(
-            [("bin-e", 3), ("bin-2", 6)]
-        )
-
-        assert result is None
-
-        assert test_repo._redis.exists.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._redis.set.calls == [
-            pretend.call("unpublished_metas", "bin-e, bin-2")
-        ]
-
-    def test__publish_meta_state(self, monkeypatch):
-        test_repo = repository.MetadataRepository.create_service()
-
-        fake_snapshot = pretend.stub(
-            signed=pretend.stub(
-                meta={
-                    "bin-e.json": pretend.stub(version=1),
-                    "bin-a.json": pretend.stub(version=5),
-                }
-            )
-        )
-
-        test_repo._load = pretend.call_recorder(lambda *a: fake_snapshot)
-
+        fake_target = pretend.stub(published=True)
+        fake_bin_targets = {
+            "bin-e": [fake_target],
+            "bin-f": [fake_target, fake_target],
+        }
         fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
@@ -355,20 +341,20 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
+        result = test_repo._update_task(fake_bin_targets, fake_update_state)
 
-        result = test_repo._publish_meta_state(
-            [("bin-e", 1), ("bin-a", 5)], fake_update_state
-        )
         assert result is None
-        assert test_repo._load.calls == [
-            pretend.call("snapshot"),
-            pretend.call("snapshot"),
+        assert test_repo._db.refresh.calls == [
+            pretend.call(fake_target),
+            pretend.call(fake_target),
+            pretend.call(fake_target),
         ]
         assert fake_update_state.calls == [
             pretend.call(
                 state="RUNNING",
                 meta={
-                    "unpublished_roles": ["bin-a version 5"],
+                    "published_roles": ["bin-e"],
+                    "roles_to_publish": "['bin-e', 'bin-f']",
                     "status": "Publishing",
                     "last_update": fake_time,
                 },
@@ -380,11 +366,9 @@ class TestMetadataRepository:
 
         test_repo.store_online_keys = pretend.call_recorder(lambda *s: None)
 
-        fake_metadata = pretend.stub(
-            to_file=pretend.call_recorder(lambda *a: None)
-        )
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
         repository.Metadata = pretend.stub(
-            from_dict=pretend.call_recorder(lambda *a: fake_metadata)
+            from_dict=pretend.call_recorder(lambda *a: "fake_metadata")
         )
         repository.JSONSerializer = pretend.call_recorder(lambda: None)
         test_repo._storage_backend = pretend.stub()
@@ -416,22 +400,10 @@ class TestMetadataRepository:
             pretend.call({"md_k1": "md_v1"}),
             pretend.call({"md_k2": "md_v2"}),
         ]
-        assert repository.JSONSerializer.calls == [
-            pretend.call(),
-            pretend.call(),
-        ]
         assert fake_datetime.now.calls == [pretend.call()]
-        assert fake_metadata.to_file.calls == [
-            pretend.call(
-                "1.root.json",
-                repository.JSONSerializer(),
-                test_repo._storage_backend,
-            ),
-            pretend.call(
-                "1.snapshot.json",
-                repository.JSONSerializer(),
-                test_repo._storage_backend,
-            ),
+        assert test_repo._persist.calls == [
+            pretend.call("fake_metadata", "1.root"),
+            pretend.call("fake_metadata", "1.snapshot"),
         ]
 
     def test_bootstrap_missing_settings(self):
@@ -462,33 +434,169 @@ class TestMetadataRepository:
 
         assert "No metadata in the payload" in str(err)
 
-    def test_add_targets(self, monkeypatch):
+    def test_publish_targets(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
         @contextmanager
-        def mocked_lock(lock):
-            yield lock
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
 
+        test_repo._db = pretend.stub()
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock),
         )
+
+        fake_crud_read_unpublished_rolenames = pretend.call_recorder(
+            lambda *a: [(False, "bins-0"), (False, "bins-e")]
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_unpublished_rolenames",
+            fake_crud_read_unpublished_rolenames,
+        )
+        fake_db_targets = pretend.stub()
+        fake_crud_read_unpublished_by_rolename = pretend.call_recorder(
+            lambda **kw: [fake_db_targets, fake_db_targets]
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_unpublished_by_rolename",
+            fake_crud_read_unpublished_by_rolename,
+        )
+        monkeypatch.setattr(
+            repository.TargetFile, "from_dict", lambda *a: {"k": "v"}
+        )
+        fake_crud_read_all_add_by_rolename = pretend.call_recorder(
+            lambda *a: [
+                ("file1", {"info": {"k": "v"}}),
+                ("file2", {"info": {"k": "v"}}),
+            ],
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_all_add_by_rolename",
+            fake_crud_read_all_add_by_rolename,
+        )
+        fake_md_target = pretend.stub(
+            signed=pretend.stub(
+                targets={"old_key": {"old_meta": {"old_meta"}}},
+                version=42,
+            ),
+        )
+        test_repo._load = pretend.call_recorder(lambda r: fake_md_target)
+        test_repo._bump_version = pretend.call_recorder(lambda *a: None)
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda *a: "fake_md_snapshot"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
+
+        test_result = test_repo.publish_targets()
+
+        assert test_result is None
+        assert test_repo._redis.lock.calls == [
+            pretend.call("publish_targets", timeout=5.0)
+        ]
+        assert fake_crud_read_unpublished_rolenames.calls == [
+            pretend.call(test_repo._db)
+        ]
+        assert fake_crud_read_unpublished_by_rolename.calls == [
+            pretend.call(db=test_repo._db, rolename="bins-0"),
+            pretend.call(db=test_repo._db, rolename="bins-e"),
+        ]
+        assert fake_crud_read_all_add_by_rolename.calls == [
+            pretend.call(test_repo._db, "bins-0"),
+            pretend.call(test_repo._db, "bins-e"),
+        ]
+        assert test_repo._load.calls == [
+            pretend.call("bins-0"),
+            pretend.call("bins-e"),
+        ]
+        assert test_repo._bump_expiry.calls == [
+            pretend.call(fake_md_target, "bins"),
+            pretend.call(fake_md_target, "bins"),
+        ]
+        assert test_repo._sign.calls == [
+            pretend.call(fake_md_target, "bins"),
+            pretend.call(fake_md_target, "bins"),
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(fake_md_target, "bins-0"),
+            pretend.call(fake_md_target, "bins-e"),
+        ]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call([("bins-0", 42), ("bins-e", 42)])
+        ]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call(
+                "fake_md_snapshot",
+                [
+                    fake_db_targets,
+                    fake_db_targets,
+                    fake_db_targets,
+                    fake_db_targets,
+                ],
+            )
+        ]
+
+    def test_publish_targets_without_targets_to_publish(self, monkeypatch):
+        test_repo = repository.MetadataRepository.create_service()
+
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
+
+        test_repo._db = pretend.stub()
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+
+        fake_crud_read_unpublished_rolenames = pretend.call_recorder(
+            lambda *a: []
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_unpublished_rolenames",
+            fake_crud_read_unpublished_rolenames,
+        )
+
+        test_result = test_repo.publish_targets()
+
+        assert test_result is None
+        assert test_repo._redis.lock.calls == [
+            pretend.call("publish_targets", timeout=5.0)
+        ]
+        assert fake_crud_read_unpublished_rolenames.calls == [
+            pretend.call(test_repo._db)
+        ]
+
+    def test_add_targets(self, monkeypatch):
+        test_repo = repository.MetadataRepository.create_service()
 
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
 
-        fake_bins = pretend.stub(signed=pretend.stub(targets={}, version=41))
+        def fake_target(key):
+            if key == "path":
+                return "fake_target1.tar.gz"
+            if key == "info":
+                return {"k": "v"}
 
-        test_repo._load = pretend.call_recorder(lambda r: fake_bins)
-        test_repo._bump_version = pretend.call_recorder(lambda *a: None)
-        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
-        test_repo._sign = pretend.call_recorder(lambda *a: None)
-        test_repo._persist = pretend.call_recorder(lambda *a: None)
-        test_repo._add_to_unpublished_metas = pretend.call_recorder(
-            lambda *a: None
+        fake_db_target = pretend.stub(get=pretend.call_recorder(fake_target))
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_by_path",
+            lambda *a: None,
         )
-        test_repo._publish_meta_state = pretend.call_recorder(lambda *a: None)
-
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "create",
+            lambda *a, **kw: fake_db_target,
+        )
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
             now=pretend.call_recorder(lambda: fake_time)
@@ -496,6 +604,10 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
+        test_repo._send_publish_targets_task = pretend.call_recorder(
+            lambda: None
+        )
+        test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
         payload = {
             "targets": [
@@ -511,6 +623,7 @@ class TestMetadataRepository:
                 },
             ]
         }
+
         fake_ue = pretend.stub()
         result = test_repo.add_targets(payload, update_state=fake_ue)
 
@@ -525,23 +638,81 @@ class TestMetadataRepository:
         assert test_repo._get_path_succinct_role.calls == [
             pretend.call("file1.tar.gz")
         ]
-        assert test_repo._load.calls == [
-            pretend.call("bin-e"),
+        assert test_repo._send_publish_targets_task.calls == [pretend.call()]
+        assert test_repo._update_task.calls == [
+            pretend.call({"bin-e": [fake_db_target]}, fake_ue)
         ]
-        assert test_repo._bump_version.calls == [pretend.call(fake_bins)]
-        assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_BINS_HASHED"),
+        assert fake_datetime.now.calls == [pretend.call()]
+
+    def test_add_targets_exists(self, monkeypatch):
+        test_repo = repository.MetadataRepository.create_service()
+
+        test_repo._get_path_succinct_role = pretend.call_recorder(
+            lambda *a: "bin-e"
+        )
+
+        def fake_target(key):
+            if key == "path":
+                return "fake_target1.tar.gz"
+            if key == "info":
+                return {"k": "v"}
+
+        fake_db_target = pretend.stub(get=pretend.call_recorder(fake_target))
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_by_path",
+            lambda *a: fake_db_target,
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update",
+            lambda *a, **kw: fake_db_target,
+        )
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+        test_repo._send_publish_targets_task = pretend.call_recorder(
+            lambda: None
+        )
+        test_repo._update_task = pretend.call_recorder(lambda *a: None)
+
+        payload = {
+            "targets": [
+                {
+                    "info": {
+                        "length": 11342,
+                        "hashes": {
+                            "blake2b-256": "716f6e863f744b9ac22c97ec7b76ea5"
+                        },
+                        "custom": {"task_id": "12345"},
+                    },
+                    "path": "file1.tar.gz",
+                },
+            ]
+        }
+
+        fake_ue = pretend.stub()
+        result = test_repo.add_targets(payload, update_state=fake_ue)
+
+        assert result == {
+            "details": {
+                "target_roles": ["bin-e"],
+                "targets": ["file1.tar.gz"],
+            },
+            "last_update": fake_time,
+            "status": "Task finished.",
+        }
+        assert test_repo._get_path_succinct_role.calls == [
+            pretend.call("file1.tar.gz")
         ]
-        assert test_repo._bump_expiry.calls == [
-            pretend.call(fake_bins, "bins")
-        ]
-        assert test_repo._sign.calls == [pretend.call(fake_bins, "bins")]
-        assert test_repo._persist.calls == [pretend.call(fake_bins, "bin-e")]
-        assert test_repo._add_to_unpublished_metas.calls == [
-            pretend.call([("bin-e", 41)])
-        ]
-        assert test_repo._publish_meta_state.calls == [
-            pretend.call([("bin-e", 41)], fake_ue)
+        assert test_repo._send_publish_targets_task.calls == [pretend.call()]
+        assert test_repo._update_task.calls == [
+            pretend.call({"bin-e": [fake_db_target]}, fake_ue)
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
@@ -571,33 +742,21 @@ class TestMetadataRepository:
     def test_remove_targets(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
-        @contextmanager
-        def mocked_lock(lock):
-            yield lock
-
-        test_repo._redis = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock),
-        )
-
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
-
-        fake_bins = pretend.stub(
-            signed=pretend.stub(
-                targets={"file1.tar.gz": "TargetFileObject"}, version=4
-            )
+        fake_db_target = pretend.stub(action="REMOVE", published=False)
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_by_path",
+            lambda *a: fake_db_target,
         )
-
-        test_repo._load = pretend.call_recorder(lambda r: fake_bins)
-        test_repo._bump_version = pretend.call_recorder(lambda *a: None)
-        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
-        test_repo._sign = pretend.call_recorder(lambda *a: None)
-        test_repo._persist = pretend.call_recorder(lambda *a: None)
-        test_repo._add_to_unpublished_metas = pretend.call_recorder(
-            lambda *a: None
+        fake_db_target_removed = pretend.stub()
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_action_remove",
+            lambda *a: fake_db_target_removed,
         )
-        test_repo._publish_meta_state = pretend.call_recorder(lambda *a: None)
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
             now=pretend.call_recorder(lambda: fake_time)
@@ -605,9 +764,15 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
+
         payload = {
             "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"]
         }
+        test_repo._send_publish_targets_task = pretend.call_recorder(
+            lambda: None
+        )
+        test_repo._update_task = pretend.call_recorder(lambda *a: None)
+
         fake_ue = pretend.stub()
         result = test_repo.remove_targets(payload, update_state=fake_ue)
 
@@ -615,8 +780,12 @@ class TestMetadataRepository:
             "status": "Task finished.",
             "last_update": fake_time,
             "details": {
-                "deleted_targets": ["file1.tar.gz"],
-                "not_found_targets": ["file2.tar.gz", "release-v0.1.0.yaml"],
+                "deleted_targets": [
+                    "file1.tar.gz",
+                    "file2.tar.gz",
+                    "release-v0.1.0.yaml",
+                ],
+                "not_found_targets": [],
             },
         }
         assert test_repo._get_path_succinct_role.calls == [
@@ -624,47 +793,33 @@ class TestMetadataRepository:
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
         ]
-        assert test_repo._load.calls == [
-            pretend.call("bin-e"),
+        assert test_repo._send_publish_targets_task.calls == [pretend.call()]
+        assert test_repo._update_task.calls == [
+            pretend.call(
+                {
+                    "bin-e": [
+                        fake_db_target_removed,
+                        fake_db_target_removed,
+                        fake_db_target_removed,
+                    ]
+                },
+                fake_ue,
+            )
         ]
-        assert test_repo._bump_version.calls == [pretend.call(fake_bins)]
-        assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_BINS_HASHED"),
-        ]
-        assert test_repo._bump_expiry.calls == [
-            pretend.call(fake_bins, "bins")
-        ]
-        assert test_repo._sign.calls == [pretend.call(fake_bins, "bins")]
-        assert test_repo._persist.calls == [pretend.call(fake_bins, "bin-e")]
-        assert test_repo._add_to_unpublished_metas.calls == [
-            pretend.call([("bin-e", 4)])
-        ]
-        assert test_repo._publish_meta_state.calls == [
-            pretend.call([("bin-e", 4)], fake_ue)
-        ]
+        assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_remove_targets_all_not_found(self, monkeypatch):
+    def test_remove_targets_all_none(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
-
-        @contextmanager
-        def mocked_lock(lock):
-            yield lock
-
-        test_repo._redis = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock),
-        )
 
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
 
-        fake_bins = pretend.stub(
-            signed=pretend.stub(
-                targets={"file1.tar.gz": "TargetFileObject"}, version=4
-            )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_by_path",
+            lambda *a: None,
         )
-
-        test_repo._load = pretend.call_recorder(lambda r: fake_bins)
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
             now=pretend.call_recorder(lambda: fake_time)
@@ -695,12 +850,55 @@ class TestMetadataRepository:
             pretend.call("file3.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
         ]
-        assert test_repo._load.calls == [
-            pretend.call("bin-e"),
+
+        assert fake_datetime.now.calls == [pretend.call()]
+
+    def test_remove_targets_action_remove_published_false(self, monkeypatch):
+        test_repo = repository.MetadataRepository.create_service()
+
+        test_repo._get_path_succinct_role = pretend.call_recorder(
+            lambda *a: "bin-e"
+        )
+
+        fake_db_target = pretend.stub(
+            action=targets_schema.TargetAction.REMOVE, published=True
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_by_path",
+            lambda *a: fake_db_target,
+        )
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+        payload = {
+            "targets": ["file2.tar.gz", "file3.tar.gz", "release-v0.1.0.yaml"]
+        }
+
+        result = test_repo.remove_targets(payload, update_state=pretend.stub())
+
+        assert result == {
+            "status": "Task finished.",
+            "last_update": fake_time,
+            "details": {
+                "deleted_targets": [],
+                "not_found_targets": [
+                    "file2.tar.gz",
+                    "file3.tar.gz",
+                    "release-v0.1.0.yaml",
+                ],
+            },
+        }
+        assert test_repo._get_path_succinct_role.calls == [
+            pretend.call("file2.tar.gz"),
+            pretend.call("file3.tar.gz"),
+            pretend.call("release-v0.1.0.yaml"),
         ]
-        assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_BINS_HASHED"),
-        ]
+
         assert fake_datetime.now.calls == [pretend.call()]
 
     def test_remove_targets_without_targets(self):
@@ -722,119 +920,6 @@ class TestMetadataRepository:
             test_repo.remove_targets(payload, update_state=pretend.stub())
 
         assert "At list one target is required" in str(err)
-
-    def test_publish_targets_meta(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        @contextmanager
-        def mocked_lock(lock):
-            yield lock
-
-        test_repo._redis = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock),
-            get=pretend.call_recorder(lambda *a: b"bins-a, bins-b"),
-            delete=pretend.call_recorder(lambda *a: None),
-        )
-
-        fake_snapshot = pretend.stub(signed=pretend.stub(meta={}))
-        fake_bins = pretend.stub(signed=pretend.stub(targets={}, version=4))
-
-        def mocked_load(role):
-            if role == "snapshot":
-                return fake_snapshot
-            else:
-                return fake_bins
-
-        test_repo._load = pretend.call_recorder(lambda r: mocked_load(r))
-        test_repo._update_snapshot = pretend.call_recorder(
-            lambda *a: "fake_snapshot"
-        )
-        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
-
-        result = test_repo.publish_targets_meta()
-
-        assert result is None
-        assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_SNAPSHOT_TIMESTAMP")
-        ]
-        assert test_repo._redis.get.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._redis.delete.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._load.calls == [
-            pretend.call("snapshot"),
-            pretend.call("bins-a"),
-            pretend.call("bins-b"),
-        ]
-        assert test_repo._update_snapshot.calls == [
-            pretend.call([("bins-a", 4), ("bins-b", 4)])
-        ]
-        assert test_repo._update_timestamp.calls == [
-            pretend.call("fake_snapshot")
-        ]
-
-    def test_publish_targets_meta_same_version(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        @contextmanager
-        def mocked_lock(lock):
-            yield lock
-
-        test_repo._redis = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock),
-            get=pretend.call_recorder(lambda *a: b"bins-a, bins-b"),
-        )
-
-        fake_snapshot = pretend.stub(
-            signed=pretend.stub(meta={"bins-a.json": 4, "bins-b.json": 4})
-        )
-        fake_bins = pretend.stub(signed=pretend.stub(targets={}, version=4))
-
-        def mocked_load(role):
-            if role == "snapshot":
-                return fake_snapshot
-            else:
-                return fake_bins
-
-        test_repo._load = pretend.call_recorder(lambda r: mocked_load(r))
-        result = test_repo.publish_targets_meta()
-
-        assert result is None
-        assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_SNAPSHOT_TIMESTAMP")
-        ]
-        assert test_repo._redis.get.calls == [
-            pretend.call("unpublished_metas")
-        ]
-        assert test_repo._load.calls == [
-            pretend.call("snapshot"),
-            pretend.call("bins-a"),
-            pretend.call("bins-b"),
-        ]
-
-    def test_publish_targets_meta_empty_unpublished(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        @contextmanager
-        def mocked_lock(lock):
-            yield lock
-
-        test_repo._redis = pretend.stub(
-            lock=pretend.call_recorder(mocked_lock),
-            get=pretend.call_recorder(lambda *a: None),
-        )
-
-        result = test_repo.publish_targets_meta()
-
-        assert result is None
-        assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_SNAPSHOT_TIMESTAMP")
-        ]
-        assert test_repo._redis.get.calls == [
-            pretend.call("unpublished_metas")
-        ]
 
     def test_bump_bins_roles(self):
         test_repo = repository.MetadataRepository.create_service()
