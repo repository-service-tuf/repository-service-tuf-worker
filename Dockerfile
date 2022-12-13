@@ -29,6 +29,8 @@ FROM pre-final
 
 WORKDIR /opt/repository-service-tuf-worker
 RUN mkdir /data
+COPY alembic.ini /opt/repository-service-tuf-worker/
+COPY alembic /opt/repository-service-tuf-worker/alembic
 COPY app.py /opt/repository-service-tuf-worker
 COPY entrypoint.sh /opt/repository-service-tuf-worker
 COPY supervisor.conf ${DATA_DIR}/
