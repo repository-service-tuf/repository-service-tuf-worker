@@ -56,13 +56,13 @@ About **Bump Roles** (``bump_online_roles``) that contain online keys is easy.
 These roles have short expiration (defined during repository configuration) and
 must be "bumped" frequently. The implementation in the RepositoryMetadata
 
-**Publish the new Hashed Bins Roles** (``publish_targets_meta``) is part of the
+**Publish the new Hashed Bins Roles** (``publish_targets``) is part of the
 solution for the :ref:`Repository Worker scalability, Issue 17
 <devel/known_issues:(Solved) Scalability>`.
 
 To understand more, every time the API sends a task to add a new target, the
-Hashed Bins Roles must be changed to add the new target(s), as the Snapshot and
-Timestamp.
+Hashed Bins Roles must be changed to add the new target(s), followed by a new
+Snapshot and Timestamp versions.
 
 .. uml::
 
@@ -94,66 +94,43 @@ We use the 'waiting time' to alternate between tasks.
    and `remove_targets
    <repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository.remove_targets>`_
 
-Before the Repository Worker adds/removes the new target and does steps 1 to 3,
-it Locks [#f1]_ specific Hashed Bins Role, for example, bins-a.
+Repository Worker adds/removes the target to the SQL Database.
 
+It means the multiple Repository Workers can write multiple Targets
+(``TargetFiles``) simultaneously from various tasks in the Database.
 
-It means the multiple Repository Workers can write multiple Hashed Bins Roles
-simultaneously from various tasks.
+When a task finishes, it send a task the ``publish_targets``.
 
-When Step 3 finishes, the Repository Worker will lock  ``unpublished_meta`` and
-add the Hashed Bins Role in the list if it does not exist.
+Every minute, the routine task **Publish the new Hashed Bins Roles** also runs.
 
-.. uml::
+The task will continue run, wait until all the targets are persisted to the
+Repository Metadata backend.
 
-  @startuml
-      !pragma useVerticalIf
-      start
-      partition "add/remove targets" {
-         :Group targets per Hashed Bins Role;
-         repeat
-         repeat while (Try Lock Hashed Bins Roles) is (Waiting)
-            :Lock Hashed Bins;
-            :Add the target(s) to the Hashed Bin Role;
-            :Generate a new version;
-            :Persist the new Hashed Bin Role in the Storage;
-            repeat
-            repeat while (Try Lock unpublished_meta) is (Waiting)
-            :Lock unpublished_meta;
-            if (Hashed Bins Role in umpublished_meta) then (not in)
-               :Add Hashed Bins name;
-            endif
-            :Unlock unpublished_meta;
-            :Unlock Hashed Bins Roles;
-         repeat
-         repeat while (all Hashed Bins are Published) is (Waiting)
-         stop
-      }
-   @enduml
-
-Every minute, the routine task **Publish the new Hashed Bins Roles** runs and
-gets the names of the unpublished Hashed Bins Roles, looks in the Storage the
-latest version and runs steps 4 to 9, and flushes the ``unpublished_meta``.
+The **Publish the new Hashed Bins Roles** task (``publish_targets``) runs once
+per time to using locks [#f1]_ . It will  will do:
 
 .. uml::
 
    @startuml
-      partition "publish targets meta" {
+      partition "publish targets" {
          start
-         if (unpublished_meta is empty) then (True)
+         repeat
+         repeat while (Try LOCK publish_targets) is (Waiting)
+         if (delegated role has NO new targets files) then (True)
             stop
          else
-            repeat
-            repeat while (Try LOCK unpublished_meta) is (Waiting)
-            :Update Hashed Bin Role version in the Snapshot meta;
-            :Bump Snapshot version;
-            :Persist the new Snapshot in the Storage;
-            :Update Snapshot Version in the Timestamp;
-            :Bump Timestamp Version;
-            :Persist the new Timestamp in the Storage;
-            :Flush unpublished_meta;
-            :UNLOCK unpublished_meta;
-            stop
+            :Query all delegated role with target files changed;
+            repeat :For each delegated role;
+               :Clean the the role delegated metadata target files;
+               :Add the target files ;
+               :Bump delegated role version;
+               :Persist the new version;
+            repeat while (add to delegated role to `new_snapshot_targets_meta`)
+            :Bump Snapshot Version with new targets;
+            :Bump Timestamp Version with new Snapshot version;
+            :Persist the new Timestamp in the Storage and Update the SQL;
+            :UNLOCK publish_targets;
+         stop
          endif
       }
     @enduml
