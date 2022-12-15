@@ -36,7 +36,11 @@ class status(Enum):
     FAILURE = "FAILURE"
 
 
-redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
+redis_backend = redis.StrictRedis.from_url(
+    worker_settings.REDIS_SERVER,
+    port=worker_settings.get("REDIS_SERVER_PORT", 6379),
+    db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0)
+)
 
 # TODO: Issue https://github.com/vmware/vmware/issues/6
 # BROKER_USE_SSL = {
@@ -49,7 +53,11 @@ redis_backend = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
 app = Celery(
     f"repository_service_tuf_worker_{worker_settings.WORKER_ID}",
     broker=worker_settings.BROKER_SERVER,
-    backend=worker_settings.REDIS_SERVER,
+    backend=(
+        f"{worker_settings.REDIS_SERVER}"
+        f":{worker_settings.get('REDIS_SERVER_PORT', 6379)}"
+        f"/{worker_settings.get('REDIS_SERVER_DB_RESULT', 0)}"
+    ),
     result_persistent=True,
     task_acks_late=True,
     task_track_started=True,
