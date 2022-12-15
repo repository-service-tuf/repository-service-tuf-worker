@@ -472,9 +472,7 @@ class MetadataRepository:
                 self._sign(role, BINS)
                 self._persist(role, rolename)
                 # append to the new snapshot targets meta
-                new_snapshot_meta.append(
-                    (rolename, role.signed.version)
-                )
+                new_snapshot_meta.append((rolename, role.signed.version))
 
             # update snapshop and timestamp
             # note: the `db_published_targes` contains the targets that
