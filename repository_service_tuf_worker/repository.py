@@ -369,7 +369,7 @@ class MetadataRepository:
 
         # TODO: all tasks has the same id `publish_targets`. Should be unique?
         # Should we check and avoid multiple tasks? Check that the function
-        # `publish_target` has a lock to avoice race condition.
+        # `publish_target` has a lock to avoid race conditions.
         repository_service_tuf_worker.apply_async(
             kwargs={
                 "action": "publish_targets",
@@ -383,7 +383,7 @@ class MetadataRepository:
     def bootstrap(
         self,
         payload: Dict[str, Dict[str, Any]],
-        update_state: Optional[str] = None,  # It is required (see: app)
+        update_state: Optional[str] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
         """
         Bootstrap the Metadata Repository
@@ -451,7 +451,7 @@ class MetadataRepository:
                 # load the delegated targets role, clean the targets and add
                 # a new meta from the SQL DB.
                 # note: it might include targets from another parent task, it
-                # will speed the process of publishing new targets.
+                # will speed up the process of publishing new targets.
                 role = self._load(rolename)
                 role.signed.targets.clear()
                 role.signed.targets = {
