@@ -39,7 +39,7 @@ class status(Enum):
 redis_backend = redis.StrictRedis.from_url(
     worker_settings.REDIS_SERVER,
     port=worker_settings.get("REDIS_SERVER_PORT", 6379),
-    db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0)
+    db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0),
 )
 
 # TODO: Issue https://github.com/vmware/vmware/issues/6
