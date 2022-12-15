@@ -271,6 +271,11 @@ class MetadataRepository:
         """
         Loads 'timestamp', updates meta info about passed 'snapshot'
         metadata, bumps version and expiration, signs and persists.
+
+        Args:
+            snapshot_version: snapshot version to add to new timestamp.
+            db_targets: RSTUTarget DB objects will be changed as published in
+                the DB SQL..
         """
         timestamp = self._load(Timestamp.type)
         timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
@@ -369,7 +374,7 @@ class MetadataRepository:
 
         # TODO: all tasks has the same id `publish_targets`. Should be unique?
         # Should we check and avoid multiple tasks? Check that the function
-        # `publish_target` has a lock to avoid race conditions.
+        # `publish_target` has a lock to avoice race condition.
         repository_service_tuf_worker.apply_async(
             kwargs={
                 "action": "publish_targets",
@@ -383,7 +388,7 @@ class MetadataRepository:
     def bootstrap(
         self,
         payload: Dict[str, Dict[str, Any]],
-        update_state: Optional[str] = None,  # It is required (see: app.py)
+        update_state: Optional[str] = None,  # It is required (see: app)
     ) -> Dict[str, Any]:
         """
         Bootstrap the Metadata Repository
@@ -436,7 +441,7 @@ class MetadataRepository:
 
             # initialize the new snapshot targets meta and published targets
             # from DB SQL
-            new_snapshot_targets_meta: List[Tuple(str, int)] = []
+            new_snapshot_meta: List[Tuple(str, int)] = []
             db_published_targets: List[targets_models.RSTUFTargets] = []
             for _, rolename in unpublished_roles:
                 # get the unpublished targets for the delegated, it will be use
@@ -451,7 +456,7 @@ class MetadataRepository:
                 # load the delegated targets role, clean the targets and add
                 # a new meta from the SQL DB.
                 # note: it might include targets from another parent task, it
-                # will speed up the process of publishing new targets.
+                # will speed the process of publishing new targets.
                 role = self._load(rolename)
                 role.signed.targets.clear()
                 role.signed.targets = {
@@ -467,7 +472,7 @@ class MetadataRepository:
                 self._sign(role, BINS)
                 self._persist(role, rolename)
                 # append to the new snapshot targets meta
-                new_snapshot_targets_meta.append(
+                new_snapshot_meta.append(
                     (rolename, role.signed.version)
                 )
 
@@ -476,7 +481,7 @@ class MetadataRepository:
             # needs to updated in SQL DB as 'published' and it will be done
             # by the `_update_timestamp`
             self._update_timestamp(
-                self._update_snapshot(new_snapshot_targets_meta),
+                self._update_snapshot(new_snapshot_meta),
                 db_published_targets,
             )
 
