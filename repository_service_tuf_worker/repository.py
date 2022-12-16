@@ -329,7 +329,8 @@ class MetadataRepository:
     ):
         """
         Updates the 'RUNNING' state with details if the meta still not
-        published in the latest Snapshot. It runs every 3 seconds.
+        published in the latest Snapshot. It runs every 3 seconds until the
+        task is finished.
         """
         logging.debug(f"Waiting roles to be published {list(bin_targets)}")
 
