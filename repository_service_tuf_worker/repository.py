@@ -500,8 +500,8 @@ class MetadataRepository:
         if targets is None:
             raise ValueError("No targets in the payload")
 
-        # Group target files to responsible 'bins' delegated roles.
-        # This will be used to by `publish_targets`
+        # Group target files by responsible 'bins' delegated roles.
+        # This will be used to `publish_targets`
         bin_targets: Dict[str, List[targets_models.RSTUFTargets]] = {}
         for target in targets:
             bins_name = self._get_path_succinct_role(target.get("path"))
