@@ -50,13 +50,14 @@ The repository Worker has two maintenance tasks:
 
 - **Bump Roles** that contain online keys ("Snapshot", "Timestamp" and Hahsed
   Bins ("bins-XX").
-- **Publish the new Hashed Bins Roles** ("bins-XX") with new/removed targets.
+- **Publish the new Hashed Bins Target Roles** ("bins-XX") with new/removed
+  targets.
 
 About **Bump Roles** (``bump_online_roles``) that contain online keys is easy.
 These roles have short expiration (defined during repository configuration) and
 must be "bumped" frequently. The implementation in the RepositoryMetadata
 
-**Publish the new Hashed Bins Roles** (``publish_targets``) is part of the
+**Publish the new Hashed Bins Target Roles** (``publish_targets``) is part of the
 solution for the :ref:`Repository Worker scalability, Issue 17
 <devel/known_issues:(Solved) Scalability>`.
 
@@ -99,15 +100,21 @@ Repository Worker adds/removes the target to the SQL Database.
 It means the multiple Repository Workers can write multiple Targets
 (``TargetFiles``) simultaneously from various tasks in the Database.
 
-When a task finishes, it send a task the ``publish_targets``.
+The **Publish the new Hashed Bins Target Roles** is a synchronization between
+the SQL Database and the Hashed Bins Target Roles in the Backend Storage (i.e.
+JSON files in the filestytem)
 
-Every minute, the routine task **Publish the new Hashed Bins Roles** also runs.
+When a task finishes, it send a task the **Publish the new Hashed Bins Target
+Roles** .
+
+Every minute, the routine task **Publish the new Hashed Bins Target Roles**
+also runs.
 
 The task will continue run, wait until all the targets are persisted to the
 Repository Metadata backend.
 
-The **Publish the new Hashed Bins Roles** task (``publish_targets``) runs once
-per time to using locks [#f1]_ . It will  will do:
+The **Publish the new Hashed Bins Target Roles** runs once per time to using
+locks [#f1]_ . It will  will do:
 
 .. uml::
 
@@ -122,10 +129,9 @@ per time to using locks [#f1]_ . It will  will do:
             :Query all delegated role with target files changed;
             repeat :For each delegated role;
                :Clean the the role delegated metadata target files;
-               :Add the target files ;
+               :Add the target files with 'action' ADD;
                :Bump delegated role version;
-               :Persist the new version;
-            repeat while (add to delegated role to `new_snapshot_targets_meta`)
+            repeat while (Persist the delegated role new version)
             :Bump Snapshot Version with new targets;
             :Bump Timestamp Version with new Snapshot version;
             :Persist the new Timestamp in the Storage and Update the SQL;
