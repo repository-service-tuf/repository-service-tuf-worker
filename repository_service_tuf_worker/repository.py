@@ -241,7 +241,7 @@ class MetadataRepository:
         """
         filename = f"{role_name}.json"
         if role_name != Timestamp.type:
-            if filename.startswith(f"{role.signed.version}.") is False:
+            if any(char.isdigit() for char in filename) is False:
                 filename = f"{role.signed.version}.{filename}"
 
         role.to_file(filename, JSONSerializer(), self._storage_backend)

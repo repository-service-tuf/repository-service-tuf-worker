@@ -119,6 +119,27 @@ class TestMetadataRepository:
             )
         ]
 
+    def test__persist_file_has_version(self):
+        test_repo = repository.MetadataRepository.create_service()
+
+        fake_role = pretend.stub(
+            signed=pretend.stub(version=2),
+            to_file=pretend.call_recorder(lambda *a, **kw: None),
+        )
+
+        repository.JSONSerializer = pretend.call_recorder(lambda: None)
+        test_repo._storage_backend = pretend.stub()
+
+        test_result = test_repo._persist(fake_role, "1.snapshot")
+        assert test_result is None
+        assert fake_role.to_file.calls == [
+            pretend.call(
+                "1.snapshot.json",
+                repository.JSONSerializer(),
+                test_repo._storage_backend,
+            )
+        ]
+
     def test__persist_timestamp(self):
         test_repo = repository.MetadataRepository.create_service()
 
