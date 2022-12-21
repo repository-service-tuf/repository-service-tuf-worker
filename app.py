@@ -79,6 +79,9 @@ def repository_service_tuf_worker(
     if payload is None:
         result = repository_action()
     else:
+        # add task id to payload
+        payload["task_id"] = self.request.id
+
         result = repository_action(payload, update_state=self.update_state)
 
     return result

@@ -21,7 +21,7 @@ import logging
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import redis
 from celery.app.task import Task
@@ -366,7 +366,7 @@ class MetadataRepository:
             else:
                 break
 
-    def _send_publish_targets_task(self):  # pragma: no cover
+    def _send_publish_targets_task(self, task_id: str):  # pragma: no cover
         """
         Send a new task to the `rstuf_internals` queue to publish targets.
         """
@@ -381,7 +381,7 @@ class MetadataRepository:
                 "action": "publish_targets",
                 "payload": None,
             },
-            task_id="publish_targets",
+            task_id=f"publish_targets-{task_id}",
             queue="rstuf_internals",
             acks_late=True,
         )
@@ -499,7 +499,7 @@ class MetadataRepository:
         targets = payload.get("targets")
         if targets is None:
             raise ValueError("No targets in the payload")
-
+        task_id = payload.get("task_id")
         # Group target files by responsible 'bins' delegated roles.
         # This will be used to `publish_targets`
         bin_targets: Dict[str, List[targets_models.RSTUFTargets]] = {}
@@ -530,7 +530,7 @@ class MetadataRepository:
 
             bin_targets[bins_name].append(db_target)
 
-        self._send_publish_targets_task()
+        self._send_publish_targets_task(task_id)
         self._update_task(bin_targets, update_state)
 
         result = ResultDetails(
@@ -546,7 +546,7 @@ class MetadataRepository:
         return asdict(result)
 
     def remove_targets(
-        self, payload: Dict[str, List[str]], update_state: str
+        self, payload: Dict[str, Any], update_state: str
     ) -> Dict[str, Any]:
         """
         Remove targets from the metadata roles.
@@ -554,6 +554,7 @@ class MetadataRepository:
         targets = payload.get("targets")
         if targets is None:
             raise ValueError("No targets in the payload")
+        task_id = payload.get("task_id")
 
         if len(targets) == 0:
             raise IndexError("At list one target is required")
@@ -586,7 +587,7 @@ class MetadataRepository:
                 bin_targets[bins_name].append(db_target)
 
         if len(deleted_targets) > 0:
-            self._send_publish_targets_task()
+            self._send_publish_targets_task(task_id)
             self._update_task(bin_targets, update_state)
 
         result = ResultDetails(

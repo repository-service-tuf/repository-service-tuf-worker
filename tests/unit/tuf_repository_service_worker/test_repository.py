@@ -626,7 +626,7 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         test_repo._send_publish_targets_task = pretend.call_recorder(
-            lambda: None
+            lambda *a: None
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
@@ -642,7 +642,8 @@ class TestMetadataRepository:
                     },
                     "path": "file1.tar.gz",
                 },
-            ]
+            ],
+            "task_id": "fake_task_id_xyz",
         }
 
         fake_ue = pretend.stub()
@@ -659,7 +660,9 @@ class TestMetadataRepository:
         assert test_repo._get_path_succinct_role.calls == [
             pretend.call("file1.tar.gz")
         ]
-        assert test_repo._send_publish_targets_task.calls == [pretend.call()]
+        assert test_repo._send_publish_targets_task.calls == [
+            pretend.call("fake_task_id_xyz")
+        ]
         assert test_repo._update_task.calls == [
             pretend.call({"bin-e": [fake_db_target]}, fake_ue)
         ]
@@ -698,7 +701,7 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         test_repo._send_publish_targets_task = pretend.call_recorder(
-            lambda: None
+            lambda *a: None
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
@@ -714,7 +717,8 @@ class TestMetadataRepository:
                     },
                     "path": "file1.tar.gz",
                 },
-            ]
+            ],
+            "task_id": "fake_task_id_xyz",
         }
 
         fake_ue = pretend.stub()
@@ -731,7 +735,9 @@ class TestMetadataRepository:
         assert test_repo._get_path_succinct_role.calls == [
             pretend.call("file1.tar.gz")
         ]
-        assert test_repo._send_publish_targets_task.calls == [pretend.call()]
+        assert test_repo._send_publish_targets_task.calls == [
+            pretend.call("fake_task_id_xyz")
+        ]
         assert test_repo._update_task.calls == [
             pretend.call({"bin-e": [fake_db_target]}, fake_ue)
         ]
@@ -787,10 +793,11 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"]
+            "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"],
+            "task_id": "fake_task_id_xyz",
         }
         test_repo._send_publish_targets_task = pretend.call_recorder(
-            lambda: None
+            lambda *a: None
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
@@ -814,7 +821,9 @@ class TestMetadataRepository:
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
         ]
-        assert test_repo._send_publish_targets_task.calls == [pretend.call()]
+        assert test_repo._send_publish_targets_task.calls == [
+            pretend.call("fake_task_id_xyz")
+        ]
         assert test_repo._update_task.calls == [
             pretend.call(
                 {
