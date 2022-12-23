@@ -231,7 +231,7 @@ class MetadataRepository:
             signer = SSlibSigner(key)
             role.sign(signer, append=True)
 
-    def _persist(self, role: Metadata, role_name: str) -> None:
+    def _persist(self, role: Metadata, role_name: str) -> str:
         """
         Persists metadata using the configured storage backend.
 
@@ -241,10 +241,12 @@ class MetadataRepository:
         """
         filename = f"{role_name}.json"
         if role_name != Timestamp.type:
-            if any(char.isdigit() for char in filename) is False:
+            if filename[0].isdigit() is False:
                 filename = f"{role.signed.version}.{filename}"
 
         role.to_file(filename, JSONSerializer(), self._storage_backend)
+
+        return filename
 
     def _bump_expiry(self, role: Metadata, expiry_id: str) -> None:
         """
