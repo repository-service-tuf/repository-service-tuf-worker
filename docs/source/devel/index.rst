@@ -104,16 +104,16 @@ The **Publish the new Hashed Bins Target Roles** is a synchronization between
 the SQL Database and the Hashed Bins Target Roles in the Backend Storage (i.e.
 JSON files in the filestytem)
 
-When a task finishes, it send a task the **Publish the new Hashed Bins Target
+When a task finishes, it sends a task the **Publish the new Hashed Bins Target
 Roles** .
 
 Every minute, the routine task **Publish the new Hashed Bins Target Roles**
 also runs.
 
-The task will continue run, wait until all the targets are persisted to the
+The task will continue running and waiting until all the targets are persisted to the
 Repository Metadata backend.
 
-The **Publish the new Hashed Bins Target Roles** runs once per time to using
+The **Publish the new Hashed Bins Target Roles** task runs once per time to using
 locks [#f1]_ . It will  will do:
 
 .. uml::
