@@ -932,7 +932,7 @@ class TestMetadataRepository:
 
         assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_remove_targets_action_remove_published_false(self, monkeypatch):
+    def test_remove_targets_action_remove_published_true(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
         test_repo._get_path_succinct_role = pretend.call_recorder(
