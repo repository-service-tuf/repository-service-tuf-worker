@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Enum, String
 from sqlalchemy.dialects.postgresql import JSON
 
 from repository_service_tuf_worker.models.targets import Base, schemas

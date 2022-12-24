@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 import enum
 from datetime import datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel
 
