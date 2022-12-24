@@ -667,8 +667,8 @@ class TestMetadataRepository:
             "task_id": "fake_task_id_xyz",
         }
 
-        fake_ue = pretend.stub()
-        result = test_repo.add_targets(payload, update_state=fake_ue)
+        fake_update_state = pretend.stub()
+        result = test_repo.add_targets(payload, update_state=fake_update_state)
 
         assert result == {
             "details": {
@@ -685,7 +685,7 @@ class TestMetadataRepository:
             pretend.call("fake_task_id_xyz")
         ]
         assert test_repo._update_task.calls == [
-            pretend.call({"bin-e": [fake_db_target]}, fake_ue)
+            pretend.call({"bin-e": [fake_db_target]}, fake_update_state)
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
@@ -742,8 +742,8 @@ class TestMetadataRepository:
             "task_id": "fake_task_id_xyz",
         }
 
-        fake_ue = pretend.stub()
-        result = test_repo.add_targets(payload, update_state=fake_ue)
+        fake_update_state = pretend.stub()
+        result = test_repo.add_targets(payload, update_state=fake_update_state)
 
         assert result == {
             "details": {
@@ -760,7 +760,7 @@ class TestMetadataRepository:
             pretend.call("fake_task_id_xyz")
         ]
         assert test_repo._update_task.calls == [
-            pretend.call({"bin-e": [fake_db_target]}, fake_ue)
+            pretend.call({"bin-e": [fake_db_target]}, fake_update_state)
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
@@ -822,8 +822,8 @@ class TestMetadataRepository:
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
-        fake_ue = pretend.stub()
-        result = test_repo.remove_targets(payload, update_state=fake_ue)
+        fake_update_state = pretend.stub()
+        result = test_repo.remove_targets(payload, update_state=fake_update_state)
 
         assert result == {
             "status": "Task finished.",
@@ -854,7 +854,7 @@ class TestMetadataRepository:
                         fake_db_target_removed,
                     ]
                 },
-                fake_ue,
+                fake_update_state,
             )
         ]
         assert fake_datetime.now.calls == [pretend.call()]
