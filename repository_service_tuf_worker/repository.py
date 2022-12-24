@@ -391,7 +391,9 @@ class MetadataRepository:
     def bootstrap(
         self,
         payload: Dict[str, Dict[str, Any]],
-        update_state: Optional[str] = None,  # It is required (see: app.py)
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
         """
         Bootstrap the Metadata Repository
@@ -487,7 +489,7 @@ class MetadataRepository:
             )
 
     def add_targets(
-        self, payload: Dict[str, Any], update_state: str
+        self, payload: Dict[str, Any], update_state: Task.update_state
     ) -> Dict[str, Any]:
         """
         Add or update the new target in the SQL DB and submit the task for
@@ -548,7 +550,7 @@ class MetadataRepository:
         return asdict(result)
 
     def remove_targets(
-        self, payload: Dict[str, Any], update_state: str
+        self, payload: Dict[str, Any], update_state: Task.update_state
     ) -> Dict[str, Any]:
         """
         Remove targets from the metadata roles.
