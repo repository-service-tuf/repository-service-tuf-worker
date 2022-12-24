@@ -83,4 +83,4 @@ virtualenv==20.16.3
 watchdog==2.2.0
 wcwidth==0.2.5
 wrapt==1.14.1
-supervisor==4.2.4
+supervisor==4.2.5

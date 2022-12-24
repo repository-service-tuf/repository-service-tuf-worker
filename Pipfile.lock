@@ -307,11 +307,11 @@
         },
         "supervisor": {
             "hashes": [
-                "sha256:40dc582ce1eec631c3df79420b187a6da276bbd68a4ec0a8f1f123ea616b97a2",
-                "sha256:bbae57abf74e078fe0ecc9f30068b6da41b840546e233ef1e659a12e4c875af6"
+                "sha256:2ecaede32fc25af814696374b79e42644ecaba5c09494c51016ffda9602d0f08",
+                "sha256:34761bae1a23c58192281a5115fb07fbf22c9b0133c08166beffc70fed3ebc12"
             ],
             "index": "pypi",
-            "version": "==4.2.4"
+            "version": "==4.2.5"
         },
         "tuf": {
             "hashes": [
