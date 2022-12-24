@@ -277,7 +277,7 @@ class MetadataRepository:
         Args:
             snapshot_version: snapshot version to add to new timestamp.
             db_targets: RSTUTarget DB objects will be changed as published in
-                the DB SQL..
+                the DB SQL.
         """
         timestamp = self._load(Timestamp.type)
         timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
@@ -391,7 +391,7 @@ class MetadataRepository:
     def bootstrap(
         self,
         payload: Dict[str, Dict[str, Any]],
-        update_state: Optional[str] = None,  # It is required (see: app)
+        update_state: Optional[str] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
         """
         Bootstrap the Metadata Repository
@@ -459,7 +459,7 @@ class MetadataRepository:
                 # load the delegated targets role, clean the targets and add
                 # a new meta from the SQL DB.
                 # note: it might include targets from another parent task, it
-                # will speed the process of publishing new targets.
+                # will speed up the process of publishing new targets.
                 role = self._load(rolename)
                 role.signed.targets.clear()
                 role.signed.targets = {
