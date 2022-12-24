@@ -616,7 +616,7 @@ class TestMetadataRepository:
 
     def test_add_targets(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
-
+        test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
@@ -632,12 +632,12 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             repository.targets_crud,
             "read_by_path",
-            lambda *a: None,
+            pretend.call_recorder(lambda *a: None),
         )
         monkeypatch.setattr(
             repository.targets_crud,
             "create",
-            lambda *a, **kw: fake_db_target,
+            pretend.call_recorder(lambda *a: fake_db_target),
         )
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
@@ -686,12 +686,27 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_task.calls == [
             pretend.call({"bin-e": [fake_db_target]}, fake_update_state)
+        ]
+        assert repository.targets_crud.read_by_path.calls == [
+            pretend.call(test_repo._db, "file1.tar.gz")
+        ]
+        assert repository.targets_crud.create.calls == [
+            pretend.call(
+                test_repo._db,
+                targets_schema.TargetsCreate(
+                    path=payload["targets"][0].get("path"),
+                    info=payload["targets"][0].get("info"),
+                    published=False,
+                    action=targets_schema.TargetAction.ADD,
+                    rolename="bin-e",
+                ),
+            )
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
     def test_add_targets_exists(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
-
+        test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
@@ -703,17 +718,17 @@ class TestMetadataRepository:
                 return {"k": "v"}
 
         fake_db_target = pretend.stub(get=pretend.call_recorder(fake_target))
-
         monkeypatch.setattr(
             repository.targets_crud,
             "read_by_path",
-            lambda *a: fake_db_target,
+            pretend.call_recorder(lambda *a: fake_db_target),
         )
         monkeypatch.setattr(
             repository.targets_crud,
             "update",
-            lambda *a, **kw: fake_db_target,
+            pretend.call_recorder(lambda *a: fake_db_target),
         )
+
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
             now=pretend.call_recorder(lambda: fake_time)
@@ -761,6 +776,17 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_task.calls == [
             pretend.call({"bin-e": [fake_db_target]}, fake_update_state)
+        ]
+        assert repository.targets_crud.read_by_path.calls == [
+            pretend.call(test_repo._db, "file1.tar.gz")
+        ]
+        assert repository.targets_crud.update.calls == [
+            pretend.call(
+                test_repo._db,
+                fake_db_target,
+                payload["targets"][0].get("path"),
+                payload["targets"][0].get("info"),
+            )
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
@@ -823,7 +849,9 @@ class TestMetadataRepository:
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
         fake_update_state = pretend.stub()
-        result = test_repo.remove_targets(payload, update_state=fake_update_state)
+        result = test_repo.remove_targets(
+            payload, update_state=fake_update_state
+        )
 
         assert result == {
             "status": "Task finished.",
