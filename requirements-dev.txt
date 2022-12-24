@@ -83,9 +83,9 @@ virtualenv==20.16.3
 watchdog==2.2.0
 wcwidth==0.2.5
 wrapt==1.14.1
-supervisor==4.2.5
 alembic==1.8.1
 greenlet==2.0.1 ; python_version >= '3' and platform_machine == 'aarch64' or (platform_machine == 'ppc64le' or (platform_machine == 'x86_64' or (platform_machine == 'amd64' or (platform_machine == 'AMD64' or (platform_machine == 'win32' or platform_machine == 'WIN32')))))
 psycopg2==2.9.5
 pydantic==1.10.2
 sqlalchemy==1.4.44
+supervisor==4.2.5
