@@ -18,5 +18,5 @@ class TargetsCreate(BaseModel):
     info: Dict[str, Any]
     rolename: str
     published: bool
-    action: Literal[TargetAction.ADD, TargetAction.REMOVE]
+    action: TargetAction
     last_update: Optional[datetime]
