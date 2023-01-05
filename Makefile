@@ -18,7 +18,11 @@ stop:
 clean:
 	$(MAKE) stop
 	docker-compose rm --force
+	rm -rf ./metadata/*
+	rm -rf ./keys/*
+	rm -rf ./database/*.sqlite
 	rm -rf ./data
+	rm -rf ./data_test
 
 purge:
 	$(MAKE) clean
