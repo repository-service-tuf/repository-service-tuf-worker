@@ -12,6 +12,8 @@ on:
       - 'Dockerfile'
       - 'requirements.txt'
       - 'setup.py'
+      - 'alembic.ini'
+      - 'alembic/**'
 
   workflow_dispatch:
 

@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import redis
+from celery.app.task import Task
 from securesystemslib.exceptions import StorageError  # type: ignore
 from securesystemslib.signer import SSlibSigner  # type: ignore
 from tuf.api.metadata import (  # noqa
@@ -52,6 +53,12 @@ from repository_service_tuf_worker import (  # noqa
     worker_settings,
 )
 from repository_service_tuf_worker.interfaces import IKeyVault, IStorage
+from repository_service_tuf_worker.models import (
+    rstuf_db,
+    targets_crud,
+    targets_models,
+    targets_schema,
+)
 
 
 class Roles(enum.Enum):
@@ -92,6 +99,7 @@ class MetadataRepository:
         self._settings = repository_settings
         self._storage_backend = self.refresh_settings().STORAGE
         self._key_storage_backend = self.refresh_settings().KEYVAULT
+        self._db = self.refresh_settings().SQL
         self._redis = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
         self._hours_before_expire: int = self._settings.get_fresh(
             "HOURS_BEFORE_EXPIRE", 1
@@ -109,6 +117,10 @@ class MetadataRepository:
         else:
             settings = worker_settings
 
+        # SQL
+        settings.SQL = rstuf_db(self._worker_settings.SQL_SERVER)
+
+        # Backends
         storage_backends = [
             storage.__name__.upper() for storage in IStorage.__subclasses__()
         ]
@@ -219,7 +231,7 @@ class MetadataRepository:
             signer = SSlibSigner(key)
             role.sign(signer, append=True)
 
-    def _persist(self, role: Metadata, role_name: str) -> None:
+    def _persist(self, role: Metadata, role_name: str) -> str:
         """
         Persists metadata using the configured storage backend.
 
@@ -229,10 +241,12 @@ class MetadataRepository:
         """
         filename = f"{role_name}.json"
         if role_name != Timestamp.type:
-            if filename.startswith(f"{role.signed.version}.") is False:
+            if filename[0].isdigit() is False:
                 filename = f"{role.signed.version}.{filename}"
 
         role.to_file(filename, JSONSerializer(), self._storage_backend)
+
+        return filename
 
     def _bump_expiry(self, role: Metadata, expiry_id: str) -> None:
         """
@@ -251,10 +265,19 @@ class MetadataRepository:
         """Bumps metadata version by 1."""
         role.signed.version += 1
 
-    def _update_timestamp(self, snapshot_version: int) -> Metadata[Timestamp]:
+    def _update_timestamp(
+        self,
+        snapshot_version: int,
+        db_targets: Optional[List[targets_models.RSTUFTargets]] = None,
+    ) -> Metadata[Timestamp]:
         """
         Loads 'timestamp', updates meta info about passed 'snapshot'
         metadata, bumps version and expiration, signs and persists.
+
+        Args:
+            snapshot_version: snapshot version to add to new timestamp.
+            db_targets: RSTUTarget DB objects will be changed as published in
+                the DB SQL.
         """
         timestamp = self._load(Timestamp.type)
         timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
@@ -263,6 +286,11 @@ class MetadataRepository:
         self._bump_expiry(timestamp, Timestamp.type)
         self._sign(timestamp, Timestamp.type)
         self._persist(timestamp, Timestamp.type)
+
+        # TODO review if here is the best place to change the status in DB
+        if db_targets:
+            for db_target in db_targets:
+                targets_crud.update_to_published(self._db, db_target)
 
         return timestamp
 
@@ -287,79 +315,85 @@ class MetadataRepository:
         return snapshot.signed.version
 
     def _get_path_succinct_role(self, target_path: str) -> str:
+        """
+        Return role name by target file path
+        """
         bin_role = self._load(BIN)
         bin_succinct_roles = bin_role.signed.delegations.succinct_roles
         bins_name = bin_succinct_roles.get_role_for_target(target_path)
 
         return bins_name
 
-    def _add_to_unpublished_metas(self, targets_meta: List[Tuple[str, int]]):
-        """
-        Add to the Redis "unpublished_meta" the edited roles.
-        """
-        logging.debug(f"Adding to unpublished meta {targets_meta}")
-        if len(targets_meta) == 0:
-            logging.info("Nothing to send to be published")
-            return None
-
-        with self._redis.lock("TUF_TARGETS_META"):
-            if self._redis.exists("unpublished_metas"):
-                targets_waiting_commmit = self._redis.get(
-                    "unpublished_metas"
-                ).decode("utf-8")
-                for bins_name, _ in targets_meta:
-                    if bins_name not in targets_waiting_commmit:
-                        self._redis.append(
-                            "unpublished_metas", f", {bins_name}"
-                        )
-            else:
-                self._redis.set(
-                    "unpublished_metas",
-                    ", ".join(bins_name for bins_name, _ in targets_meta),
-                )
-
-    def _publish_meta_state(
-        self, targets_meta: List[Tuple[str, int]], update_state: Optional[str]
-    ) -> List[Optional[Tuple[str, int]]]:
+    def _update_task(
+        self,
+        bin_targets: Dict[str, List[targets_models.RSTUFTargets]],
+        update_state: Task.update_state,
+    ):
         """
         Updates the 'RUNNING' state with details if the meta still not
-        published in the latest Snapshot. It runs every 3 seconds.
+        published in the latest Snapshot. It runs every 3 seconds until the
+        task is finished.
         """
-        logging.debug(f"waiting metas to be published {targets_meta}")
+        logging.debug(f"Waiting roles to be published {list(bin_targets)}")
 
-        def _update_state(targets_meta: List[Tuple[str, int]]):
-            unpublised_roles = [
-                f"{role} version {version}" for role, version in targets_meta
-            ]
+        def _update_state(
+            bin_targets: Dict[str, List[targets_models.RSTUFTargets]],
+            completed_roles: List[str],
+        ):
             update_state(
                 state="RUNNING",
                 meta={
-                    "unpublished_roles": unpublised_roles,
+                    "published_roles": completed_roles,
+                    "roles_to_publish": f"{list(bin_targets.keys())}",
                     "status": "Publishing",
                     "last_update": datetime.now(),
                 },
             )
 
         while True:
-            snapshot = self._load(Roles.SNAPSHOT.value)
-            for target_meta in targets_meta:
-                snapshot_meta_file = snapshot.signed.meta[
-                    f"{target_meta[0]}.json"
-                ]
-                if snapshot_meta_file.version == target_meta[1]:
-                    logging.debug(f"Found published meta {target_meta}")
-                    targets_meta.remove(target_meta)
+            completed_roles: List[str] = []
+            for role_name, targets in bin_targets.items():
+                for target in targets:
+                    self._db.refresh(target)
+                    if target.published is True:
+                        targets.remove(target)
 
-            if len(targets_meta) > 0:
-                _update_state(targets_meta)
+                if len(targets) == 0:
+                    logging.debug(f"Update: {role_name} completed")
+                    completed_roles.append(role_name)
+
+            if sorted(completed_roles) != sorted(list(bin_targets)):
+                _update_state(bin_targets, completed_roles)
                 time.sleep(3)
             else:
-                return None
+                break
+
+    def _send_publish_targets_task(self, task_id: str):  # pragma: no cover
+        """
+        Send a new task to the `rstuf_internals` queue to publish targets.
+        """
+        # it is imported in the call to avoid a circular import
+        from app import repository_service_tuf_worker
+
+        # TODO: all tasks has the same id `publish_targets`. Should be unique?
+        # Should we check and avoid multiple tasks? Check that the function
+        # `publish_target` has a lock to avoid race conditions.
+        repository_service_tuf_worker.apply_async(
+            kwargs={
+                "action": "publish_targets",
+                "payload": None,
+            },
+            task_id=f"publish_targets-{task_id}",
+            queue="rstuf_internals",
+            acks_late=True,
+        )
 
     def bootstrap(
         self,
         payload: Dict[str, Dict[str, Any]],
-        update_state: Optional[str] = None,
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
         """
         Bootstrap the Metadata Repository
@@ -367,7 +401,6 @@ class MetadataRepository:
         Add the online Keys to the Key Storage backend and the Signed Metadata
         to the Storage Backend.
         """
-        # the update_state is not used for bootstrap
 
         # Store online keys to the Key Vault
         if settings := payload.get("settings"):
@@ -381,11 +414,7 @@ class MetadataRepository:
 
         for role_name, data in metadata.items():
             metadata = Metadata.from_dict(data)
-            metadata.to_file(
-                f"{role_name}.json",
-                JSONSerializer(),
-                self._storage_backend,
-            )
+            self._persist(metadata, role_name)
             logging.debug(f"{role_name}.json saved")
 
         result = ResultDetails(
@@ -398,65 +427,132 @@ class MetadataRepository:
 
         return asdict(result)
 
-    def add_targets(self, payload: Dict[str, Any], update_state: str) -> None:
+    def publish_targets(self):
         """
-        Updates 'bins' roles metadata, assigning each passed target to the
-        correct bin.
+        Publish targets from SQL DB as persistent TUF Metadata in the backend
+        storage.
+        """
 
-        Assignment is based on the hash prefix of the target file path. All
-        metadata is signed and persisted using the configured key and storage
-        services.
+        # lock to avoid race conditions
+        with self._redis.lock("publish_targets", timeout=5.0):
+            # get all delegated role names with unpublished targets
+            unpublished_roles = targets_crud.read_unpublished_rolenames(
+                self._db
+            )
+
+            if len(unpublished_roles) == 0:
+                logging.debug("No new targets in delegated roles. Finishing")
+                return None
+
+            # initialize the new snapshot targets meta and published targets
+            # from DB SQL
+            new_snapshot_meta: List[Tuple(str, int)] = []
+            db_published_targets: List[targets_models.RSTUFTargets] = []
+            for _, rolename in unpublished_roles:
+                # get the unpublished targets for the delegated, it will be use
+                # to update the database when Snapshot and Timestamp is
+                # published by `_update_timestamp`
+                db_targets = targets_crud.read_unpublished_by_rolename(
+                    db=self._db, rolename=rolename
+                )
+                logging.debug(f"{rolename}: New targets #: {len(db_targets)}")
+                db_published_targets += db_targets
+
+                # load the delegated targets role, clean the targets and add
+                # a new meta from the SQL DB.
+                # note: it might include targets from another parent task, it
+                # will speed up the process of publishing new targets.
+                role = self._load(rolename)
+                role.signed.targets.clear()
+                role.signed.targets = {
+                    target[0]: TargetFile.from_dict(target[1], target[0])
+                    for target in targets_crud.read_all_add_by_rolename(
+                        self._db, rolename
+                    )
+                }
+
+                # update expiry, bump version and persist to the storage
+                self._bump_expiry(role, BINS)
+                self._bump_version(role)
+                self._sign(role, BINS)
+                self._persist(role, rolename)
+                # append to the new snapshot targets meta
+                new_snapshot_meta.append((rolename, role.signed.version))
+
+            # update snapshop and timestamp
+            # note: the `db_published_targes` contains the targets that
+            # needs to updated in SQL DB as 'published' and it will be done
+            # by the `_update_timestamp`
+            self._update_timestamp(
+                self._update_snapshot(new_snapshot_meta),
+                db_published_targets,
+            )
+
+    def add_targets(
+        self, payload: Dict[str, Any], update_state: Task.update_state
+    ) -> Dict[str, Any]:
+        """
+        Add or update the new target in the SQL DB and submit the task for
+        `update_targets`
+
+        Check the target(s) in the SQL DB; if it doesn't exist, create a new
+        entry or update it as not published.
+        After changing the SQL DB submit a new `publish_target` task.
+        This function will wait until all the targets are published.
         """
         targets = payload.get("targets")
         if targets is None:
             raise ValueError("No targets in the payload")
 
-        with self._redis.lock("TUF_BINS_HASHED"):
-            # Group target files by responsible 'bins' roles
-            bin_target_groups: Dict[str, List[TargetFile]] = {}
-            for target in targets:
-                bins_name = self._get_path_succinct_role(target.get("path"))
-                if bins_name not in bin_target_groups:
-                    bin_target_groups[bins_name] = []
-
-                target_file = TargetFile.from_dict(
-                    target["info"], target["path"]
+        # The task id will be used by `_send_publish_targets_task` (sub-task).
+        task_id = payload.get("task_id")
+        # Group target files by responsible 'bins' delegated roles.
+        # This will be used to by `_update_task` for updating task status.
+        bin_targets: Dict[str, List[targets_models.RSTUFTargets]] = {}
+        for target in targets:
+            bins_name = self._get_path_succinct_role(target["path"])
+            db_target = targets_crud.read_by_path(self._db, target.get("path"))
+            if db_target is None:
+                db_target = targets_crud.create(
+                    self._db,
+                    targets_schema.TargetsCreate(
+                        path=target.get("path"),
+                        info=target.get("info"),
+                        published=False,
+                        action=targets_schema.TargetAction.ADD,
+                        rolename=bins_name,
+                    ),
                 )
-                bin_target_groups[bins_name].append(target_file)
+            else:
+                db_target = targets_crud.update(
+                    self._db,
+                    db_target,
+                    target.get("path"),
+                    target.get("info"),
+                )
 
-            # Update target file info in responsible 'bins' roles, bump
-            # version and expiry and sign and persist
-            targets_meta = []
-            for bins_name, target_files in bin_target_groups.items():
-                logging.debug(f"Adding targets to {bins_name}")
-                bins_role = self._load(bins_name)
-                for target_file in target_files:
-                    bins_role.signed.targets[target_file.path] = target_file
+            if bins_name not in bin_targets:
+                bin_targets[bins_name] = []
 
-                self._bump_expiry(bins_role, BINS)
-                self._bump_version(bins_role)
-                self._sign(bins_role, BINS)
-                self._persist(bins_role, bins_name)
+            bin_targets[bins_name].append(db_target)
 
-                targets_meta.append((bins_name, bins_role.signed.version))
-
-        if len(targets_meta) > 0:
-            self._add_to_unpublished_metas(targets_meta)
-            self._publish_meta_state(targets_meta, update_state)
+        self._send_publish_targets_task(task_id)
+        self._update_task(bin_targets, update_state)
 
         result = ResultDetails(
             status="Task finished.",
             details={
                 "targets": [target.get("path") for target in targets],
-                "target_roles": [t_role for t_role in bin_target_groups],
+                "target_roles": [t_role for t_role in bin_targets],
             },
             last_update=datetime.now(),
         )
         logging.debug(f"Added targets. {result}")
+
         return asdict(result)
 
     def remove_targets(
-        self, payload: Dict[str, List[str]], update_state: str
+        self, payload: Dict[str, Any], update_state: Task.update_state
     ) -> Dict[str, Any]:
         """
         Remove targets from the metadata roles.
@@ -464,6 +560,7 @@ class MetadataRepository:
         targets = payload.get("targets")
         if targets is None:
             raise ValueError("No targets in the payload")
+        task_id = payload.get("task_id")
 
         if len(targets) == 0:
             raise IndexError("At list one target is required")
@@ -471,39 +568,33 @@ class MetadataRepository:
         deleted_targets: List[str] = []
         not_found_targets: List[str] = []
 
-        # Group target files by responsible 'bins' roles.
-        bin_target_groups: Dict[str, List[str]] = {}
+        # Group target files by responsible 'bins' delegated roles.
+        # This will be used to by `publish_targets`
+        bin_targets: Dict[str, List[targets_models.RSTUFTargets]] = {}
         for target in targets:
             bins_name = self._get_path_succinct_role(target)
-            if bins_name not in bin_target_groups:
-                bin_target_groups[bins_name] = []
+            db_target = targets_crud.read_by_path(self._db, target)
+            if db_target is None or (
+                db_target.action == targets_schema.TargetAction.REMOVE
+                and db_target.published is True
+            ):
+                # not found targets or targets already remove action and
+                # published are not found.
+                not_found_targets.append(target)
+            else:
+                db_target = targets_crud.update_action_remove(
+                    self._db, db_target
+                )
+                deleted_targets.append(target)
 
-            bin_target_groups[bins_name].append(target)
+                if bins_name not in bin_targets:
+                    bin_targets[bins_name] = []
 
-        # Update target file info in responsible 'bins' roles, bump
-        # version and expiry and sign and persist.
-        targets_meta = []
-        with self._redis.lock("TUF_BINS_HASHED"):
-            for bins_name, paths in bin_target_groups.items():
-                bins_role = self._load(bins_name)
-                for path in paths:
-                    if path in bins_role.signed.targets:
-                        bins_role.signed.targets.pop(path)
-                        deleted_targets.append(path)
-                        self._bump_expiry(bins_role, BINS)
-                        self._bump_version(bins_role)
-                        self._sign(bins_role, BINS)
-                        self._persist(bins_role, bins_name)
-                        targets_meta.append(
-                            (bins_name, bins_role.signed.version)
-                        )
+                bin_targets[bins_name].append(db_target)
 
-                    else:
-                        not_found_targets.append(path)
-
-        if len(targets_meta) > 0:
-            self._add_to_unpublished_metas(targets_meta)
-            self._publish_meta_state(targets_meta, update_state)
+        if len(deleted_targets) > 0:
+            self._send_publish_targets_task(task_id)
+            self._update_task(bin_targets, update_state)
 
         result = ResultDetails(
             status="Task finished.",
@@ -516,43 +607,6 @@ class MetadataRepository:
 
         logging.debug(f"Delete targets. {result}")
         return asdict(result)
-
-    def publish_targets_meta(self):
-        """
-        Publishes Targets metas.
-
-        Add new Targets to the Snapshot Role, bump Snapshot Role and Timestamp
-        Role.
-        """
-        with self._redis.lock("TUF_SNAPSHOT_TIMESTAMP"):
-            unpublished_bins_names = self._redis.get("unpublished_metas")
-            if unpublished_bins_names is None:
-                logging.debug("No new unplublished targets meta, skipping.")
-                return None
-
-            snapshot = self._load(Snapshot.type)
-            targets_meta = []
-            bins_names = unpublished_bins_names.decode("utf-8").split(", ")
-            for bins_name in bins_names:
-                bins_role = self._load(bins_name)
-                try:
-                    bins_name_version = snapshot.signed.meta[
-                        f"{bins_name}.json"
-                    ]
-                except KeyError:
-                    bins_name_version = -1
-
-                if bins_name_version != bins_role.signed.version:
-                    targets_meta.append((bins_name, bins_role.signed.version))
-
-            if len(targets_meta) != 0:
-                self._update_timestamp(self._update_snapshot(targets_meta))
-                self._redis.delete("unpublished_metas")
-                logging.debug("Flushed unpublished targets meta")
-            else:
-                logging.info(
-                    "[publish targets meta] Snapshot already up-to-date."
-                )
 
     def bump_bins_roles(self) -> bool:
         """

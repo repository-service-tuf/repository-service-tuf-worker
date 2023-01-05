@@ -34,7 +34,7 @@ class TestApp:
         assert result is True
         assert app.repository.test_action.calls == [
             pretend.call(
-                {"k": "v"},
+                {"k": "v", "task_id": None},
                 update_state=app.repository_service_tuf_worker.update_state,
             ),
         ]
