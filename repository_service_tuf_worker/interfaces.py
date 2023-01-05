@@ -17,7 +17,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from io import TextIOBase
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from tuf.api.metadata import (  # type: ignore
     Metadata,
@@ -90,7 +90,12 @@ class IStorage(StorageBackendInterface):
         raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
-    def put(self, file_object: TextIOBase, filename: str) -> None:
+    def put(
+        self,
+        file_object: TextIOBase,
+        filename: str,
+        restrict: Optional[bool] = False,
+    ) -> None:
         """
         Stores file object with a specific filename.
         """
