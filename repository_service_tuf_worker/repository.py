@@ -377,7 +377,7 @@ class MetadataRepository:
 
         # TODO: all tasks has the same id `publish_targets`. Should be unique?
         # Should we check and avoid multiple tasks? Check that the function
-        # `publish_target` has a lock to avoice race condition.
+        # `publish_target` has a lock to avoice race conditions.
         repository_service_tuf_worker.apply_async(
             kwargs={
                 "action": "publish_targets",
@@ -503,9 +503,11 @@ class MetadataRepository:
         targets = payload.get("targets")
         if targets is None:
             raise ValueError("No targets in the payload")
+
+        # The task id will be used by `_send_publish_targets_task` (sub-task).
         task_id = payload.get("task_id")
         # Group target files by responsible 'bins' delegated roles.
-        # This will be used to `publish_targets`
+        # This will be used to by `_update_task` for updating task status.
         bin_targets: Dict[str, List[targets_models.RSTUFTargets]] = {}
         for target in targets:
             bins_name = self._get_path_succinct_role(target.get("path"))
