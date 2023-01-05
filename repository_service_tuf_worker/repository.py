@@ -510,7 +510,7 @@ class MetadataRepository:
         # This will be used to by `_update_task` for updating task status.
         bin_targets: Dict[str, List[targets_models.RSTUFTargets]] = {}
         for target in targets:
-            bins_name = self._get_path_succinct_role(target.get("path"))
+            bins_name = self._get_path_succinct_role(target["path"])
             db_target = targets_crud.read_by_path(self._db, target.get("path"))
             if db_target is None:
                 db_target = targets_crud.create(
