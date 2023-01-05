@@ -377,7 +377,7 @@ class MetadataRepository:
 
         # TODO: all tasks has the same id `publish_targets`. Should be unique?
         # Should we check and avoid multiple tasks? Check that the function
-        # `publish_target` has a lock to avoice race conditions.
+        # `publish_target` has a lock to avoid race conditions.
         repository_service_tuf_worker.apply_async(
             kwargs={
                 "action": "publish_targets",
