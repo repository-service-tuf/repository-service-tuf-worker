@@ -74,7 +74,7 @@ class LocalStorage(IStorage):
         self,
         file_object: TextIOBase,
         filename: str,
-        restrict: Optional[bool] = False,
+        restrict: Optional[bool] = True,
     ) -> None:
         """
         Writes passed file object to configured TUF repo path using the passed
