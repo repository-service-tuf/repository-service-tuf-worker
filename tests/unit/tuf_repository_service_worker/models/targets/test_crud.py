@@ -43,11 +43,11 @@ class TestTargetsCrud:
                 lambda: [(False, "bin-e"), (False, "bin-3")]
             )
         )
-        mocked_filter_response = pretend.stub(
+        mocked_db_filter_distinct = pretend.stub(
             distinct=pretend.call_recorder(lambda: mocked_distinct)
         )
         mocked_db_filter = pretend.stub(
-            filter=pretend.call_recorder(lambda *a: mocked_filter_response)
+            filter=pretend.call_recorder(lambda *a: mocked_db_filter_distinct)
         )
         mocked_db = pretend.stub(
             query=pretend.call_recorder(lambda *a: mocked_db_filter)
@@ -58,7 +58,7 @@ class TestTargetsCrud:
         assert test_result == [(False, "bin-e"), (False, "bin-3")]
         assert mocked_db.query.calls == [pretend.call(False, "all-bins")]
         assert mocked_db_filter.filter.calls == [pretend.call(True)]
-        assert mocked_filter_response.distinct.calls == [pretend.call()]
+        assert mocked_db_filter_distinct.distinct.calls == [pretend.call()]
         assert mocked_distinct.all.calls == [pretend.call()]
 
     def test_read_by_path(self):
