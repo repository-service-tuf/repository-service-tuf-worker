@@ -38,40 +38,40 @@ class TestTargetsCrud:
             published=False, rolename="all-bins"
         )
 
-        mocked_distinct = pretend.stub(
+        mocked_all = pretend.stub(
             all=pretend.call_recorder(
                 lambda: [(False, "bin-e"), (False, "bin-3")]
             )
         )
-        mocked_db_filter_distinct = pretend.stub(
-            distinct=pretend.call_recorder(lambda: mocked_distinct)
+        mocked_distinct = pretend.stub(
+            distinct=pretend.call_recorder(lambda: mocked_all)
         )
-        mocked_db_filter = pretend.stub(
-            filter=pretend.call_recorder(lambda *a: mocked_db_filter_distinct)
+        mocked_filter = pretend.stub(
+            filter=pretend.call_recorder(lambda *a: mocked_distinct)
         )
         mocked_db = pretend.stub(
-            query=pretend.call_recorder(lambda *a: mocked_db_filter)
+            query=pretend.call_recorder(lambda *a: mocked_filter)
         )
 
         test_result = crud.read_unpublished_rolenames(mocked_db)
 
         assert test_result == [(False, "bin-e"), (False, "bin-3")]
         assert mocked_db.query.calls == [pretend.call(False, "all-bins")]
-        assert mocked_db_filter.filter.calls == [pretend.call(True)]
-        assert mocked_db_filter_distinct.distinct.calls == [pretend.call()]
-        assert mocked_distinct.all.calls == [pretend.call()]
+        assert mocked_filter.filter.calls == [pretend.call(True)]
+        assert mocked_distinct.distinct.calls == [pretend.call()]
+        assert mocked_all.all.calls == [pretend.call()]
 
     def test_read_by_path(self):
 
         crud.models.RSTUFTargets = pretend.stub(path="file1.tar.gz")
-        mocked_db_filter_first = pretend.stub(
+        mocked_first = pretend.stub(
             first=pretend.call_recorder(lambda: crud.models.RSTUFTargets)
         )
-        mocked_db_filter = pretend.stub(
-            filter=pretend.call_recorder(lambda *a: mocked_db_filter_first)
+        mocked_filter = pretend.stub(
+            filter=pretend.call_recorder(lambda *a: mocked_first)
         )
         mocked_db = pretend.stub(
-            query=pretend.call_recorder(lambda *a: mocked_db_filter)
+            query=pretend.call_recorder(lambda *a: mocked_filter)
         )
 
         test_result = crud.read_by_path(mocked_db, "file1.tar.gz")
@@ -80,20 +80,20 @@ class TestTargetsCrud:
         assert mocked_db.query.calls == [
             pretend.call(crud.models.RSTUFTargets)
         ]
-        assert mocked_db_filter.filter.calls == [pretend.call(True)]
-        assert mocked_db_filter_first.first.calls == [pretend.call()]
+        assert mocked_filter.filter.calls == [pretend.call(True)]
+        assert mocked_first.first.calls == [pretend.call()]
 
     def test_read_by_rolename(self):
 
         crud.models.RSTUFTargets = pretend.stub(rolename="bin-0")
-        mocked_db_filter_first = pretend.stub(
+        mocked_all = pretend.stub(
             all=pretend.call_recorder(lambda: [crud.models.RSTUFTargets])
         )
-        mocked_db_filter = pretend.stub(
-            filter=pretend.call_recorder(lambda *a: mocked_db_filter_first)
+        mocked_filter = pretend.stub(
+            filter=pretend.call_recorder(lambda *a: mocked_all)
         )
         mocked_db = pretend.stub(
-            query=pretend.call_recorder(lambda *a: mocked_db_filter)
+            query=pretend.call_recorder(lambda *a: mocked_filter)
         )
 
         test_result = crud.read_by_rolename(mocked_db, "bin-0")
@@ -102,22 +102,22 @@ class TestTargetsCrud:
         assert mocked_db.query.calls == [
             pretend.call(crud.models.RSTUFTargets)
         ]
-        assert mocked_db_filter.filter.calls == [pretend.call(True)]
-        assert mocked_db_filter_first.all.calls == [pretend.call()]
+        assert mocked_filter.filter.calls == [pretend.call(True)]
+        assert mocked_all.all.calls == [pretend.call()]
 
     def test_read_unpublished_by_rolename(self):
 
         crud.models.RSTUFTargets = pretend.stub(
             published=False, rolename="bin-0"
         )
-        mocked_db_filter_first = pretend.stub(
+        mocked_all = pretend.stub(
             all=pretend.call_recorder(lambda: [crud.models.RSTUFTargets])
         )
-        mocked_db_filter = pretend.stub(
-            filter=pretend.call_recorder(lambda *a: mocked_db_filter_first)
+        mocked_filter = pretend.stub(
+            filter=pretend.call_recorder(lambda *a: mocked_all)
         )
         mocked_db = pretend.stub(
-            query=pretend.call_recorder(lambda *a: mocked_db_filter)
+            query=pretend.call_recorder(lambda *a: mocked_filter)
         )
 
         test_result = crud.read_unpublished_by_rolename(mocked_db, "bin-0")
@@ -126,8 +126,8 @@ class TestTargetsCrud:
         assert mocked_db.query.calls == [
             pretend.call(crud.models.RSTUFTargets)
         ]
-        assert mocked_db_filter.filter.calls == [pretend.call(True, True)]
-        assert mocked_db_filter_first.all.calls == [pretend.call()]
+        assert mocked_filter.filter.calls == [pretend.call(True, True)]
+        assert mocked_all.all.calls == [pretend.call()]
 
     def test_read_all_add_by_rolename(self):
 
@@ -137,7 +137,7 @@ class TestTargetsCrud:
             rolename="bin-0",
             action=crud.schemas.TargetAction.ADD,
         )
-        mocked_db_filter_first = pretend.stub(
+        mocked_all = pretend.stub(
             all=pretend.call_recorder(
                 lambda: [
                     (
@@ -147,11 +147,11 @@ class TestTargetsCrud:
                 ]
             )
         )
-        mocked_db_filter = pretend.stub(
-            filter=pretend.call_recorder(lambda *a: mocked_db_filter_first)
+        mocked_filter = pretend.stub(
+            filter=pretend.call_recorder(lambda *a: mocked_all)
         )
         mocked_db = pretend.stub(
-            query=pretend.call_recorder(lambda *a: mocked_db_filter)
+            query=pretend.call_recorder(lambda *a: mocked_filter)
         )
 
         test_result = crud.read_all_add_by_rolename(mocked_db, "bin-0")
@@ -163,8 +163,8 @@ class TestTargetsCrud:
                 crud.models.RSTUFTargets.info,
             )
         ]
-        assert mocked_db_filter.filter.calls == [pretend.call(True, True)]
-        assert mocked_db_filter_first.all.calls == [pretend.call()]
+        assert mocked_filter.filter.calls == [pretend.call(True, True)]
+        assert mocked_all.all.calls == [pretend.call()]
 
     def test_update(self, monkeypatch):
 
