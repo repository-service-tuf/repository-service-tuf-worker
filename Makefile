@@ -19,6 +19,7 @@ clean:
 	$(MAKE) stop
 	docker-compose rm --force
 	rm -rf ./data
+	rm -rf ./data_test
 
 purge:
 	$(MAKE) clean
@@ -46,3 +47,8 @@ coverage:
 
 docs:
 	tox -e docs
+
+precommit:
+	pre-commit install
+	pre-commit autoupdate
+	pre-commit run --all-files --show-diff-on-failure
