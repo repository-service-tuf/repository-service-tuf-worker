@@ -567,11 +567,11 @@
         },
         "securesystemslib": {
             "hashes": [
-                "sha256:04bc11593edd68405939d3dfc318080bfb31f1ebb5d81c7911914b42dfd4bf2f",
-                "sha256:10d5a066e70cb87704c9bf2cef1ef6d8a06fab5ef7602dd59c26d06251317a11"
+                "sha256:41c7b25c52dc0bafe774413b5738bbf4431f094e72a091e83d9921901972ae4c",
+                "sha256:a8fa49831d6a7e48f81050984ddfac3713af0c326f558727113533edb5ca8eac"
             ],
             "index": "pypi",
-            "version": "==0.25.0"
+            "version": "==0.26.0"
         },
         "setuptools": {
             "hashes": [
@@ -1551,11 +1551,11 @@
         },
         "securesystemslib": {
             "hashes": [
-                "sha256:04bc11593edd68405939d3dfc318080bfb31f1ebb5d81c7911914b42dfd4bf2f",
-                "sha256:10d5a066e70cb87704c9bf2cef1ef6d8a06fab5ef7602dd59c26d06251317a11"
+                "sha256:41c7b25c52dc0bafe774413b5738bbf4431f094e72a091e83d9921901972ae4c",
+                "sha256:a8fa49831d6a7e48f81050984ddfac3713af0c326f558727113533edb5ca8eac"
             ],
             "index": "pypi",
-            "version": "==0.25.0"
+            "version": "==0.26.0"
         },
         "setuptools": {
             "hashes": [
