@@ -258,10 +258,11 @@
         },
         "configobj": {
             "hashes": [
-                "sha256:a4f856ffc73ebbc44c3830326a7c75ddcdb5941216030fc2115220e913a9939d",
-                "sha256:f60743cfa2f58d3e830e0c19a0b6864d845e9b9622ec416126c792de0de40b6d"
+                "sha256:6f704434a07dc4f4dc7c9a745172c1cad449feb548febd9f7fe362629c627a97",
+                "sha256:a7a8c6ab7daade85c3f329931a807c8aee750a2494363934f8ea84d8a54c87ea",
+                "sha256:d808d7e04e6f81fbb23d5ac2cd50e69ccbee58eaf9360eb89ede22d93216a314"
             ],
-            "version": "==5.0.7"
+            "version": "==5.0.8"
         },
         "cryptography": {
             "hashes": [
@@ -1013,10 +1014,11 @@
         },
         "configobj": {
             "hashes": [
-                "sha256:a4f856ffc73ebbc44c3830326a7c75ddcdb5941216030fc2115220e913a9939d",
-                "sha256:f60743cfa2f58d3e830e0c19a0b6864d845e9b9622ec416126c792de0de40b6d"
+                "sha256:6f704434a07dc4f4dc7c9a745172c1cad449feb548febd9f7fe362629c627a97",
+                "sha256:a7a8c6ab7daade85c3f329931a807c8aee750a2494363934f8ea84d8a54c87ea",
+                "sha256:d808d7e04e6f81fbb23d5ac2cd50e69ccbee58eaf9360eb89ede22d93216a314"
             ],
-            "version": "==5.0.7"
+            "version": "==5.0.8"
         },
         "coverage": {
             "hashes": [

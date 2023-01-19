@@ -11,7 +11,7 @@ click==8.1.3 ; python_version >= '3.7'
 click-didyoumean==0.3.0 ; python_full_version >= '3.6.2' and python_full_version < '4.0.0'
 click-plugins==1.1.1
 click-repl==0.2.0
-configobj==5.0.7
+configobj==5.0.8
 cryptography==39.0.0
 dynaconf[ini]==3.1.11
 greenlet==2.0.1 ; python_version >= '3' and platform_machine == 'aarch64' or (platform_machine == 'ppc64le' or (platform_machine == 'x86_64' or (platform_machine == 'amd64' or (platform_machine == 'AMD64' or (platform_machine == 'win32' or platform_machine == 'WIN32')))))
