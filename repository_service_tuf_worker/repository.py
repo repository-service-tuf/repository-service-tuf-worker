@@ -18,6 +18,7 @@
 import enum
 import importlib
 import logging
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -244,7 +245,12 @@ class MetadataRepository:
             if filename[0].isdigit() is False:
                 filename = f"{role.signed.version}.{filename}"
 
-        role.to_file(filename, JSONSerializer(), self._storage_backend)
+        bytes_data = role.to_bytes(JSONSerializer())
+
+        with tempfile.TemporaryFile() as temp_file:
+            temp_file.write(bytes_data)
+
+            self._storage_backend.put(temp_file, filename)
 
         return filename
 

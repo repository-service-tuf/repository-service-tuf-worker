@@ -19,11 +19,7 @@ from dataclasses import dataclass
 from io import TextIOBase
 from typing import Any, Dict, List, Optional
 
-from tuf.api.metadata import (  # type: ignore
-    Metadata,
-    StorageBackendInterface,
-    T,
-)
+from tuf.api.metadata import Metadata, T
 
 
 @dataclass
@@ -65,7 +61,7 @@ class IKeyVault(ABC):
         pass  # pragma: no cover
 
 
-class IStorage(StorageBackendInterface):
+class IStorage:
     @classmethod
     @abstractmethod
     def configure(cls, settings: Any):
