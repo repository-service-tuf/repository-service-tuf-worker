@@ -61,7 +61,7 @@ class IKeyVault(ABC):
         pass  # pragma: no cover
 
 
-class IStorage:
+class IStorage(ABC):
     @classmethod
     @abstractmethod
     def configure(cls, settings: Any):
