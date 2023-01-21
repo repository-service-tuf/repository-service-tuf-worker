@@ -46,12 +46,12 @@ class LocalKeyVault(IKeyVault):
         )
 
     @classmethod
-    def configure(cls, settings):
+    def configure(cls, settings) -> None:
         """Configure using the settings."""
         os.makedirs(settings.LOCAL_KEYVAULT_PATH, exist_ok=True)
 
     @classmethod
-    def settings(cls):
+    def settings(cls) -> List[ServiceSettings]:
         """Define the settings parameters."""
         return [
             ServiceSettings(
@@ -76,7 +76,7 @@ class LocalKeyVault(IKeyVault):
             ),
         ]
 
-    def get(self, rolename: str):
+    def get(self, rolename: str) -> Dict[str, Any]:
         """Get the Key from local KeyVault by role name."""
         keys_sslib_format: List[Dict[str, Any]] = []
         try:
@@ -90,7 +90,7 @@ class LocalKeyVault(IKeyVault):
 
         return keys_sslib_format
 
-    def put(self, rolename: str, keys: List[Dict[str, Any]]):
+    def put(self, rolename: str, keys: List[Dict[str, Any]]) -> None:
         """Save the Key in the local KeyVault."""
         key_vault_data: list = []
         for key in keys:
