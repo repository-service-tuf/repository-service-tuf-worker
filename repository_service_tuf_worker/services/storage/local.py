@@ -4,10 +4,10 @@
 
 import glob
 import os
-import shutil
+import stat
 from contextlib import contextmanager
-from io import BufferedReader, TextIOBase
-from typing import List
+from io import BufferedReader
+from typing import List, Optional
 
 from securesystemslib.exceptions import StorageError  # noqa
 
@@ -69,18 +69,35 @@ class LocalStorage(IStorage):
             if file_object is not None:
                 file_object.close()
 
-    def put(self, file_object: TextIOBase, filename: str) -> None:
+    def put(
+        self,
+        file_data: bytes,
+        filename: str,
+        restrict: Optional[bool] = True,
+    ) -> None:
         """
         Writes passed file object to configured TUF repo path using the passed
         filename.
         """
-        file_path = os.path.join(self._path, filename)
-        if not file_object.closed:
-            file_object.seek(0)
+        filename = os.path.join(self._path, filename)
+
+        if restrict:
+            # On UNIX-based systems restricted files are created with read and
+            # write permissions for the user only (octal value 0o600).
+            fd = os.open(
+                filename, os.O_WRONLY | os.O_CREAT, stat.S_IRUSR | stat.S_IWUSR
+            )
+        else:
+            # Non-restricted files use the default 'mode' argument of os.open()
+            # granting read, write, and execute for all users (mode 0o777).
+            # NOTE: mode may be modified by the user's file mode creation mask
+            # (umask) or on Windows limited to the smaller set of OS supported
+            # permisssions.
+            fd = os.open(filename, os.O_WRONLY | os.O_CREAT)
 
         try:
-            with open(file_path, "wb") as destination_file:
-                shutil.copyfileobj(file_object, destination_file)
+            with os.fdopen(fd, "wb") as destination_file:
+                destination_file.write(file_data)
                 destination_file.flush()
                 os.fsync(destination_file.fileno())
         except OSError:

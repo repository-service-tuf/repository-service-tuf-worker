@@ -98,89 +98,44 @@ class TestMetadataRepository:
             pretend.call("key2"),
         ]
 
-    def test__persist(self):
+    def _test_helper_persist(self, role, version, expected_file_name):
         test_repo = repository.MetadataRepository.create_service()
+        fake_bytes = b""
 
         fake_role = pretend.stub(
-            signed=pretend.stub(version=2),
-            to_file=pretend.call_recorder(lambda *a, **kw: None),
+            signed=pretend.stub(version=version),
+            to_bytes=pretend.call_recorder(lambda *a, **kw: fake_bytes),
         )
 
         repository.JSONSerializer = pretend.call_recorder(lambda: None)
-        test_repo._storage_backend = pretend.stub()
 
-        test_result = test_repo._persist(fake_role, "snapshot")
-        assert test_result == "2.snapshot.json"
-        assert fake_role.to_file.calls == [
+        test_repo._storage_backend = pretend.stub(
+            put=pretend.call_recorder(lambda *a: None)
+        )
+
+        test_result = test_repo._persist(fake_role, role)
+        assert test_result == expected_file_name
+        assert fake_role.to_bytes.calls == [
+            pretend.call(repository.JSONSerializer())
+        ]
+        assert test_repo._storage_backend.put.calls == [
             pretend.call(
-                "2.snapshot.json",
-                repository.JSONSerializer(),
-                test_repo._storage_backend,
+                fake_bytes,
+                expected_file_name,
             )
         ]
+
+    def test__persist(self):
+        self._test_helper_persist("snapshot", 2, "2.snapshot.json")
 
     def test__persist_file_has_version(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        fake_role = pretend.stub(
-            signed=pretend.stub(version=1),
-            to_file=pretend.call_recorder(lambda *a, **kw: None),
-        )
-
-        repository.JSONSerializer = pretend.call_recorder(lambda: None)
-        test_repo._storage_backend = pretend.stub()
-
-        test_result = test_repo._persist(fake_role, "1.snapshot")
-        assert test_result == "1.snapshot.json"
-        assert fake_role.to_file.calls == [
-            pretend.call(
-                "1.snapshot.json",
-                repository.JSONSerializer(),
-                test_repo._storage_backend,
-            )
-        ]
+        self._test_helper_persist("1.snapshot", 1, "1.snapshot.json")
 
     def test__persist_file_has_number_name(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        fake_role = pretend.stub(
-            signed=pretend.stub(version=2),
-            to_file=pretend.call_recorder(lambda *a, **kw: None),
-        )
-
-        repository.JSONSerializer = pretend.call_recorder(lambda: None)
-        test_repo._storage_backend = pretend.stub()
-
-        test_result = test_repo._persist(fake_role, "bin-3")
-        assert test_result == "2.bin-3.json"
-        assert fake_role.to_file.calls == [
-            pretend.call(
-                "2.bin-3.json",
-                repository.JSONSerializer(),
-                test_repo._storage_backend,
-            )
-        ]
+        self._test_helper_persist("bin-3", 2, "2.bin-3.json")
 
     def test__persist_timestamp(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        fake_role = pretend.stub(
-            signed=pretend.stub(version=2),
-            to_file=pretend.call_recorder(lambda *a, **kw: None),
-        )
-
-        repository.JSONSerializer = pretend.call_recorder(lambda: None)
-        test_repo._storage_backend = pretend.stub()
-
-        test_result = test_repo._persist(fake_role, "timestamp")
-        assert test_result == "timestamp.json"
-        assert fake_role.to_file.calls == [
-            pretend.call(
-                "timestamp.json",
-                repository.JSONSerializer(),
-                test_repo._storage_backend,
-            )
-        ]
+        self._test_helper_persist("timestamp", 2, "timestamp.json")
 
     def test_bump_exipry(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
