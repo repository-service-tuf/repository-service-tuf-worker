@@ -201,37 +201,28 @@ class TestLocalStorageService:
         if restrict:
             local.stat = pretend.stub(S_IRUSR=0, S_IWUSR=0)
 
-        local.shutil = pretend.stub(
-            copyfileobj=pretend.call_recorder(lambda *a: None)
-        )
-
     def test_put(self):
         service = local.LocalStorage("/path")
 
         fake_destination_file = pretend.stub(
+            write=pretend.call_recorder(lambda *a: None),
             flush=pretend.call_recorder(lambda: None),
             fileno=pretend.call_recorder(lambda: "fileno"),
         )
 
-        fake_file_object = pretend.stub(
-            closed=False,
-            seek=pretend.call_recorder(lambda *a: None),
-        )
+        fake_bytes = b"data"
 
         self._put_setup(fake_destination_file)
-        result = service.put(fake_file_object, "3.bin-e.json")
+        result = service.put(fake_bytes, "3.bin-e.json")
 
         assert result is None
         assert local.os.path.join.calls == [
             pretend.call(service._path, "3.bin-e.json"),
         ]
-        assert fake_file_object.seek.calls == [pretend.call(0)]
         expected_file_path = os.path.join(service._path, "3.bin-e.json")
         assert local.os.open.calls == [pretend.call(expected_file_path, 0, 0)]
         assert local.os.fdopen.calls == [pretend.call(0, "wb")]
-        assert local.shutil.copyfileobj.calls == [
-            pretend.call(fake_file_object, fake_destination_file)
-        ]
+        assert fake_destination_file.write.calls == [pretend.call(fake_bytes)]
         assert fake_destination_file.flush.calls == [pretend.call()]
         assert fake_destination_file.fileno.calls == [pretend.call()]
         assert local.os.fsync.calls == [pretend.call("fileno")]
@@ -240,29 +231,24 @@ class TestLocalStorageService:
         service = local.LocalStorage("/path")
 
         fake_destination_file = pretend.stub(
+            write=pretend.call_recorder(lambda *a: None),
             flush=pretend.call_recorder(lambda: None),
             fileno=pretend.call_recorder(lambda: "fileno"),
         )
 
-        fake_file_object = pretend.stub(
-            closed=False,
-            seek=pretend.call_recorder(lambda *a: None),
-        )
+        fake_bytes = b"data"
 
         self._put_setup(fake_destination_file, False)
-        result = service.put(fake_file_object, "3.bin-e.json", False)
+        result = service.put(fake_bytes, "3.bin-e.json", False)
 
         assert result is None
         assert local.os.path.join.calls == [
             pretend.call(service._path, "3.bin-e.json"),
         ]
-        assert fake_file_object.seek.calls == [pretend.call(0)]
         expected_file_path = os.path.join(service._path, "3.bin-e.json")
         assert local.os.open.calls == [pretend.call(expected_file_path, 0)]
         assert local.os.fdopen.calls == [pretend.call(0, "wb")]
-        assert local.shutil.copyfileobj.calls == [
-            pretend.call(fake_file_object, fake_destination_file)
-        ]
+        assert fake_destination_file.write.calls == [pretend.call(fake_bytes)]
         assert fake_destination_file.flush.calls == [pretend.call()]
         assert fake_destination_file.fileno.calls == [pretend.call()]
         assert local.os.fsync.calls == [pretend.call("fileno")]
@@ -282,17 +268,12 @@ class TestLocalStorageService:
         )
 
         local.stat = pretend.stub(S_IRUSR=0, S_IWUSR=0)
-
-        fake_file_object = pretend.stub(
-            closed=False,
-            seek=pretend.call_recorder(lambda *a: None),
-        )
+        fake_bytes = b"data"
 
         with pytest.raises(OSError) as err:
-            service.put(fake_file_object, "3.bin-e.json")
+            service.put(fake_bytes, "3.bin-e.json")
 
         assert "don't want this message" in str(err)
         assert local.os.path.join.calls == [
             pretend.call(service._path, "3.bin-e.json"),
         ]
-        assert fake_file_object.seek.calls == [pretend.call(0)]

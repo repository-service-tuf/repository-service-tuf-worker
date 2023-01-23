@@ -18,7 +18,6 @@
 import enum
 import importlib
 import logging
-import tempfile
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -246,11 +245,7 @@ class MetadataRepository:
                 filename = f"{role.signed.version}.{filename}"
 
         bytes_data = role.to_bytes(JSONSerializer())
-
-        with tempfile.TemporaryFile() as temp_file:
-            temp_file.write(bytes_data)
-
-            self._storage_backend.put(temp_file, filename)
+        self._storage_backend.put(bytes_data, filename)
 
         return filename
 

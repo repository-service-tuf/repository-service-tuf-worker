@@ -16,7 +16,6 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from io import TextIOBase
 from typing import Any, Dict, List, Optional
 
 from tuf.api.metadata import Metadata, T
@@ -88,11 +87,11 @@ class IStorage(ABC):
     @abstractmethod
     def put(
         self,
-        file_object: TextIOBase,
+        file_data: bytes,
         filename: str,
         restrict: Optional[bool] = True,
     ) -> None:
         """
-        Stores file object with a specific filename.
+        Stores file bytes within a file with a specific filename.
         """
         raise NotImplementedError  # pragma: no cover

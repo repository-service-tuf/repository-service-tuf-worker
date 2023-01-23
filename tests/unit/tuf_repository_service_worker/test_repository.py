@@ -98,9 +98,7 @@ class TestMetadataRepository:
             pretend.call("key2"),
         ]
 
-    def _test_helper_persist(
-        self, monkeypatch, role, version, expected_file_name
-    ):
+    def _test_helper_persist(self, role, version, expected_file_name):
         test_repo = repository.MetadataRepository.create_service()
         fake_bytes = b""
 
@@ -110,27 +108,6 @@ class TestMetadataRepository:
         )
 
         repository.JSONSerializer = pretend.call_recorder(lambda: None)
-        fake_tempfile_obj = pretend.stub(
-            write=pretend.call_recorder(lambda *a: None)
-        )
-
-        class FakeTempFile:
-            def __init__(self):
-                pass
-
-            def __enter__(self):
-                return fake_tempfile_obj
-
-            def __exit__(self, type, value, traceback):
-                pass
-
-        fake_tempfile = pretend.stub(
-            TemporaryFile=pretend.call_recorder(lambda *a: FakeTempFile())
-        )
-
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.tempfile", fake_tempfile
-        )
 
         test_repo._storage_backend = pretend.stub(
             put=pretend.call_recorder(lambda *a: None)
@@ -141,32 +118,24 @@ class TestMetadataRepository:
         assert fake_role.to_bytes.calls == [
             pretend.call(repository.JSONSerializer())
         ]
-        assert fake_tempfile.TemporaryFile.calls == [pretend.call()]
-        assert fake_tempfile_obj.write.calls == [pretend.call(fake_bytes)]
         assert test_repo._storage_backend.put.calls == [
             pretend.call(
-                fake_tempfile_obj,
+                fake_bytes,
                 expected_file_name,
             )
         ]
 
-    def test__persist(self, monkeypatch):
-        self._test_helper_persist(
-            monkeypatch, "snapshot", 2, "2.snapshot.json"
-        )
+    def test__persist(self):
+        self._test_helper_persist("snapshot", 2, "2.snapshot.json")
 
-    def test__persist_file_has_version(self, monkeypatch):
-        self._test_helper_persist(
-            monkeypatch, "1.snapshot", 1, "1.snapshot.json"
-        )
+    def test__persist_file_has_version(self):
+        self._test_helper_persist("1.snapshot", 1, "1.snapshot.json")
 
-    def test__persist_file_has_number_name(self, monkeypatch):
-        self._test_helper_persist(monkeypatch, "bin-3", 2, "2.bin-3.json")
+    def test__persist_file_has_number_name(self):
+        self._test_helper_persist("bin-3", 2, "2.bin-3.json")
 
-    def test__persist_timestamp(self, monkeypatch):
-        self._test_helper_persist(
-            monkeypatch, "timestamp", 2, "timestamp.json"
-        )
+    def test__persist_timestamp(self):
+        self._test_helper_persist("timestamp", 2, "timestamp.json")
 
     def test_bump_exipry(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()

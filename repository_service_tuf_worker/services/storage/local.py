@@ -4,10 +4,9 @@
 
 import glob
 import os
-import shutil
 import stat
 from contextlib import contextmanager
-from io import BufferedReader, TextIOBase
+from io import BufferedReader
 from typing import List, Optional
 
 from securesystemslib.exceptions import StorageError  # noqa
@@ -72,7 +71,7 @@ class LocalStorage(IStorage):
 
     def put(
         self,
-        file_object: TextIOBase,
+        file_data: bytes,
         filename: str,
         restrict: Optional[bool] = True,
     ) -> None:
@@ -81,8 +80,6 @@ class LocalStorage(IStorage):
         filename.
         """
         filename = os.path.join(self._path, filename)
-        if not file_object.closed:
-            file_object.seek(0)
 
         if restrict:
             # On UNIX-based systems restricted files are created with read and
@@ -100,7 +97,7 @@ class LocalStorage(IStorage):
 
         try:
             with os.fdopen(fd, "wb") as destination_file:
-                shutil.copyfileobj(file_object, destination_file)
+                destination_file.write(file_data)
                 destination_file.flush()
                 os.fsync(destination_file.fileno())
         except OSError:
