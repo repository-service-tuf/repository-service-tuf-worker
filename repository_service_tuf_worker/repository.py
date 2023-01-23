@@ -29,16 +29,10 @@ from securesystemslib.exceptions import StorageError  # type: ignore
 from securesystemslib.signer import SSlibSigner  # type: ignore
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
-    TOP_LEVEL_ROLE_NAMES,
-    DelegatedRole,
-    Delegations,
-    Key,
     Metadata,
     MetaFile,
-    Role,
     Root,
     Snapshot,
-    SuccinctRoles,
     TargetFile,
     Targets,
     Timestamp,
