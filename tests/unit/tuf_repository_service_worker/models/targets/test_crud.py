@@ -46,8 +46,11 @@ class TestTargetsCrud:
         mocked_distinct = pretend.stub(
             distinct=pretend.call_recorder(lambda: mocked_all)
         )
+        mocked_order_by = pretend.stub(
+            order_by=pretend.call_recorder(lambda *a: mocked_distinct)
+        )
         mocked_filter = pretend.stub(
-            filter=pretend.call_recorder(lambda *a: mocked_distinct)
+            filter=pretend.call_recorder(lambda *a: mocked_order_by)
         )
         mocked_db = pretend.stub(
             query=pretend.call_recorder(lambda *a: mocked_filter)
@@ -58,6 +61,7 @@ class TestTargetsCrud:
         assert test_result == [(False, "bin-e"), (False, "bin-3")]
         assert mocked_db.query.calls == [pretend.call(False, "all-bins")]
         assert mocked_filter.filter.calls == [pretend.call(True)]
+        assert mocked_order_by.order_by.calls == [pretend.call("all-bins")]
         assert mocked_distinct.distinct.calls == [pretend.call()]
         assert mocked_all.all.calls == [pretend.call()]
 
