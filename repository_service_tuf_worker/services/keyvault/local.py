@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from dynaconf import Dynaconf, loaders
 from dynaconf.utils.boxing import DynaBox
@@ -20,10 +20,27 @@ class KeyVaultError(Exception):
 class LocalKeyVault(IKeyVault):
     """Local KeyVault type"""
 
-    def __init__(self, path: str):
+    def __init__(
+        self,
+        path: str,
+        online_key_name: Optional[str] = "online.key",
+        online_key_pass: Optional[str] = None,
+        online_key_type: Optional[str] = "ed25519",
+    ):
+        """A configuration class for RSTUF Worker services.
+
+        Args:
+            path: directory of the key vault.
+            online_key_name: file name of the online key.
+            online_key_pass: password to load the online key.
+            online_key_type: cryptography type of the online key.
+        """
         self._path: str = path
         self._secrets_file: str = os.path.join(self._path, ".secrets.yaml")
-        self.keyvault = Dynaconf(
+        self._online_key_name: Optional[str] = online_key_name
+        self._online_key_password: Optional[str] = online_key_pass
+        self._online_key_type: Optional[str] = online_key_type
+        self._keyvault = Dynaconf(
             envvar_prefix="LOCALKEYVAULT",
             settings_files=[self._secrets_file],
         )
@@ -41,6 +58,21 @@ class LocalKeyVault(IKeyVault):
                 name="LOCAL_KEYVAULT_PATH",
                 argument="path",
                 required=True,
+            ),
+            ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_NAME",
+                argument="online_key_name",
+                required=False,
+            ),
+            ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_PASSWORD",
+                argument="online_key_pass",
+                required=False,
+            ),
+            ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_TYPE",
+                argument="online_key_type",
+                required=False,
             ),
         ]
 
