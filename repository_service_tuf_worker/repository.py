@@ -49,7 +49,6 @@ class Roles(enum.Enum):
     TARGETS = Targets.type
     SNAPSHOT = Snapshot.type
     TIMESTAMP = Timestamp.type
-    BIN = "bin"
     BINS = "bins"
 
 
@@ -57,10 +56,8 @@ ALL_REPOSITORY_ROLES_NAMES = [rolename.value for rolename in Roles]
 OFFLINE_KEYS = {
     Roles.ROOT.value.upper(),
     Roles.TARGETS.value.upper(),
-    Roles.BIN.value.upper(),
 }
 
-BIN = "bin"
 BINS = "bins"
 SPEC_VERSION: str = ".".join(SPECIFICATION_VERSION)
 
@@ -301,7 +298,7 @@ class MetadataRepository:
         """
         Return role name by target file path
         """
-        bin_role = self._load(BIN)
+        bin_role = self._load(Targets.type)
         bin_succinct_roles = bin_role.signed.delegations.succinct_roles
         bins_name = bin_succinct_roles.get_role_for_target(target_path)
 
@@ -633,14 +630,14 @@ class MetadataRepository:
         Updating 'bins' also updates 'snapshot' and 'timestamp'.
         """
         try:
-            bin = self._load(BIN)
+            targets = self._load(Targets.type)
         except StorageError:
-            logging.error(f"{BIN} not found, not bumping.")
+            logging.error(f"{Targets.type} not found, not bumping.")
             return False
 
-        bin_succinct_roles = bin.signed.delegations.succinct_roles
+        targets_succinct_roles = targets.signed.delegations.succinct_roles
         targets_meta = []
-        for bins_name in bin_succinct_roles.get_roles():
+        for bins_name in targets_succinct_roles.get_roles():
             bins_role = self._load(bins_name)
 
             if (bins_role.signed.expires - datetime.now()) < timedelta(
