@@ -30,6 +30,7 @@ def read_unpublished_rolenames(db: Session) -> Tuple[bool, str]:
         .filter(
             models.RSTUFTargets.published == False,  # noqa
         )
+        .order_by(models.RSTUFTargets.rolename)
         .distinct()
         .all()
     )
