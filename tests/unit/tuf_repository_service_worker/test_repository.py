@@ -298,7 +298,7 @@ class TestMetadataRepository:
     def test__get_path_succinct_role(self):
         test_repo = repository.MetadataRepository.create_service()
 
-        fake_bin = pretend.stub(
+        fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
                     succinct_roles=pretend.stub(
@@ -309,12 +309,12 @@ class TestMetadataRepository:
                 ),
             )
         )
-        test_repo._load = pretend.call_recorder(lambda *a: fake_bin)
+        test_repo._load = pretend.call_recorder(lambda *a: fake_targets)
         result = test_repo._get_path_succinct_role("v0.0.1/test_path.tar.gz")
 
         assert result == "bin-e"
         assert (
-            fake_bin.signed.delegations.succinct_roles.get_role_for_target.calls  # noqa
+            fake_targets.signed.delegations.succinct_roles.get_role_for_target.calls  # noqa
             == [pretend.call("v0.0.1/test_path.tar.gz")]
         )
 
@@ -958,7 +958,7 @@ class TestMetadataRepository:
     def test_bump_bins_roles(self):
         test_repo = repository.MetadataRepository.create_service()
 
-        fake_bin = pretend.stub(
+        fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
                     succinct_roles=pretend.stub(
@@ -974,8 +974,8 @@ class TestMetadataRepository:
         )
 
         def mocked_load(role):
-            if role == "bin":
-                return fake_bin
+            if role == "targets":
+                return fake_targets
             else:
                 return fake_bins
 
@@ -999,7 +999,7 @@ class TestMetadataRepository:
         result = test_repo.bump_bins_roles()
         assert result is True
         assert test_repo._load.calls == [
-            pretend.call("bin"),
+            pretend.call("targets"),
             pretend.call("bin-a"),
         ]
         assert test_repo._bump_version.calls == [pretend.call(fake_bins)]
@@ -1018,7 +1018,7 @@ class TestMetadataRepository:
     def test_bump_bins_roles_no_changes(self):
         test_repo = repository.MetadataRepository.create_service()
 
-        fake_bin = pretend.stub(
+        fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
                     succinct_roles=pretend.stub(
@@ -1034,8 +1034,8 @@ class TestMetadataRepository:
         )
 
         def mocked_load(role):
-            if role == "bin":
-                return fake_bin
+            if role == "targets":
+                return fake_targets
             else:
                 return fake_bins
 
@@ -1044,7 +1044,7 @@ class TestMetadataRepository:
         result = test_repo.bump_bins_roles()
         assert result is True
         assert test_repo._load.calls == [
-            pretend.call("bin"),
+            pretend.call("targets"),
             pretend.call("bin-a"),
         ]
 
