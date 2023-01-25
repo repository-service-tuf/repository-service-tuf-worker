@@ -86,7 +86,6 @@ sphinxcontrib-qthelp = "==1.0.3"
 sphinxcontrib-serializinghtml = "==1.1.5"
 myst-parser = "*"
 pre-commit = "*"
-prospector = "*"
 bandit = "*"
 
 [requires]
