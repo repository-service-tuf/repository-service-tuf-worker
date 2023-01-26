@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-import os
-
 import pretend
 import pytest
 from tuf.api.metadata import Metadata, Root, Timestamp
@@ -183,18 +181,8 @@ class TestLocalStorageService:
         ]
         assert local.glob.glob.calls == [pretend.call("/path/2.root.json")]
 
-    def _put_setup(self, fake_destination_file, restrict=True):
-        """Setup helper for all required functions in LocalStorage.put()"""
-
-        class FakeDestinationFile:
-            def __init__(self):
-                pass
-
-            def __enter__(self):
-                return fake_destination_file
-
-            def __exit__(self, type, value, traceback):
-                pass
+    def test_put(self, monkeypatch):
+        service = local.LocalStorage("/path")
 
         local.os = pretend.stub(
             path=pretend.stub(
@@ -203,63 +191,37 @@ class TestLocalStorageService:
                 )
             ),
             fsync=pretend.call_recorder(lambda *a: None),
-            O_WRONLY=0,
-            O_CREAT=0,
-            open=pretend.call_recorder(lambda *a: 0),
-            fdopen=pretend.call_recorder(lambda *a: FakeDestinationFile()),
         )
 
-        if restrict:
-            local.stat = pretend.stub(S_IRUSR=0, S_IWUSR=0)
-
-    def test_put(self):
-        service = local.LocalStorage("/path")
+        fake_file_data = b"fake_byte_data"
 
         fake_destination_file = pretend.stub(
-            write=pretend.call_recorder(lambda *a: None),
+            write=pretend.call_recorder(lambda *a: "bytes_data"),
             flush=pretend.call_recorder(lambda: None),
             fileno=pretend.call_recorder(lambda: "fileno"),
         )
 
-        fake_bytes = b"data"
+        class FakeDestinationFile:
+            def __init__(self, file, mode):
+                return None
 
-        self._put_setup(fake_destination_file)
-        result = service.put(fake_bytes, "3.bin-e.json")
+            def __enter__(self):
+                return fake_destination_file
 
-        assert result is None
-        assert local.os.path.join.calls == [
-            pretend.call(service._path, "3.bin-e.json"),
-        ]
-        expected_file_path = os.path.join(service._path, "3.bin-e.json")
-        assert local.os.open.calls == [pretend.call(expected_file_path, 0, 0)]
-        assert local.os.fdopen.calls == [pretend.call(0, "wb")]
-        assert fake_destination_file.write.calls == [pretend.call(fake_bytes)]
-        assert fake_destination_file.flush.calls == [pretend.call()]
-        assert fake_destination_file.fileno.calls == [pretend.call()]
-        assert local.os.fsync.calls == [pretend.call("fileno")]
+            def __exit__(self, type, value, traceback):
+                pass
 
-    def test_put_without_restrict(self):
-        service = local.LocalStorage("/path")
+        monkeypatch.setitem(local.__builtins__, "open", FakeDestinationFile)
 
-        fake_destination_file = pretend.stub(
-            write=pretend.call_recorder(lambda *a: None),
-            flush=pretend.call_recorder(lambda: None),
-            fileno=pretend.call_recorder(lambda: "fileno"),
-        )
-
-        fake_bytes = b"data"
-
-        self._put_setup(fake_destination_file, False)
-        result = service.put(fake_bytes, "3.bin-e.json", False)
+        result = service.put(fake_file_data, b"3.bin-e.json")
 
         assert result is None
         assert local.os.path.join.calls == [
-            pretend.call(service._path, "3.bin-e.json"),
+            pretend.call(service._path, b"3.bin-e.json"),
         ]
-        expected_file_path = os.path.join(service._path, "3.bin-e.json")
-        assert local.os.open.calls == [pretend.call(expected_file_path, 0)]
-        assert local.os.fdopen.calls == [pretend.call(0, "wb")]
-        assert fake_destination_file.write.calls == [pretend.call(fake_bytes)]
+        assert fake_destination_file.write.calls == [
+            pretend.call(fake_file_data)
+        ]
         assert fake_destination_file.flush.calls == [pretend.call()]
         assert fake_destination_file.fileno.calls == [pretend.call()]
         assert local.os.fsync.calls == [pretend.call("fileno")]
@@ -274,17 +236,14 @@ class TestLocalStorageService:
                 )
             ),
             open=pretend.raiser(PermissionError("don't want this message")),
-            O_WRONLY=0,
-            O_CREAT=0,
         )
 
-        local.stat = pretend.stub(S_IRUSR=0, S_IWUSR=0)
         fake_bytes = b"data"
 
-        with pytest.raises(OSError) as err:
+        with pytest.raises(local.StorageError) as err:
             service.put(fake_bytes, "3.bin-e.json")
 
-        assert "don't want this message" in str(err)
+        assert "Can't write role file '/path/3.bin-e.json'" in str(err)
         assert local.os.path.join.calls == [
             pretend.call(service._path, "3.bin-e.json"),
         ]

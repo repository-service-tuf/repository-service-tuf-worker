@@ -85,7 +85,6 @@ class IStorage(ABC):
         self,
         file_data: bytes,
         filename: str,
-        restrict: Optional[bool] = True,
     ) -> None:
         """
         Stores file bytes within a file with a specific filename.
