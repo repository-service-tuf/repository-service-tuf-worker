@@ -211,13 +211,24 @@ class TestTargetsCrud:
         assert fake_datetime.now.calls == [pretend.call()]
 
     def test_update_to_published(self, monkeypatch):
-
-        mocked_db = pretend.stub(
-            add=pretend.call_recorder(lambda *a: None),
-            commit=pretend.call_recorder(lambda: None),
-            refresh=pretend.call_recorder(lambda *a: None),
+        test_targets = ["path/file1", "path.file2"]
+        crud.models.RSTUFTargets = pretend.stub(
+            path=pretend.stub(
+                in_=pretend.call_recorder(lambda *a: test_targets)
+            ),
+            published="published",
+            last_update="last_update",
         )
-
+        mocked_update = pretend.stub(
+            update=pretend.call_recorder(lambda *a: crud.models.RSTUFTargets)
+        )
+        mocked_filter = pretend.stub(
+            filter=pretend.call_recorder(lambda *a: mocked_update)
+        )
+        mocked_db = pretend.stub(
+            query=pretend.call_recorder(lambda *a: mocked_filter),
+            commit=pretend.call_recorder(lambda: None),
+        )
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
             now=pretend.call_recorder(lambda: fake_time)
@@ -227,24 +238,17 @@ class TestTargetsCrud:
             fake_datetime,
         )
 
-        test_target = crud.schemas.TargetsCreate(
-            path="file1.tar.gz",
-            info={"info": {"k": "v"}},
-            rolename="bins-0",
-            published=False,
-            action=crud.schemas.TargetAction.ADD,
-        )
+        test_result = crud.update_to_published(mocked_db, test_targets)
 
-        test_result = crud.update_to_published(mocked_db, test_target)
-
-        assert test_result.path == "file1.tar.gz"
-        assert test_result.info == {"info": {"k": "v"}}
-        assert test_result.last_update == fake_time
-        assert test_result.published is True
-        assert test_result.action == crud.schemas.TargetAction.ADD
-        assert mocked_db.add.calls == [pretend.call(test_target)]
+        assert test_result is None
+        assert mocked_db.query.calls == [
+            pretend.call(crud.models.RSTUFTargets)
+        ]
+        assert mocked_filter.filter.calls == [pretend.call(test_targets)]
+        assert mocked_update.update.calls == [
+            pretend.call({"published": True, "last_update": fake_time})
+        ]
         assert mocked_db.commit.calls == [pretend.call()]
-        assert mocked_db.refresh.calls == [pretend.call(test_target)]
         assert fake_datetime.now.calls == [pretend.call()]
 
     def test_update_action_remove(self, monkeypatch):

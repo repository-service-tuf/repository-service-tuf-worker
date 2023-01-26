@@ -263,7 +263,7 @@ class MetadataRepository:
     def _update_timestamp(
         self,
         snapshot_version: int,
-        db_targets: Optional[List[targets_models.RSTUFTargets]] = None,
+        db_targets: Optional[List[str]] = None,
     ) -> Metadata[Timestamp]:
         """
         Loads 'timestamp', updates meta info about passed 'snapshot'
@@ -284,8 +284,7 @@ class MetadataRepository:
 
         # TODO review if here is the best place to change the status in DB
         if db_targets:
-            for db_target in db_targets:
-                targets_crud.update_to_published(self._db, db_target)
+            targets_crud.update_to_published(self._db, db_targets)
 
         return timestamp
 
@@ -442,7 +441,7 @@ class MetadataRepository:
             # initialize the new snapshot targets meta and published targets
             # from DB SQL
             new_snapshot_meta: List[Tuple(str, int)] = []
-            db_published_targets: List[targets_models.RSTUFTargets] = []
+            db_published_targets: List[str] = []
             for _, rolename in unpublished_roles:
                 # get the unpublished targets for the delegated, it will be use
                 # to update the database when Snapshot and Timestamp is
@@ -451,7 +450,7 @@ class MetadataRepository:
                     db=self._db, rolename=rolename
                 )
                 logging.debug(f"{rolename}: New targets #: {len(db_targets)}")
-                db_published_targets += db_targets
+                db_published_targets += [target.path for target in db_targets]
 
                 # load the delegated targets role, clean the targets and add
                 # a new meta from the SQL DB.

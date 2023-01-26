@@ -119,19 +119,20 @@ def update(
     return target
 
 
-def update_to_published(
-    db: Session, target: models.RSTUFTargets
-) -> models.RSTUFTargets:
+def update_to_published(db: Session, paths: List[str]) -> None:
     """
     Update Target to `published` to `True`.
     """
-    target.published = True
-    target.last_update = datetime.now()
-    db.add(target)
-    db.commit()
-    db.refresh(target)
 
-    return target
+    db.query(models.RSTUFTargets).filter(
+        models.RSTUFTargets.path.in_(paths)
+    ).update(
+        {
+            models.RSTUFTargets.published: True,
+            models.RSTUFTargets.last_update: datetime.now(),
+        }
+    )
+    db.commit()
 
 
 def update_action_remove(
