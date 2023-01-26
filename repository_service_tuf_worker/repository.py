@@ -377,6 +377,7 @@ class MetadataRepository:
             kwargs={
                 "action": "publish_targets",
                 "payload": None,
+                "refresh_settings": False,
             },
             task_id=f"publish_targets-{task_id}",
             queue="rstuf_internals",

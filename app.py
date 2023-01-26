@@ -69,12 +69,17 @@ app = Celery(
 
 @app.task(serializer="json", bind=True)
 def repository_service_tuf_worker(
-    self, action: str, payload: Optional[Dict[str, Any]] = None
+    self,
+    action: str,
+    payload: Optional[Dict[str, Any]] = None,
+    refresh_settings: Optional[bool] = True,
 ):
     """
     Repository Service for TUF Metadata Worker
     """
-    repository.refresh_settings(worker_settings)
+    if refresh_settings:
+        repository.refresh_settings(worker_settings)
+
     repository_action = getattr(repository, action)
     if payload is None:
         result = repository_action()
