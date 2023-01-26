@@ -16,7 +16,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from tuf.api.metadata import Metadata, T
 
@@ -89,7 +89,6 @@ class IStorage(ABC):
         self,
         file_data: bytes,
         filename: str,
-        restrict: Optional[bool] = True,
     ) -> None:
         """
         Stores file bytes within a file with a specific filename.
