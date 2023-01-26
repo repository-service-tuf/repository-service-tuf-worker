@@ -212,7 +212,7 @@ class TestLocalStorageService:
             pretend.call(fake_file_data)
         ]
         assert fake_destination_file.flush.calls == [pretend.call()]
-        assert fake_destination_file.flush.calls == [pretend.call()]
+        assert fake_destination_file.fileno.calls == [pretend.call()]
         assert local.os.fsync.calls == [pretend.call("fileno")]
 
     def test_put_OSError(self):
