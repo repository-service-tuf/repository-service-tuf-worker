@@ -216,10 +216,10 @@ class TestMetadataRepository:
             "update_to_published",
             mocked_crud_update_to_publish,
         )
-        faked_db_target = pretend.stub()
+        faked_db_targets = pretend.stub(path="path/file1")
 
         result = test_repo._update_timestamp(
-            snapshot_version, [faked_db_target]
+            snapshot_version, [faked_db_targets]
         )
 
         assert result == mocked_timestamp
@@ -238,7 +238,7 @@ class TestMetadataRepository:
             pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
         ]
         assert mocked_crud_update_to_publish.calls == [
-            pretend.call(test_repo._db, faked_db_target)
+            pretend.call(test_repo._db, [faked_db_targets])
         ]
 
     def test__update_snapshot(self, test_repo):
@@ -419,9 +419,11 @@ class TestMetadataRepository:
             "read_unpublished_rolenames",
             fake_crud_read_unpublished_rolenames,
         )
-        fake_db_targets = pretend.stub()
         fake_crud_read_unpublished_by_rolename = pretend.call_recorder(
-            lambda **kw: [fake_db_targets, fake_db_targets]
+            lambda **kw: [
+                pretend.stub(path="path/file1"),
+                pretend.stub(path="path/file2"),
+            ]
         )
         monkeypatch.setattr(
             repository.targets_crud,
@@ -500,10 +502,10 @@ class TestMetadataRepository:
             pretend.call(
                 "fake_md_snapshot",
                 [
-                    fake_db_targets,
-                    fake_db_targets,
-                    fake_db_targets,
-                    fake_db_targets,
+                    "path/file1",
+                    "path/file2",
+                    "path/file1",
+                    "path/file2",
                 ],
             )
         ]
