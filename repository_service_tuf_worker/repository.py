@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import redis
 from celery.app.task import Task
+from celery.exceptions import ChordError
+from celery.result import AsyncResult, states
 from securesystemslib.exceptions import StorageError  # type: ignore
 from securesystemslib.signer import SSlibSigner  # type: ignore
 from tuf.api.metadata import (  # noqa
@@ -321,6 +323,7 @@ class MetadataRepository:
     def _update_task(
         self,
         bin_targets: Dict[str, List[targets_models.RSTUFTargets]],
+        subtask: AsyncResult,
         update_state: Task.update_state,
     ):
         """
@@ -331,16 +334,21 @@ class MetadataRepository:
         logging.debug(f"Waiting roles to be published {list(bin_targets)}")
 
         def _update_state(
+            state: states,
             bin_targets: Dict[str, List[targets_models.RSTUFTargets]],
             completed_roles: List[str],
+            exc_type: Optional[str] = None,
+            exc_message: Optional[List[str]] = None,
         ):
             update_state(
-                state="RUNNING",
+                state=state,
                 meta={
                     "published_roles": completed_roles,
                     "roles_to_publish": f"{list(bin_targets.keys())}",
                     "status": "Publishing",
                     "last_update": datetime.now(),
+                    "exc_type": exc_type,
+                    "exc_message": exc_message,
                 },
             )
 
@@ -355,9 +363,23 @@ class MetadataRepository:
                 if len(targets) == 0:
                     logging.debug(f"Update: {role_name} completed")
                     completed_roles.append(role_name)
+            if subtask.status == states.FAILURE:
+                exc_type = subtask.result.__class__.__name__
+                exc_message = list(subtask.result.args)
+                _update_state(
+                    states.FAILURE,
+                    bin_targets,
+                    completed_roles,
+                    exc_type=exc_type,
+                    exc_message=exc_message,
+                )
+                raise ChordError(
+                    f"Failed to execute {subtask.task_id}: "
+                    f"{exc_type} {exc_message}"
+                )
 
             if sorted(completed_roles) != sorted(list(bin_targets)):
-                _update_state(bin_targets, completed_roles)
+                _update_state("RUNNING", bin_targets, completed_roles)
                 time.sleep(3)
             else:
                 break
@@ -372,7 +394,7 @@ class MetadataRepository:
         # TODO: all tasks has the same id `publish_targets`. Should be unique?
         # Should we check and avoid multiple tasks? Check that the function
         # `publish_target` has a lock to avoid race conditions.
-        repository_service_tuf_worker.apply_async(
+        return repository_service_tuf_worker.apply_async(
             kwargs={
                 "action": "publish_targets",
                 "payload": None,
@@ -485,7 +507,7 @@ class MetadataRepository:
 
     def add_targets(
         self, payload: Dict[str, Any], update_state: Task.update_state
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Add or update the new target in the SQL DB and submit the task for
         `update_targets`
@@ -531,8 +553,8 @@ class MetadataRepository:
 
             bin_targets[bins_name].append(db_target)
 
-        self._send_publish_targets_task(task_id)
-        self._update_task(bin_targets, update_state)
+        subtask = self._send_publish_targets_task(task_id)
+        self._update_task(bin_targets, subtask, update_state)
 
         result = ResultDetails(
             status="Task finished.",
@@ -588,8 +610,8 @@ class MetadataRepository:
                 bin_targets[bins_name].append(db_target)
 
         if len(deleted_targets) > 0:
-            self._send_publish_targets_task(task_id)
-            self._update_task(bin_targets, update_state)
+            subtask = self._send_publish_targets_task(task_id)
+            self._update_task(bin_targets, subtask, update_state)
 
         result = ResultDetails(
             status="Task finished.",

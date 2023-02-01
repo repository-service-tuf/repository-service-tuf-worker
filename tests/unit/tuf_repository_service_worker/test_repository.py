@@ -7,6 +7,8 @@ from contextlib import contextmanager
 
 import pretend
 import pytest
+from celery.exceptions import ChordError
+from celery.result import states
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
@@ -335,10 +337,13 @@ class TestMetadataRepository:
         fake_datetime = pretend.stub(
             now=pretend.call_recorder(lambda: fake_time)
         )
+        fake_subtask = pretend.stub(status=states.SUCCESS)
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
-        result = test_repo._update_task(fake_bin_targets, fake_update_state)
+        result = test_repo._update_task(
+            fake_bin_targets, fake_subtask, fake_update_state
+        )
 
         assert result is None
         assert test_repo._db.refresh.calls == [
@@ -354,8 +359,60 @@ class TestMetadataRepository:
                     "roles_to_publish": "['bin-e', 'bin-f']",
                     "status": "Publishing",
                     "last_update": fake_time,
+                    "exc_type": None,
+                    "exc_message": None,
                 },
+            ),
+        ]
+
+    def test__update_task_subtask_failure(self, monkeypatch):
+        test_repo = repository.MetadataRepository.create_service()
+
+        test_repo._db = pretend.stub(
+            refresh=pretend.call_recorder(lambda *a: None)
+        )
+
+        fake_target = pretend.stub(published=True)
+        fake_bin_targets = {
+            "bin-e": [fake_target],
+            "bin-f": [fake_target, fake_target],
+        }
+        fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        fake_subtask = pretend.stub(
+            status=states.FAILURE,
+            task_id="publish_targets-fakeid",
+            result=PermissionError("failed to write in the storage"),
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
+        with pytest.raises(ChordError) as err:
+            test_repo._update_task(
+                fake_bin_targets, fake_subtask, fake_update_state
             )
+
+        assert "Failed to execute publish_targets-fakeid" in str(err)
+        assert test_repo._db.refresh.calls == [
+            pretend.call(fake_target),
+            pretend.call(fake_target),
+        ]
+        assert fake_update_state.calls == [
+            pretend.call(
+                state=states.FAILURE,
+                meta={
+                    "published_roles": ["bin-e"],
+                    "roles_to_publish": "['bin-e', 'bin-f']",
+                    "status": "Publishing",
+                    "last_update": fake_time,
+                    "exc_type": "PermissionError",
+                    "exc_message": ["failed to write in the storage"],
+                },
+            ),
         ]
 
     def test_bootstrap(self, monkeypatch):
@@ -604,9 +661,9 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         test_repo._send_publish_targets_task = pretend.call_recorder(
-            lambda *a: None
+            lambda *a: "fake_subtask"
         )
-        test_repo._update_task = pretend.call_recorder(lambda *a: None)
+        test_repo._update_task = pretend.call_recorder(lambda *a: True)
 
         payload = {
             "targets": [
@@ -642,7 +699,9 @@ class TestMetadataRepository:
             pretend.call("fake_task_id_xyz")
         ]
         assert test_repo._update_task.calls == [
-            pretend.call({"bin-e": [fake_db_target]}, fake_update_state)
+            pretend.call(
+                {"bin-e": [fake_db_target]}, "fake_subtask", fake_update_state
+            )
         ]
         assert repository.targets_crud.read_by_path.calls == [
             pretend.call(test_repo._db, "file1.tar.gz")
@@ -694,9 +753,9 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         test_repo._send_publish_targets_task = pretend.call_recorder(
-            lambda *a: None
+            lambda *a: "fake_subtask"
         )
-        test_repo._update_task = pretend.call_recorder(lambda *a: None)
+        test_repo._update_task = pretend.call_recorder(lambda *a: True)
 
         payload = {
             "targets": [
@@ -732,7 +791,9 @@ class TestMetadataRepository:
             pretend.call("fake_task_id_xyz")
         ]
         assert test_repo._update_task.calls == [
-            pretend.call({"bin-e": [fake_db_target]}, fake_update_state)
+            pretend.call(
+                {"bin-e": [fake_db_target]}, "fake_subtask", fake_update_state
+            )
         ]
         assert repository.targets_crud.read_by_path.calls == [
             pretend.call(test_repo._db, "file1.tar.gz")
@@ -801,7 +862,7 @@ class TestMetadataRepository:
             "task_id": "fake_task_id_xyz",
         }
         test_repo._send_publish_targets_task = pretend.call_recorder(
-            lambda *a: None
+            lambda *a: "fake_subtask"
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
@@ -839,6 +900,7 @@ class TestMetadataRepository:
                         fake_db_target_removed,
                     ]
                 },
+                "fake_subtask",
                 fake_update_state,
             )
         ]
