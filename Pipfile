@@ -16,6 +16,7 @@ sqlalchemy = "*"
 psycopg2 = "*"
 alembic = "*"
 pydantic = "*"
+celery = "*"
 
 [dev-packages]
 tox = "*"
