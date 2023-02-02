@@ -5,13 +5,11 @@ name = "pypi"
 
 [packages]
 watchdog = "*"
-cryptography = "*"
-pynacl = "*"
 redis = "*"
 tuf = "*"
 dynaconf = {extras = ["ini"], version = "*"}
 supervisor = "*"
-securesystemslib = "*"
+securesystemslib = {extras = ["pynacl", "crypto"], version = "*"}
 sqlalchemy = "*"
 psycopg2 = "*"
 alembic = "*"
