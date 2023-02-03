@@ -153,18 +153,6 @@ app.conf.beat_schedule = {
             "acks_late": True,
         },
     },
-    "publish_targets": {
-        "task": "app.repository_service_tuf_worker",
-        "schedule": schedules.crontab(minute="*/1"),
-        "kwargs": {
-            "action": "publish_targets",
-        },
-        "options": {
-            "task_id": "publish_targets",
-            "queue": "rstuf_internals",
-            "acks_late": True,
-        },
-    },
 }
 
 repository = MetadataRepository.create_service()
