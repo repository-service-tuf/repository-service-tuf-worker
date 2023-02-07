@@ -553,8 +553,11 @@ class MetadataRepository:
 
             bin_targets[bins_name].append(db_target)
 
-        subtask = self._send_publish_targets_task(task_id)
-        self._update_task(bin_targets, subtask, update_state)
+        # If publish_targets doesn't exists it will be True by default.
+        publish_targets = payload.get("publish_targets", True)
+        if publish_targets is True:
+            subtask = self._send_publish_targets_task(task_id)
+            self._update_task(bin_targets, subtask, update_state)
 
         result = ResultDetails(
             status="Task finished.",
@@ -608,8 +611,9 @@ class MetadataRepository:
                     bin_targets[bins_name] = []
 
                 bin_targets[bins_name].append(db_target)
-
-        if len(deleted_targets) > 0:
+        # If publish_targets doesn't exists it will be True by default.
+        publish_targets = payload.get("publish_targets", True)
+        if len(deleted_targets) > 0 and publish_targets is True:
             subtask = self._send_publish_targets_task(task_id)
             self._update_task(bin_targets, subtask, update_state)
 

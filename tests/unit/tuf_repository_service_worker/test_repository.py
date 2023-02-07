@@ -831,6 +831,87 @@ class TestMetadataRepository:
 
         assert "No targets in the payload" in str(err)
 
+    def test_add_targets_skip_publishing(self, monkeypatch):
+        test_repo = repository.MetadataRepository.create_service()
+        test_repo._db = pretend.stub()
+        test_repo._get_path_succinct_role = pretend.call_recorder(
+            lambda *a: "bin-e"
+        )
+
+        def fake_target(key):
+            if key == "path":
+                return "fake_target1.tar.gz"
+            if key == "info":
+                return {"k": "v"}
+
+        fake_db_target = pretend.stub(get=pretend.call_recorder(fake_target))
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_by_path",
+            pretend.call_recorder(lambda *a: None),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "create",
+            pretend.call_recorder(lambda *a: fake_db_target),
+        )
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
+        payload = {
+            "targets": [
+                {
+                    "info": {
+                        "length": 11342,
+                        "hashes": {
+                            "blake2b-256": "716f6e863f744b9ac22c97ec7b76ea5"
+                        },
+                        "custom": {"task_id": "12345"},
+                    },
+                    "path": "file1.tar.gz",
+                },
+            ],
+            "task_id": "fake_task_id_xyz",
+            "publish_targets": False,
+        }
+
+        fake_update_state = pretend.stub()
+        result = test_repo.add_targets(payload, update_state=fake_update_state)
+
+        assert result == {
+            "details": {
+                "target_roles": ["bin-e"],
+                "targets": ["file1.tar.gz"],
+            },
+            "last_update": fake_time,
+            "status": "Task finished.",
+        }
+        assert test_repo._get_path_succinct_role.calls == [
+            pretend.call("file1.tar.gz")
+        ]
+        assert repository.targets_crud.read_by_path.calls == [
+            pretend.call(test_repo._db, "file1.tar.gz")
+        ]
+        assert repository.targets_crud.create.calls == [
+            pretend.call(
+                test_repo._db,
+                targets_schema.TargetsCreate(
+                    path=payload["targets"][0].get("path"),
+                    info=payload["targets"][0].get("info"),
+                    published=False,
+                    action=targets_schema.TargetAction.ADD,
+                    rolename="bin-e",
+                ),
+            )
+        ]
+        assert fake_datetime.now.calls == [pretend.call()]
+
     def test_remove_targets(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
@@ -903,6 +984,62 @@ class TestMetadataRepository:
                 "fake_subtask",
                 fake_update_state,
             )
+        ]
+        assert fake_datetime.now.calls == [pretend.call()]
+
+    def test_remove_targets_skip_publishing(self, monkeypatch):
+        test_repo = repository.MetadataRepository.create_service()
+
+        test_repo._get_path_succinct_role = pretend.call_recorder(
+            lambda *a: "bin-e"
+        )
+        fake_db_target = pretend.stub(action="REMOVE", published=False)
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_by_path",
+            lambda *a: fake_db_target,
+        )
+        fake_db_target_removed = pretend.stub()
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_action_remove",
+            lambda *a: fake_db_target_removed,
+        )
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
+        payload = {
+            "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"],
+            "task_id": "fake_task_id_xyz",
+            "publish_targets": False,
+        }
+
+        fake_update_state = pretend.stub()
+        result = test_repo.remove_targets(
+            payload, update_state=fake_update_state
+        )
+
+        assert result == {
+            "status": "Task finished.",
+            "last_update": fake_time,
+            "details": {
+                "deleted_targets": [
+                    "file1.tar.gz",
+                    "file2.tar.gz",
+                    "release-v0.1.0.yaml",
+                ],
+                "not_found_targets": [],
+            },
+        }
+        assert test_repo._get_path_succinct_role.calls == [
+            pretend.call("file1.tar.gz"),
+            pretend.call("file2.tar.gz"),
+            pretend.call("release-v0.1.0.yaml"),
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
