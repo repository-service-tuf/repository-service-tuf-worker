@@ -27,7 +27,7 @@ class LocalKeyVault(IKeyVault):
         online_key_pass: Optional[str] = None,
         online_key_type: Optional[str] = "ed25519",
     ):
-        """A configuration class for RSTUF Worker services.
+        """Configuration class for RSTUF Worker LocalKeyVault service.
 
         Args:
             path: directory of the key vault.
