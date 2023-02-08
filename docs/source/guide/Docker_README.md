@@ -103,6 +103,13 @@ Available types:
 * LocalKeyVault (local file system)
   - Requires variable ``RSTUF_LOCAL_KEYVAULT_PATH``
     - Define the directory where the data will be saved, example: `keyvault`
+  - Optional variables:
+    - ``RSTUF_LOCAL_KEYVAULT_ONLINE_KEY_NAME``
+      - file name of the online key
+    - ``RSTUF_LOCAL_KEYVAULT_ONLINE_KEY_PASSWORD``
+      - password used to load the online key
+    - ``RSTUF_LOCAL_KEYVAULT_ONLINE_KEY_TYPE``
+      - cryptographic type of the online key, example: `ed25519`, `rsa`
 
 
 #### (Optional) `DATA_DIR`
