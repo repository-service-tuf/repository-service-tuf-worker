@@ -10,8 +10,20 @@ from repository_service_tuf_worker.services.keyvault import local
 
 class TestLocalStorageService:
     def test_basic_init(self):
+        service = local.LocalKeyVault(
+            "/path", "custom_online.key", "password", "rsassa-pss-sha256"
+        )
+        assert service._path == "/path"
+        assert service._online_key_name == "custom_online.key"
+        assert service._online_key_password == "password"
+        assert service._online_key_type == "rsassa-pss-sha256"
+
+    def test_basic_init_minimum_settings(self):
         service = local.LocalKeyVault("/path")
         assert service._path == "/path"
+        assert service._online_key_name == "online.key"
+        assert service._online_key_password is None
+        assert service._online_key_type == "ed25519"
 
     def test_configure(self):
         test_settings = pretend.stub(LOCAL_KEYVAULT_PATH="/path")
@@ -22,7 +34,9 @@ class TestLocalStorageService:
             ),
         )
 
-        service = local.LocalKeyVault("/path")
+        service = local.LocalKeyVault(
+            "/path", "online.key", "password", "ed25519"
+        )
         service.configure(test_settings)
         assert service._path == "/path"
         assert local.os.path.join.calls == [
@@ -33,7 +47,9 @@ class TestLocalStorageService:
         ]
 
     def test_settings(self):
-        service = local.LocalKeyVault("/path")
+        service = local.LocalKeyVault(
+            "/path", "online.key", "password", "ed25519"
+        )
         service_settings = service.settings()
 
         assert service_settings == [
@@ -42,10 +58,27 @@ class TestLocalStorageService:
                 argument="path",
                 required=True,
             ),
+            local.ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_NAME",
+                argument="online_key_name",
+                required=False,
+            ),
+            local.ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_PASSWORD",
+                argument="online_key_pass",
+                required=False,
+            ),
+            local.ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_TYPE",
+                argument="online_key_type",
+                required=False,
+            ),
         ]
 
     def test_get(self):
-        service = local.LocalKeyVault("/path")
+        service = local.LocalKeyVault(
+            "/path", "online.key", "password", "ed25519"
+        )
         service.keyvault = pretend.stub(
             store={
                 "timestamp": [
@@ -64,7 +97,9 @@ class TestLocalStorageService:
         ]
 
     def test_get_BoxKeyError_or_KeyError(self):
-        service = local.LocalKeyVault("/path")
+        service = local.LocalKeyVault(
+            "/path", "online.key", "password", "ed25519"
+        )
         service.keyvault = pretend.stub(
             store={
                 "timestamp": [
@@ -81,7 +116,9 @@ class TestLocalStorageService:
         assert "timestamp key(s) not found" in str(err)
 
     def test_put(self):
-        service = local.LocalKeyVault("/path")
+        service = local.LocalKeyVault(
+            "/path", "online.key", "password", "ed25519"
+        )
 
         local.encrypt_key = pretend.call_recorder(lambda *a: "fake_ed24419")
         service.keyvault = pretend.stub(

@@ -22,7 +22,7 @@ class ServiceSettings:
 class IKeyVault(ABC):
     @classmethod
     @abstractmethod
-    def configure(cls, settings):
+    def configure(cls, settings) -> None:
         """
         Run actions to test, configure using the settings.
         """
@@ -30,7 +30,7 @@ class IKeyVault(ABC):
 
     @classmethod
     @abstractmethod
-    def settings(cls):
+    def settings(cls) -> List[ServiceSettings]:
         """
         Define all the ServiceSettings required in settings.
         """
@@ -52,7 +52,7 @@ class IKeyVault(ABC):
 class IStorage(ABC):
     @classmethod
     @abstractmethod
-    def configure(cls, settings: Any):
+    def configure(cls, settings: Any) -> None:
         """
         Run actions to test, configure using the settings.
         """
