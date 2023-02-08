@@ -342,7 +342,7 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         result = test_repo._update_task(
-            fake_bin_targets, fake_subtask, fake_update_state
+            fake_bin_targets, fake_update_state, fake_subtask
         )
 
         assert result is None
@@ -393,7 +393,7 @@ class TestMetadataRepository:
 
         with pytest.raises(ChordError) as err:
             test_repo._update_task(
-                fake_bin_targets, fake_subtask, fake_update_state
+                fake_bin_targets, fake_update_state, fake_subtask
             )
 
         assert "Failed to execute publish_targets-fakeid" in str(err)
@@ -700,7 +700,7 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_task.calls == [
             pretend.call(
-                {"bin-e": [fake_db_target]}, "fake_subtask", fake_update_state
+                {"bin-e": [fake_db_target]}, fake_update_state, "fake_subtask"
             )
         ]
         assert repository.targets_crud.read_by_path.calls == [
@@ -792,7 +792,7 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_task.calls == [
             pretend.call(
-                {"bin-e": [fake_db_target]}, "fake_subtask", fake_update_state
+                {"bin-e": [fake_db_target]}, fake_update_state, "fake_subtask"
             )
         ]
         assert repository.targets_crud.read_by_path.calls == [
@@ -864,6 +864,8 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
 
+        test_repo._update_task = pretend.call_recorder(lambda *a: True)
+
         payload = {
             "targets": [
                 {
@@ -909,6 +911,9 @@ class TestMetadataRepository:
                     rolename="bin-e",
                 ),
             )
+        ]
+        assert test_repo._update_task.calls == [
+            pretend.call({"bin-e": [fake_db_target]}, fake_update_state, None)
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
@@ -981,8 +986,8 @@ class TestMetadataRepository:
                         fake_db_target_removed,
                     ]
                 },
-                "fake_subtask",
                 fake_update_state,
+                "fake_subtask",
             )
         ]
         assert fake_datetime.now.calls == [pretend.call()]
@@ -1005,6 +1010,9 @@ class TestMetadataRepository:
             "update_action_remove",
             lambda *a: fake_db_target_removed,
         )
+
+        test_repo._update_task = pretend.call_recorder(lambda *a: None)
+
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
             now=pretend.call_recorder(lambda: fake_time)
@@ -1040,6 +1048,19 @@ class TestMetadataRepository:
             pretend.call("file1.tar.gz"),
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
+        ]
+        assert test_repo._update_task.calls == [
+            pretend.call(
+                {
+                    "bin-e": [
+                        fake_db_target_removed,
+                        fake_db_target_removed,
+                        fake_db_target_removed,
+                    ]
+                },
+                fake_update_state,
+                None,
+            )
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 

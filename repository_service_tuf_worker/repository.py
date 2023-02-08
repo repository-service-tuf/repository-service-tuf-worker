@@ -323,8 +323,8 @@ class MetadataRepository:
     def _update_task(
         self,
         bin_targets: Dict[str, List[targets_models.RSTUFTargets]],
-        subtask: AsyncResult,
         update_state: Task.update_state,
+        subtask: Optional[AsyncResult] = None,
     ):
         """
         Updates the 'RUNNING' state with details if the meta still not
@@ -363,7 +363,7 @@ class MetadataRepository:
                 if len(targets) == 0:
                     logging.debug(f"Update: {role_name} completed")
                     completed_roles.append(role_name)
-            if subtask.status == states.FAILURE:
+            if subtask is not None and subtask.status == states.FAILURE:
                 exc_type = subtask.result.__class__.__name__
                 exc_message = list(subtask.result.args)
                 _update_state(
@@ -555,9 +555,11 @@ class MetadataRepository:
 
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
+        subtask = None
         if publish_targets is True:
             subtask = self._send_publish_targets_task(task_id)
-            self._update_task(bin_targets, subtask, update_state)
+
+        self._update_task(bin_targets, update_state, subtask)
 
         result = ResultDetails(
             status="Task finished.",
@@ -613,9 +615,11 @@ class MetadataRepository:
                 bin_targets[bins_name].append(db_target)
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
+        subtask = None
         if len(deleted_targets) > 0 and publish_targets is True:
             subtask = self._send_publish_targets_task(task_id)
-            self._update_task(bin_targets, subtask, update_state)
+
+        self._update_task(bin_targets, update_state, subtask)
 
         result = ResultDetails(
             status="Task finished.",
