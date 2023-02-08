@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from dynaconf import Dynaconf, loaders
 from dynaconf.utils.boxing import DynaBox
@@ -20,21 +20,38 @@ class KeyVaultError(Exception):
 class LocalKeyVault(IKeyVault):
     """Local KeyVault type"""
 
-    def __init__(self, path: str):
+    def __init__(
+        self,
+        path: str,
+        online_key_name: Optional[str] = "online.key",
+        online_key_pass: Optional[str] = None,
+        online_key_type: Optional[str] = "ed25519",
+    ):
+        """Configuration class for RSTUF Worker LocalKeyVault service.
+
+        Args:
+            path: directory of the key vault.
+            online_key_name: file name of the online key.
+            online_key_pass: password to load the online key.
+            online_key_type: cryptography type of the online key.
+        """
         self._path: str = path
         self._secrets_file: str = os.path.join(self._path, ".secrets.yaml")
-        self.keyvault = Dynaconf(
+        self._online_key_name: Optional[str] = online_key_name
+        self._online_key_password: Optional[str] = online_key_pass
+        self._online_key_type: Optional[str] = online_key_type
+        self._keyvault = Dynaconf(
             envvar_prefix="LOCALKEYVAULT",
             settings_files=[self._secrets_file],
         )
 
     @classmethod
-    def configure(cls, settings):
+    def configure(cls, settings) -> None:
         """Configure using the settings."""
         os.makedirs(settings.LOCAL_KEYVAULT_PATH, exist_ok=True)
 
     @classmethod
-    def settings(cls):
+    def settings(cls) -> List[ServiceSettings]:
         """Define the settings parameters."""
         return [
             ServiceSettings(
@@ -42,9 +59,24 @@ class LocalKeyVault(IKeyVault):
                 argument="path",
                 required=True,
             ),
+            ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_NAME",
+                argument="online_key_name",
+                required=False,
+            ),
+            ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_PASSWORD",
+                argument="online_key_pass",
+                required=False,
+            ),
+            ServiceSettings(
+                name="LOCAL_KEYVAULT_ONLINE_KEY_TYPE",
+                argument="online_key_type",
+                required=False,
+            ),
         ]
 
-    def get(self, rolename: str):
+    def get(self, rolename: str) -> Dict[str, Any]:
         """Get the Key from local KeyVault by role name."""
         keys_sslib_format: List[Dict[str, Any]] = []
         try:
@@ -58,7 +90,7 @@ class LocalKeyVault(IKeyVault):
 
         return keys_sslib_format
 
-    def put(self, rolename: str, keys: List[Dict[str, Any]]):
+    def put(self, rolename: str, keys: List[Dict[str, Any]]) -> None:
         """Save the Key in the local KeyVault."""
         key_vault_data: list = []
         for key in keys:
