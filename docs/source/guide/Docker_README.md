@@ -106,10 +106,13 @@ Available types:
   - Optional variables:
     - ``RSTUF_LOCAL_KEYVAULT_ONLINE_KEY_NAME``
       - file name of the online key
+      - Default: `online.key`
     - ``RSTUF_LOCAL_KEYVAULT_ONLINE_KEY_PASSWORD``
       - password used to load the online key
     - ``RSTUF_LOCAL_KEYVAULT_ONLINE_KEY_TYPE``
-      - cryptographic type of the online key, example: `ed25519`, `rsa`
+      - cryptographic type of the online key, example: `ed25519`.
+      - Default: `ed25519`
+      - [Note: At the moment RSTUF Worker supports only `ed25519`
 
 
 #### (Optional) `DATA_DIR`
