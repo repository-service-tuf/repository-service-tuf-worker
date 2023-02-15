@@ -385,12 +385,8 @@ class MetadataRepository:
         Add the online Keys to the Key Storage backend and the Signed Metadata
         to the Storage Backend.
         """
-
-        # Store online keys to the Key Vault
-        if settings := payload.get("settings"):
-            self.store_online_keys(settings)
-        else:
-            raise (ValueError("No settings in the payload"))
+        if payload.get("settings") is None:
+            raise ValueError("No settings in the payload")
 
         metadata = payload.get("metadata")
         if metadata is None:
@@ -701,18 +697,3 @@ class MetadataRepository:
             self.bump_bins_roles()
 
             return True
-
-    def store_online_keys(
-        self,
-        roles_config: Dict[str, Any],
-    ) -> bool:
-        """Store online keys in the Key Vault Backend."""
-        if role_settings := roles_config.get("roles"):
-            for rolename, items in role_settings.items():
-                # store keys in Key Vault
-                if keys := items.get("keys"):
-                    self._key_storage_backend.put(rolename, keys.values())
-        else:
-            return False
-
-        return True

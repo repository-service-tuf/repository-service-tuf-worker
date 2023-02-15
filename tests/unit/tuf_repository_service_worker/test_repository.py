@@ -358,8 +358,6 @@ class TestMetadataRepository:
     def test_bootstrap(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
 
-        test_repo.store_online_keys = pretend.call_recorder(lambda *s: None)
-
         test_repo._persist = pretend.call_recorder(lambda *a: None)
         repository.Metadata = pretend.stub(
             from_dict=pretend.call_recorder(lambda *a: "fake_metadata")
@@ -389,7 +387,6 @@ class TestMetadataRepository:
             "last_update": fake_time,
             "status": "Task finished.",
         }
-        assert test_repo.store_online_keys.calls == [pretend.call({"k": "v"})]
         assert repository.Metadata.from_dict.calls == [
             pretend.call({"md_k1": "md_v1"}),
             pretend.call({"md_k2": "md_v2"}),
@@ -418,7 +415,6 @@ class TestMetadataRepository:
     def test_bootstrap_missing_metadata(self):
         test_repo = repository.MetadataRepository.create_service()
 
-        test_repo.store_online_keys = pretend.call_recorder(lambda *s: None)
         payload = {
             "settings": {"k": "v"},
         }
@@ -1176,29 +1172,3 @@ class TestMetadataRepository:
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
-
-    def test_store_online_keys(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        test_repo._key_storage_backend = pretend.stub(
-            put=pretend.call_recorder(lambda *a: None)
-        )
-        roles_config = {
-            "roles": {
-                "root": {"keys": {"k1": "v1"}},
-                "snapshot": {"keys": {"k1": "v1"}},
-                "timestamp": {"keys": {"k1": "v1"}},
-            }
-        }
-        result = test_repo.store_online_keys(roles_config)
-        assert result is True
-
-    def test_store_online_keys_empty(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-        test_repo._key_storage_backend = pretend.stub(
-            put=pretend.call_recorder(lambda *a: None)
-        )
-        roles_config = {}
-        result = test_repo.store_online_keys(roles_config)
-        assert result is False

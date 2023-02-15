@@ -52,13 +52,6 @@ class IKeyVault(ABC):
         """Return a key from specific rolename."""
         pass  # pragma: no cover
 
-    @abstractmethod
-    def put(self, file_object: str, filename: str) -> None:
-        """
-        Stores file object with a specific filename.
-        """
-        pass  # pragma: no cover
-
 
 class IStorage(ABC):
     @classmethod

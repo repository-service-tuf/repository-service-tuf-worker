@@ -5,10 +5,9 @@
 import os
 from typing import Any, Dict, List, Optional
 
-from dynaconf import Dynaconf, loaders
-from dynaconf.utils.boxing import DynaBox
+from dynaconf import Dynaconf
 from dynaconf.vendor.box.exceptions import BoxKeyError
-from securesystemslib.keys import decrypt_key, encrypt_key
+from securesystemslib.keys import decrypt_key
 
 from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
 
@@ -89,20 +88,3 @@ class LocalKeyVault(IKeyVault):
             raise KeyVaultError(f"{rolename} key(s) not found.")
 
         return keys_sslib_format
-
-    def put(self, rolename: str, keys: List[Dict[str, Any]]) -> None:
-        """Save the Key in the local KeyVault."""
-        key_vault_data: list = []
-        for key in keys:
-            ed25519_key = encrypt_key(key.get("key"), key.get("password"))
-            key_vault_data.append(
-                {
-                    "key": ed25519_key,
-                    "filename": key["filename"].split("/")[-1],
-                    "password": key["password"],
-                }
-            )
-
-        self.keyvault.store[rolename.upper()] = key_vault_data
-        data = self.keyvault.as_dict(env=self.keyvault.current_env)
-        loaders.write(self._secrets_file, DynaBox(data).to_dict())
