@@ -260,7 +260,7 @@ class MetadataRepository:
 
         Args:
             snapshot_version: snapshot version to add to new timestamp.
-            db_targets: RSTUTarget DB objects will be changed as published in
+            db_targets: RSTUFTarget DB objects will be changed as published in
                 the DB SQL.
         """
         timestamp = self._storage_backend.get(Timestamp.type)
@@ -463,8 +463,8 @@ class MetadataRepository:
                 # append to the new snapshot targets meta
                 new_snapshot_meta.append((rolename, role.signed.version))
 
-            # update snapshop and timestamp
-            # note: the `db_published_targes` contains the targets that
+            # update snapshot and timestamp
+            # note: the `db_published_targets` contains the targets that
             # needs to updated in SQL DB as 'published' and it will be done
             # by the `_update_timestamp`
             self._update_timestamp(

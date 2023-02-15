@@ -123,7 +123,7 @@ class TestMetadataRepository:
     def test__persist_timestamp(self):
         self._test_helper_persist("timestamp", 2, "timestamp.json")
 
-    def test_bump_exipry(self, monkeypatch):
+    def test_bump_expiry(self, monkeypatch):
         test_repo = repository.MetadataRepository.create_service()
         test_repo._settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: 1460)
