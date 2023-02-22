@@ -4,6 +4,7 @@
 
 import pretend
 import pytest
+from securesystemslib.signer import SSlibSigner
 
 from repository_service_tuf_worker.services.keyvault import local
 
@@ -75,42 +76,28 @@ class TestLocalStorageService:
             ),
         ]
 
-    def test_get(self):
+    def test_get_signer(self):
         service = local.LocalKeyVault(
-            "/path", "online.key", "password", "ed25519"
+            "/path", "online.key", "key_password", "ed25519"
         )
-        service.keyvault = pretend.stub(
-            store={
-                "timestamp": [
-                    {"key": "key_values", "password": "key_password"}
-                ]
-            }
+        local.import_privatekey_from_file = pretend.call_recorder(
+            lambda *a: {}
         )
-        local.decrypt_key = pretend.call_recorder(
-            lambda *a: "fake_keys_sslib_format"
-        )
+        result = service.get_signer()
+        assert isinstance(result, SSlibSigner)
 
-        result = service.get("timestamp")
-        assert result == ["fake_keys_sslib_format"]
-        assert local.decrypt_key.calls == [
-            pretend.call("key_values", "key_password")
+        assert local.import_privatekey_from_file.calls == [
+            pretend.call("online.key", "ed25519", "key_password")
         ]
 
-    def test_get_BoxKeyError_or_KeyError(self):
+    def test_get_signer_securesystemslib_error(self):
         service = local.LocalKeyVault(
-            "/path", "online.key", "password", "ed25519"
+            "/path", "online.key", "key_password", "ed25519"
         )
-        service.keyvault = pretend.stub(
-            store={
-                "timestamp": [
-                    {"key": "key_values", "password": "key_password"}
-                ]
-            }
-        )
-        local.decrypt_key = pretend.raiser(
-            local.BoxKeyError("don't show this message")
+        local.import_privatekey_from_file = pretend.raiser(
+            local.CryptoError("don't show this message")
         )
         with pytest.raises(local.KeyVaultError) as err:
-            service.get("timestamp")
+            service.get_signer()
 
-        assert "timestamp key(s) not found" in str(err)
+        assert "Cannot load the online key" in str(err)

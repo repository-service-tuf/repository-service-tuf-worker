@@ -6,8 +6,15 @@ import os
 from typing import Any, Dict, List, Optional
 
 from dynaconf import Dynaconf
-from dynaconf.vendor.box.exceptions import BoxKeyError
-from securesystemslib.keys import decrypt_key
+from securesystemslib.exceptions import (
+    CryptoError,
+    Error,
+    FormatError,
+    StorageError,
+    UnsupportedLibraryError,
+)
+from securesystemslib.interface import import_privatekey_from_file
+from securesystemslib.signer import SSlibSigner
 
 from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
 
@@ -75,16 +82,21 @@ class LocalKeyVault(IKeyVault):
             ),
         ]
 
-    def get(self, rolename: str) -> Dict[str, Any]:
-        """Get the Key from local KeyVault by role name."""
-        keys_sslib_format: List[Dict[str, Any]] = []
+    def get_signer(self) -> SSlibSigner:
+        """Return a signer using the online key."""
         try:
-            keys: Dict[str, Any] = self.keyvault.store[rolename]
-            for key in keys:
-                keys_sslib_format.append(
-                    decrypt_key(key["key"], key["password"])
-                )
-        except (BoxKeyError, KeyError):
-            raise KeyVaultError(f"{rolename} key(s) not found.")
-
-        return keys_sslib_format
+            key_info: Dict[str, Any] = import_privatekey_from_file(
+                self._online_key_name,
+                self._online_key_type,
+                self._online_key_password,
+            )
+            return SSlibSigner(key_info)
+        except (
+            FormatError,
+            ValueError,
+            UnsupportedLibraryError,
+            StorageError,
+            CryptoError,
+            Error,
+        ) as err:
+            raise KeyVaultError("Cannot load the online key") from err

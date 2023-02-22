@@ -26,7 +26,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import redis
 from celery.app.task import Task
 from securesystemslib.exceptions import StorageError  # type: ignore
-from securesystemslib.signer import SSlibSigner  # type: ignore
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
     Metadata,
@@ -86,10 +85,10 @@ class MetadataRepository:
     """
 
     def __init__(self):
-        self._worker_settings = get_worker_settings()
-        self._settings = get_repository_settings()
-        self._storage_backend: IStorage = self.refresh_settings().STORAGE
-        self._key_storage_backend = self.refresh_settings().KEYVAULT
+        self._worker_settings: Dynaconf = get_worker_settings()
+        self._settings: Dynaconf = get_repository_settings()
+        self._storage_backend: IStorage  = self.refresh_settings().STORAGE
+        self._key_storage_backend: IKeyVault = self.refresh_settings().KEYVAULT
         self._db = self.refresh_settings().SQL
         self._redis = redis.StrictRedis.from_url(
             self._worker_settings.REDIS_SERVER
@@ -210,8 +209,7 @@ class MetadataRepository:
         for top-level roles.
         """
         role.signatures.clear()
-        for key in self._key_storage_backend.get(role_name):
-            signer = SSlibSigner(key)
+        for signer in self._key_storage_backend.get_signer():
             role.sign(signer, append=True)
 
     def _persist(self, role: Metadata, role_name: str) -> str:

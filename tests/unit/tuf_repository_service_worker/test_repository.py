@@ -64,24 +64,21 @@ class TestMetadataRepository:
             sign=pretend.call_recorder(lambda *a, **kw: None),
         )
         test_repo._key_storage_backend = pretend.stub(
-            get=pretend.call_recorder(lambda *a, **kw: ["key1", "key2"])
+            get_signer=pretend.call_recorder(
+                lambda *a, **kw: ["key_signer_1", "key_signer_2"]
+            )
         )
-        repository.SSlibSigner = pretend.call_recorder(lambda *a: "key_signer")
 
         test_result = test_repo._sign(fake_role, "root")
 
         assert test_result is None
-        assert test_repo._key_storage_backend.get.calls == [
-            pretend.call("root")
+        assert test_repo._key_storage_backend.get_signer.calls == [
+            pretend.call()
         ]
         assert fake_role.signatures.clear.calls == [pretend.call()]
         assert fake_role.sign.calls == [
-            pretend.call("key_signer", append=True),
-            pretend.call("key_signer", append=True),
-        ]
-        assert repository.SSlibSigner.calls == [
-            pretend.call("key1"),
-            pretend.call("key2"),
+            pretend.call("key_signer_1", append=True),
+            pretend.call("key_signer_2", append=True),
         ]
 
     def _test_helper_persist(self, role, version, expected_file_name):

@@ -16,8 +16,9 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
+from securesystemslib.signer import Signer
 from tuf.api.metadata import Metadata, T
 
 
@@ -48,8 +49,8 @@ class IKeyVault(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def get(self, rolename: List[str]) -> Dict[str, Any]:
-        """Return a key from specific rolename."""
+    def get_signer(self) -> Signer:
+        """Return a signer using the online key."""
         pass  # pragma: no cover
 
 
