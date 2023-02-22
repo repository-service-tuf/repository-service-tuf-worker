@@ -451,11 +451,10 @@
         },
         "prompt-toolkit": {
             "hashes": [
-                "sha256:3e163f254bef5a03b146397d7c1963bd3e2812f0964bb9a24e6ec761fd28db63",
-                "sha256:aa64ad242a462c5ff0363a7b9cfe696c20d55d9fc60c11fd8e632d064804d305"
+                "sha256:6a2948ec427dfcc7c983027b1044b355db6aaa8be374f54ad2015471f7d81c5b"
             ],
-            "markers": "python_full_version >= '3.6.2'",
-            "version": "==3.0.36"
+            "markers": "python_full_version >= '3.7.0'",
+            "version": "==3.0.37"
         },
         "psycopg2": {
             "hashes": [
@@ -577,11 +576,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:9d3de8591bd6f6522594406fa46a6418eabd0562dacb267f8556675762801514",
-                "sha256:ed4e75fafe103c79b692f217158ba87edf38d31004b9dbc1913debb48793c828"
+                "sha256:e5fd0a713141a4a105412233c63dc4e17ba0090c8e8334594ac790ec97792330",
+                "sha256:f106dee1b506dee5102cc3f3e9e68137bbad6d47b616be7991714b0c62204251"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==67.3.3"
+            "version": "==67.4.0"
         },
         "six": {
             "hashes": [
@@ -1357,11 +1356,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:9d3de8591bd6f6522594406fa46a6418eabd0562dacb267f8556675762801514",
-                "sha256:ed4e75fafe103c79b692f217158ba87edf38d31004b9dbc1913debb48793c828"
+                "sha256:e5fd0a713141a4a105412233c63dc4e17ba0090c8e8334594ac790ec97792330",
+                "sha256:f106dee1b506dee5102cc3f3e9e68137bbad6d47b616be7991714b0c62204251"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==67.3.3"
+            "version": "==67.4.0"
         },
         "smmap": {
             "hashes": [
@@ -1475,11 +1474,11 @@
         },
         "tox": {
             "hashes": [
-                "sha256:1081864f1a1393ffa11ebe9beaa280349020579310d217a594a4e7b6124c5425",
-                "sha256:f9bc83c5da8666baa2a4d4e884bbbda124fe646e4b1c0e412949cecc2b6e8f90"
+                "sha256:9786671d23b673ace7499c602c5746e2a225d1ecd9d9f624d0461303f40bd93b",
+                "sha256:e3d4a65852f029e5ba441a01824d2d839d30bb8fb071635ef9cb53952698e6bf"
             ],
             "index": "pypi",
-            "version": "==4.4.5"
+            "version": "==4.4.6"
         },
         "typing-extensions": {
             "hashes": [
