@@ -209,8 +209,8 @@ class MetadataRepository:
         for top-level roles.
         """
         role.signatures.clear()
-        for signer in self._key_storage_backend.get_signer():
-            role.sign(signer, append=True)
+        signer = self._key_storage_backend.get()
+        role.sign(signer, append=True)
 
     def _persist(self, role: Metadata, role_name: str) -> str:
         """

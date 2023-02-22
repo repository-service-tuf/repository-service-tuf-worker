@@ -49,7 +49,7 @@ class IKeyVault(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def get_signer(self) -> Signer:
+    def get(self) -> Signer:
         """Return a signer using the online key."""
         pass  # pragma: no cover
 

@@ -76,21 +76,21 @@ class TestLocalStorageService:
             ),
         ]
 
-    def test_get_signer(self):
+    def test_get(self):
         service = local.LocalKeyVault(
             "/path", "online.key", "key_password", "ed25519"
         )
         local.import_privatekey_from_file = pretend.call_recorder(
             lambda *a: {}
         )
-        result = service.get_signer()
+        result = service.get()
         assert isinstance(result, SSlibSigner)
 
         assert local.import_privatekey_from_file.calls == [
             pretend.call("online.key", "ed25519", "key_password")
         ]
 
-    def test_get_signer_securesystemslib_error(self):
+    def test_get_securesystemslib_error(self):
         service = local.LocalKeyVault(
             "/path", "online.key", "key_password", "ed25519"
         )
@@ -98,6 +98,6 @@ class TestLocalStorageService:
             local.CryptoError("don't show this message")
         )
         with pytest.raises(local.KeyVaultError) as err:
-            service.get_signer()
+            service.get()
 
         assert "Cannot load the online key" in str(err)

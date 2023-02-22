@@ -64,7 +64,7 @@ class TestMetadataRepository:
             sign=pretend.call_recorder(lambda *a, **kw: None),
         )
         test_repo._key_storage_backend = pretend.stub(
-            get_signer=pretend.call_recorder(
+            get=pretend.call_recorder(
                 lambda *a, **kw: ["key_signer_1", "key_signer_2"]
             )
         )
@@ -72,9 +72,7 @@ class TestMetadataRepository:
         test_result = test_repo._sign(fake_role, "root")
 
         assert test_result is None
-        assert test_repo._key_storage_backend.get_signer.calls == [
-            pretend.call()
-        ]
+        assert test_repo._key_storage_backend.get.calls == [pretend.call()]
         assert fake_role.signatures.clear.calls == [pretend.call()]
         assert fake_role.sign.calls == [
             pretend.call("key_signer_1", append=True),

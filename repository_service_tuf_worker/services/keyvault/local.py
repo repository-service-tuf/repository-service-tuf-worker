@@ -82,7 +82,7 @@ class LocalKeyVault(IKeyVault):
             ),
         ]
 
-    def get_signer(self) -> SSlibSigner:
+    def get(self) -> SSlibSigner:
         """Return a signer using the online key."""
         try:
             key_info: Dict[str, Any] = import_privatekey_from_file(
