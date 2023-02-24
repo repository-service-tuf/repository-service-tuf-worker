@@ -5,14 +5,13 @@
 import glob
 import os
 import stat
-from contextlib import contextmanager
-from io import BufferedReader
 from typing import List, Optional
 
 from securesystemslib.exceptions import StorageError  # noqa
+from tuf.api.serialization import DeserializationError
 
 from repository_service_tuf_worker.interfaces import IStorage, ServiceSettings
-from repository_service_tuf_worker.repository import Timestamp
+from repository_service_tuf_worker.repository import Metadata, Timestamp
 
 
 class LocalStorage(IStorage):
@@ -33,10 +32,9 @@ class LocalStorage(IStorage):
             ),
         ]
 
-    @contextmanager
-    def get(self, role, version=None) -> BufferedReader:
+    def get(self, role: str, version: Optional[int] = None) -> "Metadata":
         """
-        Yields TUF role metadata file object for the passed role name, from the
+        Returns TUF role metadata object for the passed role name, from the
         configured TUF repo path, optionally at the passed version (latest if
         None).
         """
@@ -62,9 +60,9 @@ class LocalStorage(IStorage):
         file_object = None
         try:
             file_object = open(filename, "rb")
-            yield file_object
-        except OSError:
-            raise StorageError(f"Can't open Role '{role}'")
+            return Metadata.from_bytes(file_object)
+        except (OSError, DeserializationError) as e:
+            raise StorageError(f"Can't open Role '{role}'") from e
         finally:
             if file_object is not None:
                 file_object.close()
