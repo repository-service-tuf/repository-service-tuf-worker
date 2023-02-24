@@ -15,16 +15,16 @@ class TestLocalStorageService:
             "/path", "custom_online.key", "password", "rsassa-pss-sha256"
         )
         assert service._path == "/path"
-        assert service._online_key_name == "custom_online.key"
-        assert service._online_key_password == "password"
-        assert service._online_key_type == "rsassa-pss-sha256"
+        assert service._key_name == "custom_online.key"
+        assert service._key_password == "password"
+        assert service._key_type == "rsassa-pss-sha256"
 
     def test_basic_init_minimum_settings(self):
         service = local.LocalKeyVault("/path")
         assert service._path == "/path"
-        assert service._online_key_name == "online.key"
-        assert service._online_key_password is None
-        assert service._online_key_type == "ed25519"
+        assert service._key_name == "online.key"
+        assert service._key_password is None
+        assert service._key_type == "ed25519"
 
     def test_configure(self):
         test_settings = pretend.stub(LOCAL_KEYVAULT_PATH="/path")
@@ -60,18 +60,18 @@ class TestLocalStorageService:
                 required=True,
             ),
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_ONLINE_KEY_NAME",
-                argument="online_key_name",
+                name="LOCAL_KEYVAULT_KEY_NAME",
+                argument="key_name",
                 required=False,
             ),
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_ONLINE_KEY_PASSWORD",
-                argument="online_key_pass",
+                name="LOCAL_KEYVAULT_KEY_PASSWORD",
+                argument="key_pass",
                 required=False,
             ),
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_ONLINE_KEY_TYPE",
-                argument="online_key_type",
+                name="LOCAL_KEYVAULT_KEY_TYPE",
+                argument="key_type",
                 required=False,
             ),
         ]
