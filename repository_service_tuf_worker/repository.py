@@ -201,7 +201,7 @@ class MetadataRepository:
         self._worker_settings = settings
         return settings
 
-    def _sign(self, role: Metadata, role_name: str) -> None:
+    def _sign(self, role: Metadata) -> None:
         """
         Re-signs metadata with role-specific key from global key store.
 
@@ -266,7 +266,7 @@ class MetadataRepository:
 
         self._bump_version(timestamp)
         self._bump_expiry(timestamp, Timestamp.type)
-        self._sign(timestamp, Timestamp.type)
+        self._sign(timestamp)
         self._persist(timestamp, Timestamp.type)
 
         # TODO review if here is the best place to change the status in DB
@@ -291,7 +291,7 @@ class MetadataRepository:
 
         self._bump_expiry(snapshot, Snapshot.type)
         self._bump_version(snapshot)
-        self._sign(snapshot, Snapshot.type)
+        self._sign(snapshot)
         self._persist(snapshot, Snapshot.type)
 
         return snapshot.signed.version
@@ -452,7 +452,7 @@ class MetadataRepository:
                 # update expiry, bump version and persist to the storage
                 self._bump_expiry(role, BINS)
                 self._bump_version(role)
-                self._sign(role, BINS)
+                self._sign(role)
                 self._persist(role, rolename)
                 # append to the new snapshot targets meta
                 new_snapshot_meta.append((rolename, role.signed.version))
@@ -612,7 +612,7 @@ class MetadataRepository:
             ):
                 self._bump_expiry(bins_role, BINS)
                 self._bump_version(bins_role)
-                self._sign(bins_role, BINS)
+                self._sign(bins_role)
                 self._persist(bins_role, bins_name)
                 targets_meta.append((bins_name, bins_role.signed.version))
 

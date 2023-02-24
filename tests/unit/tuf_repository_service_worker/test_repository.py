@@ -64,19 +64,16 @@ class TestMetadataRepository:
             sign=pretend.call_recorder(lambda *a, **kw: None),
         )
         test_repo._key_storage_backend = pretend.stub(
-            get=pretend.call_recorder(
-                lambda *a, **kw: ["key_signer_1", "key_signer_2"]
-            )
+            get=pretend.call_recorder(lambda: "key_signer_1")
         )
 
-        test_result = test_repo._sign(fake_role, "root")
+        test_result = test_repo._sign(fake_role)
 
         assert test_result is None
         assert test_repo._key_storage_backend.get.calls == [pretend.call()]
         assert fake_role.signatures.clear.calls == [pretend.call()]
         assert fake_role.sign.calls == [
             pretend.call("key_signer_1", append=True),
-            pretend.call("key_signer_2", append=True),
         ]
 
     def _test_helper_persist(self, role, version, expected_file_name):
@@ -185,9 +182,7 @@ class TestMetadataRepository:
         assert test_repo._bump_expiry.calls == [
             pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
         ]
-        assert test_repo._sign.calls == [
-            pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
-        ]
+        assert test_repo._sign.calls == [pretend.call(mocked_timestamp)]
         assert test_repo._persist.calls == [
             pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
         ]
@@ -235,9 +230,7 @@ class TestMetadataRepository:
         assert test_repo._bump_expiry.calls == [
             pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
         ]
-        assert test_repo._sign.calls == [
-            pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
-        ]
+        assert test_repo._sign.calls == [pretend.call(mocked_timestamp)]
         assert test_repo._persist.calls == [
             pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
         ]
@@ -275,9 +268,7 @@ class TestMetadataRepository:
         assert test_repo._bump_expiry.calls == [
             pretend.call(mocked_snapshot, repository.Roles.SNAPSHOT.value)
         ]
-        assert test_repo._sign.calls == [
-            pretend.call(mocked_snapshot, repository.Roles.SNAPSHOT.value)
-        ]
+        assert test_repo._sign.calls == [pretend.call(mocked_snapshot)]
         assert test_repo._persist.calls == [
             pretend.call(mocked_snapshot, repository.Roles.SNAPSHOT.value)
         ]
@@ -506,8 +497,8 @@ class TestMetadataRepository:
             pretend.call(fake_md_target, "bins"),
         ]
         assert test_repo._sign.calls == [
-            pretend.call(fake_md_target, "bins"),
-            pretend.call(fake_md_target, "bins"),
+            pretend.call(fake_md_target),
+            pretend.call(fake_md_target),
         ]
         assert test_repo._persist.calls == [
             pretend.call(fake_md_target, "bins-0"),
@@ -998,7 +989,7 @@ class TestMetadataRepository:
         assert test_repo._bump_expiry.calls == [
             pretend.call(fake_bins, "bins")
         ]
-        assert test_repo._sign.calls == [pretend.call(fake_bins, "bins")]
+        assert test_repo._sign.calls == [pretend.call(fake_bins)]
         assert test_repo._persist.calls == [pretend.call(fake_bins, "bin-a")]
         assert test_repo._update_snapshot.calls == [
             pretend.call([("bin-a", 6)])
