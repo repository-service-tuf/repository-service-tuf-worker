@@ -3,18 +3,10 @@
 # SPDX-License-Identifier: MIT
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Callable, List, Optional
 
 from dynaconf import Dynaconf
-from securesystemslib.exceptions import (
-    CryptoError,
-    Error,
-    FormatError,
-    StorageError,
-    UnsupportedLibraryError,
-)
-from securesystemslib.interface import import_privatekey_from_file
-from securesystemslib.signer import SSlibSigner
+from securesystemslib.signer import Key, SSlibSigner
 
 from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
 
@@ -46,6 +38,7 @@ class LocalKeyVault(IKeyVault):
         self._key_name: Optional[str] = key_name
         self._key_password: Optional[str] = key_pass
         self._key_type: Optional[str] = key_type
+        self._secrets_handler: Callable = lambda *a: self._key_password
         self._keyvault = Dynaconf(
             envvar_prefix="LOCALKEYVAULT",
             settings_files=[self._secrets_file],
@@ -82,21 +75,16 @@ class LocalKeyVault(IKeyVault):
             ),
         ]
 
-    def get(self) -> SSlibSigner:
+    def get(self, public_key: Key) -> SSlibSigner:
         """Return a signer using the online key."""
         try:
-            key_info: Dict[str, Any] = import_privatekey_from_file(
-                self._key_name,
-                self._key_type,
-                self._key_password,
+            priv_key_uri = f"file:{self._key_name}?encrypted=true"
+            return SSlibSigner.from_priv_key_uri(
+                priv_key_uri, public_key, self._secrets_handler
             )
-            return SSlibSigner(key_info)
-        except (
-            FormatError,
-            ValueError,
-            UnsupportedLibraryError,
-            StorageError,
-            CryptoError,
-            Error,
-        ) as err:
-            raise KeyVaultError("Cannot load the online key") from err
+        except ValueError as e:
+            raise KeyVaultError("Cannot load the online key") from e
+        except OSError:
+            raise KeyVaultError(
+                f"Cannot read private key file {self._key_name}"
+            )

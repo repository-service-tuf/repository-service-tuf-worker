@@ -4,7 +4,7 @@
 
 import pretend
 import pytest
-from securesystemslib.signer import SSlibSigner
+from securesystemslib.signer import Key, SSlibSigner
 
 from repository_service_tuf_worker.services.keyvault import local
 
@@ -80,24 +80,41 @@ class TestLocalStorageService:
         service = local.LocalKeyVault(
             "/path", "online.key", "key_password", "ed25519"
         )
-        local.import_privatekey_from_file = pretend.call_recorder(
-            lambda *a: {}
+        key_dict = {
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {
+                "public": "abc",
+            },
+        }
+        key = Key.from_dict("keyid", key_dict)
+        signer = SSlibSigner(key_dict)
+        local.SSlibSigner = pretend.stub(
+            from_priv_key_uri=pretend.call_recorder(lambda *a: signer)
         )
-        result = service.get()
-        assert isinstance(result, SSlibSigner)
-
-        assert local.import_privatekey_from_file.calls == [
-            pretend.call("online.key", "ed25519", "key_password")
+        result = service.get(key)
+        assert result == signer
+        private_key_uri = "file:online.key?encrypted=true"
+        assert local.SSlibSigner.from_priv_key_uri.calls == [
+            pretend.call(private_key_uri, key, service._secrets_handler)
         ]
 
     def test_get_securesystemslib_error(self):
         service = local.LocalKeyVault(
             "/path", "online.key", "key_password", "ed25519"
         )
-        local.import_privatekey_from_file = pretend.raiser(
-            local.CryptoError("don't show this message")
+        key_dict = {
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {
+                "public": "abc",
+            },
+        }
+        key = Key.from_dict("keyid", key_dict)
+        local.SSlibSigner = pretend.stub(
+            from_priv_key_uri=pretend.raiser(ValueError("problem"))
         )
         with pytest.raises(local.KeyVaultError) as err:
-            service.get()
+            service.get(key)
 
         assert "Cannot load the online key" in str(err)

@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-from securesystemslib.signer import Signer
+from securesystemslib.signer import Key, Signer
 from tuf.api.metadata import Metadata, T
 
 
@@ -49,7 +49,7 @@ class IKeyVault(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def get(self) -> Signer:
+    def get(self, public_key: Key) -> Signer:
         """Return a signer using the online key."""
         pass  # pragma: no cover
 
