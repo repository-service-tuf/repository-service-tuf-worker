@@ -40,9 +40,6 @@ class TestLocalStorageService:
         )
         service.configure(test_settings)
         assert service._path == "/path"
-        assert local.os.path.join.calls == [
-            pretend.call(service._path, ".secrets.yaml")
-        ]
         assert local.os.makedirs.calls == [
             pretend.call("/path", exist_ok=True)
         ]

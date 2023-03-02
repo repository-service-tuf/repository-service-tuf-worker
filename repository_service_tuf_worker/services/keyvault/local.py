@@ -5,7 +5,6 @@
 import os
 from typing import Callable, List, Optional
 
-from dynaconf import Dynaconf
 from securesystemslib.signer import Key, SSlibSigner
 
 from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
@@ -34,15 +33,10 @@ class LocalKeyVault(IKeyVault):
             key_type: cryptography type of the online key.
         """
         self._path: str = path
-        self._secrets_file: str = os.path.join(self._path, ".secrets.yaml")
         self._key_name: Optional[str] = key_name
         self._key_password: Optional[str] = key_pass
         self._key_type: Optional[str] = key_type
         self._secrets_handler: Callable = lambda *a: self._key_password
-        self._keyvault = Dynaconf(
-            envvar_prefix="LOCALKEYVAULT",
-            settings_files=[self._secrets_file],
-        )
 
     @classmethod
     def configure(cls, settings) -> None:
