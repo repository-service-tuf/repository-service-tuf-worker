@@ -421,6 +421,8 @@ class MetadataRepository:
             self._persist(metadata, role_name)
             logging.debug(f"{role_name}.json saved")
 
+        self.bump_online_roles()
+
         result = ResultDetails(
             status="Task finished.",
             details={
