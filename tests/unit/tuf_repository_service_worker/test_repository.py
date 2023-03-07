@@ -402,6 +402,7 @@ class TestMetadataRepository:
         )
         repository.JSONSerializer = pretend.call_recorder(lambda: None)
         test_repo._storage_backend = pretend.stub()
+        test_repo.bump_online_roles = pretend.call_recorder(lambda *a: None)
 
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
@@ -434,6 +435,7 @@ class TestMetadataRepository:
             pretend.call("fake_metadata", "1.root"),
             pretend.call("fake_metadata", "1.snapshot"),
         ]
+        assert test_repo.bump_online_roles.calls == [pretend.call()]
 
     def test_bootstrap_missing_settings(self, test_repo):
         payload = {
