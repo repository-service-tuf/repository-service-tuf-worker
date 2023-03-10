@@ -10,14 +10,13 @@ import pytest
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
-from repository_service_tuf_worker.repository import MetadataRepository
 
 
 class TestMetadataRepository:
     def test_basic_init(self, monkeypatch):
         fake_configure = pretend.call_recorder(lambda *a: None)
         monkeypatch.setattr(
-            "repository_service_tuf_worker.services.keyvault.local.LocalKeyVault.configure",
+            "repository_service_tuf_worker.services.keyvault.local.LocalKeyVault.configure",  # noqa
             fake_configure,
         )
         test_repo = repository.MetadataRepository()
@@ -26,9 +25,7 @@ class TestMetadataRepository:
     def test_create_service(self, test_repo):
         assert isinstance(test_repo, repository.MetadataRepository) is True
 
-    def test_refresh_settings_with_none_arg(
-        self, test_repo
-    ):
+    def test_refresh_settings_with_none_arg(self, test_repo):
         test_repo.refresh_settings()
 
         assert (
@@ -36,9 +33,7 @@ class TestMetadataRepository:
         )
         assert isinstance(test_repo._settings, repository.Dynaconf) is True
 
-    def test_refresh_settings_with_worker_settings_arg(
-        self, test_repo
-    ):
+    def test_refresh_settings_with_worker_settings_arg(self, test_repo):
         FAKE_SETTINGS_FILE_PATH = "/data/mysettings.ini"
         fake_worker_settings = Dynaconf(
             settings_files=[FAKE_SETTINGS_FILE_PATH],
@@ -53,9 +48,7 @@ class TestMetadataRepository:
         )
         assert isinstance(test_repo._settings, repository.Dynaconf) is True
 
-    def test_refresh_settings_with_invalid_storage_backend(
-        self, test_repo
-    ):
+    def test_refresh_settings_with_invalid_storage_backend(self, test_repo):
         fake_worker_settings = pretend.stub(
             STORAGE_BACKEND="INVALID_STORAGE_BACKEND"
         )
@@ -179,9 +172,7 @@ class TestMetadataRepository:
         assert result is None
         assert role.signed.version == 3
 
-    def test__update_timestamp(
-        self, monkeypatch, test_repo
-    ):
+    def test__update_timestamp(self, monkeypatch, test_repo):
         snapshot_version = 3
         fake_metafile = pretend.call_recorder(
             lambda *a, **kw: snapshot_version
@@ -217,9 +208,7 @@ class TestMetadataRepository:
             pretend.call(mocked_timestamp, repository.Roles.TIMESTAMP.value)
         ]
 
-    def test__update_timestamp_with_db_targets(
-        self, monkeypatch, test_repo
-    ):
+    def test__update_timestamp_with_db_targets(self, monkeypatch, test_repo):
         snapshot_version = 3
         fake_metafile = pretend.call_recorder(
             lambda *a, **kw: snapshot_version
@@ -429,7 +418,6 @@ class TestMetadataRepository:
         assert "No metadata in the payload" in str(err)
 
     def test_publish_targets(self, test_repo, monkeypatch):
-
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -539,7 +527,6 @@ class TestMetadataRepository:
     def test_publish_targets_without_targets_to_publish(
         self, test_repo, monkeypatch
     ):
-
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout

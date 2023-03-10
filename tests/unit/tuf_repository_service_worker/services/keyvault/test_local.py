@@ -28,7 +28,7 @@ class TestLocalStorageService:
         test_settings = pretend.stub(
             LOCAL_KEYVAULT_KEY_PATH="/path/online.key",
             LOCAL_KEYVAULT_KEY_TYPE="ed25519",
-            LOCAL_KEYVAULT_KEY_PASSWORD="strongPass"
+            LOCAL_KEYVAULT_KEY_PASSWORD="strongPass",
         )
         local.import_privatekey_from_file = pretend.call_recorder(
             lambda *a: {}
@@ -43,7 +43,7 @@ class TestLocalStorageService:
         test_settings = pretend.stub(
             LOCAL_KEYVAULT_KEY_PATH="/path/online.key",
             LOCAL_KEYVAULT_KEY_TYPE="ed25519",
-            LOCAL_KEYVAULT_KEY_PASSWORD="strongPass"
+            LOCAL_KEYVAULT_KEY_PASSWORD="strongPass",
         )
         local.import_privatekey_from_file = pretend.raiser(ValueError("error"))
 
