@@ -31,9 +31,9 @@ from tuf.api.serialization.json import JSONSerializer
 # the 'service import is used to retrieve sublcasses (Implemented Services)
 from repository_service_tuf_worker import (  # noqa
     Dynaconf,
-    repository_settings,
+    get_repository_settings,
+    get_worker_settings,
     services,
-    worker_settings,
 )
 from repository_service_tuf_worker.interfaces import IKeyVault, IStorage
 from repository_service_tuf_worker.models import (
@@ -75,12 +75,14 @@ class MetadataRepository:
     """
 
     def __init__(self):
-        self._worker_settings = worker_settings
-        self._settings = repository_settings
+        self._worker_settings = get_worker_settings()
+        self._settings = get_repository_settings()
         self._storage_backend = self.refresh_settings().STORAGE
         self._key_storage_backend = self.refresh_settings().KEYVAULT
         self._db = self.refresh_settings().SQL
-        self._redis = redis.StrictRedis.from_url(worker_settings.REDIS_SERVER)
+        self._redis = redis.StrictRedis.from_url(
+            self._worker_settings.REDIS_SERVER
+        )
         self._hours_before_expire: int = self._settings.get_fresh(
             "HOURS_BEFORE_EXPIRE", 1
         )
