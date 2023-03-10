@@ -98,7 +98,7 @@ class MetadataRepository:
         )
 
     @classmethod
-    def create_service(cls):
+    def create_service(cls) -> "MetadataRepository":
         """Class Method for MetadataRepository service creation."""
         return cls()
 
@@ -151,6 +151,7 @@ class MetadataRepository:
             storage_kwargs = {
                 s.argument: settings.store[s.name]
                 for s in settings.STORAGE_BACKEND.settings()
+                if settings.store.get(s.name)
             }
             settings.STORAGE = settings.STORAGE_BACKEND(**storage_kwargs)
 
@@ -194,6 +195,7 @@ class MetadataRepository:
             keyvault_kwargs = {
                 s.argument: settings.store[s.name]
                 for s in settings.KEYVAULT_BACKEND.settings()
+                if settings.store.get(s.name)
             }
 
             settings.KEYVAULT = settings.KEYVAULT_BACKEND(**keyvault_kwargs)
