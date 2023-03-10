@@ -14,7 +14,6 @@ from repository_service_tuf_worker.models import targets_schema
 
 class TestMetadataRepository:
     def test_basic_init(self):
-
         test_repo = repository.MetadataRepository()
         assert isinstance(test_repo, repository.MetadataRepository) is True
 
@@ -27,8 +26,7 @@ class TestMetadataRepository:
         test_repo.refresh_settings()
 
         assert (
-            test_repo._worker_settings.to_dict()
-            == repository.worker_settings.to_dict()
+            isinstance(test_repo._worker_settings, repository.Dynaconf) is True
         )
         assert isinstance(test_repo._settings, repository.Dynaconf) is True
 

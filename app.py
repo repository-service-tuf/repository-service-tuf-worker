@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 import redis
 from celery import Celery, schedules, signals
 
-from repository_service_tuf_worker import worker_settings
+from repository_service_tuf_worker import get_worker_settings
 from repository_service_tuf_worker.repository import MetadataRepository
 
 logging.basicConfig(
@@ -25,6 +25,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
     datefmt="%H:%M:%S",
 )
+
+
+worker_settings = get_worker_settings()
 
 
 class status(Enum):

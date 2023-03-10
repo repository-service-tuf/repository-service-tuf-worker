@@ -33,7 +33,6 @@ class TestTargetsCrud:
         assert mocked_db.refresh.calls == [pretend.call("fake_db_target")]
 
     def test_read_unpublished_rolenames(self):
-
         crud.models.RSTUFTargets = pretend.stub(
             published=False, rolename="all-bins"
         )
@@ -66,7 +65,6 @@ class TestTargetsCrud:
         assert mocked_all.all.calls == [pretend.call()]
 
     def test_read_by_path(self):
-
         crud.models.RSTUFTargets = pretend.stub(path="file1.tar.gz")
         mocked_first = pretend.stub(
             first=pretend.call_recorder(lambda: crud.models.RSTUFTargets)
@@ -88,7 +86,6 @@ class TestTargetsCrud:
         assert mocked_first.first.calls == [pretend.call()]
 
     def test_read_by_rolename(self):
-
         crud.models.RSTUFTargets = pretend.stub(rolename="bin-0")
         mocked_all = pretend.stub(
             all=pretend.call_recorder(lambda: [crud.models.RSTUFTargets])
@@ -110,7 +107,6 @@ class TestTargetsCrud:
         assert mocked_all.all.calls == [pretend.call()]
 
     def test_read_unpublished_by_rolename(self):
-
         crud.models.RSTUFTargets = pretend.stub(
             published=False, rolename="bin-0"
         )
@@ -134,7 +130,6 @@ class TestTargetsCrud:
         assert mocked_all.all.calls == [pretend.call()]
 
     def test_read_all_add_by_rolename(self):
-
         crud.models.RSTUFTargets = pretend.stub(
             path="file2.tar.gz",
             info={"info": {"k": "v"}},
@@ -171,7 +166,6 @@ class TestTargetsCrud:
         assert mocked_all.all.calls == [pretend.call()]
 
     def test_update(self, monkeypatch):
-
         mocked_db = pretend.stub(
             add=pretend.call_recorder(lambda *a: None),
             commit=pretend.call_recorder(lambda: None),
@@ -211,7 +205,6 @@ class TestTargetsCrud:
         assert fake_datetime.now.calls == [pretend.call()]
 
     def test_update_to_published(self, monkeypatch):
-
         mocked_db = pretend.stub(
             add=pretend.call_recorder(lambda *a: None),
             commit=pretend.call_recorder(lambda: None),
@@ -248,7 +241,6 @@ class TestTargetsCrud:
         assert fake_datetime.now.calls == [pretend.call()]
 
     def test_update_action_remove(self, monkeypatch):
-
         mocked_db = pretend.stub(
             add=pretend.call_recorder(lambda *a: None),
             commit=pretend.call_recorder(lambda: None),
