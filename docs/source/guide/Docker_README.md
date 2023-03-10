@@ -29,7 +29,6 @@ docker run --env="RSTUF_WORKER_ID=worker1" \
     --env="RSTUF_STORAGE_BACKEND=LocalStorage" \
     --env="RSTUF_LOCAL_STORAGE_BACKEND_PATH=storage" \
     --env="RSTUF_KEYVAULT_BACKEND=LocalKeyVault" \
-    --env="RSTUF_LOCAL_KEYVAULT_PATH=keyvault" \
     --env="RSTUF_BROKER_SERVER=guest:guest@rabbitmq:5672" \
     --env="RSTUF_REDIS_SERVER=redis://redis" \
     --env="RSTUF_SQL_SERVER=postgresql://postgres:secret@postgres:5432" \
@@ -101,10 +100,8 @@ Select a supported type of Key Vault Service.
 Available types:
 
 * LocalKeyVault (local file system)
-  - Requires variable ``RSTUF_LOCAL_KEYVAULT_PATH``
-    - Define the directory where the data will be saved, example: `keyvault`
   - Optional variables:
-    - ``RSTUF_LOCAL_KEYVAULT_KEY_NAME``
+    - ``RSTUF_LOCAL_KEYVAULT_KEY_PATH``
       - file name of the online key
       - Default: `online.key`
     - ``RSTUF_LOCAL_KEYVAULT_KEY_PASSWORD``

@@ -36,7 +36,7 @@ class IKeyVault(ABC):
     @abstractmethod
     def configure(cls, settings) -> None:
         """
-        Run actions to test, configure using the settings.
+        Run actions to check and configure the service using the settings.
         """
         pass  # pragma: no cover
 
