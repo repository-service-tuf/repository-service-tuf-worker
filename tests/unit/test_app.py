@@ -8,20 +8,16 @@ import pretend
 
 
 class TestApp:
-    def test_app(self, monkeypatch):
+    def test_app(self, app, monkeypatch):
         monkeypatch.setenv("RSTUF_WORKER_ID", "test")
         monkeypatch.setenv(
             "RSTUF_LOCAL_STORAGE_BACKEND_PATH", tempfile.gettempdir()
         )
         monkeypatch.setenv("RSTUF_BROKER_SERVER", "fake-rabbitmq")
-        monkeypatch.setenv("RSTUF_LOCAL_KEYVAULT_PATH", tempfile.gettempdir())
-        import app
 
         assert app.Celery.__name__ == "Celery"
 
-    def test_repository_service_tuf_worker(self):
-        import app
-
+    def test_repository_service_tuf_worker(self, app):
         app.repository = pretend.stub(
             refresh_settings=pretend.call_recorder(lambda *a: None),
             test_action=pretend.call_recorder(lambda *a, **kw: True),
@@ -39,9 +35,7 @@ class TestApp:
             ),
         ]
 
-    def test_repository_service_tuf_worker_no_payload(self):
-        import app
-
+    def test_repository_service_tuf_worker_no_payload(self, app):
         app.repository = pretend.stub(
             refresh_settings=pretend.call_recorder(lambda *a: None),
             test_action=pretend.call_recorder(lambda *a, **kw: True),
@@ -55,9 +49,7 @@ class TestApp:
             pretend.call(),
         ]
 
-    def test__publish_signals(self):
-        import app
-
+    def test__publish_signals(self, app):
         app.redis_backend = pretend.stub(
             set=pretend.call_recorder(lambda *a: None)
         )
@@ -80,9 +72,7 @@ class TestApp:
             )
         ]
 
-    def test_task_pre_run_notifier(self):
-        import app
-
+    def test_task_pre_run_notifier(self, app):
         app._publish_signals = pretend.call_recorder(lambda *a: None)
         app.task_pre_run_notifier(**{"task_id": "001"})
 
@@ -90,9 +80,7 @@ class TestApp:
             pretend.call(app.status.PRE_RUN, "001")
         ]
 
-    def test_task_unknown_notifier(self):
-        import app
-
+    def test_task_unknown_notifier(self, app):
         app._publish_signals = pretend.call_recorder(lambda *a: None)
         app.task_unknown_notifier(**{"task_id": "001"})
 
@@ -100,9 +88,7 @@ class TestApp:
             pretend.call(app.status.UNKNOWN, "001")
         ]
 
-    def test_task_received_notifier(self):
-        import app
-
+    def test_task_received_notifier(self, app):
         app._publish_signals = pretend.call_recorder(lambda *a: None)
         app.task_received_notifier(**{"task_id": "001"})
 

@@ -12,53 +12,54 @@ from repository_service_tuf_worker.services.keyvault import local
 class TestLocalStorageService:
     def test_basic_init(self):
         service = local.LocalKeyVault(
-            "/path", "custom_online.key", "password", "rsassa-pss-sha256"
+            "custom_online.key", "password", "rsassa-pss-sha256"
         )
-        assert service._path == "/path"
-        assert service._key_name == "custom_online.key"
+        assert service._key_path == "custom_online.key"
         assert service._key_password == "password"
         assert service._key_type == "rsassa-pss-sha256"
 
     def test_basic_init_minimum_settings(self):
-        service = local.LocalKeyVault("/path")
-        assert service._path == "/path"
-        assert service._key_name == "online.key"
+        service = local.LocalKeyVault()
+        assert service._key_path == "online.key"
         assert service._key_password is None
         assert service._key_type == "ed25519"
 
     def test_configure(self):
-        test_settings = pretend.stub(LOCAL_KEYVAULT_PATH="/path")
-        local.os = pretend.stub(
-            makedirs=pretend.call_recorder(lambda *a, **kw: None),
-            path=pretend.stub(
-                join=pretend.call_recorder(lambda *a: "/path/.secrets.yaml")
-            ),
+        test_settings = pretend.stub(
+            LOCAL_KEYVAULT_KEY_PATH="/path/online.key",
+            LOCAL_KEYVAULT_KEY_TYPE="ed25519",
+            LOCAL_KEYVAULT_KEY_PASSWORD="strongPass"
+        )
+        local.import_privatekey_from_file = pretend.call_recorder(
+            lambda *a: {}
         )
 
-        service = local.LocalKeyVault(
-            "/path", "online.key", "password", "ed25519"
-        )
-        service.configure(test_settings)
-        assert service._path == "/path"
-        assert local.os.makedirs.calls == [
-            pretend.call("/path", exist_ok=True)
+        local.LocalKeyVault.configure(test_settings)
+        assert local.import_privatekey_from_file.calls == [
+            pretend.call("/path/online.key", "ed25519", "strongPass")
         ]
 
-    def test_settings(self):
-        service = local.LocalKeyVault(
-            "/path", "online.key", "password", "ed25519"
+    def test_configure_ValueError(self):
+        test_settings = pretend.stub(
+            LOCAL_KEYVAULT_KEY_PATH="/path/online.key",
+            LOCAL_KEYVAULT_KEY_TYPE="ed25519",
+            LOCAL_KEYVAULT_KEY_PASSWORD="strongPass"
         )
+        local.import_privatekey_from_file = pretend.raiser(ValueError("error"))
+
+        with pytest.raises(local.KeyVaultError) as err:
+            local.LocalKeyVault.configure(test_settings)
+
+        assert "Cannot read private key file" in str(err)
+
+    def test_settings(self):
+        service = local.LocalKeyVault("online.key", "password", "ed25519")
         service_settings = service.settings()
 
         assert service_settings == [
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_PATH",
-                argument="path",
-                required=True,
-            ),
-            local.ServiceSettings(
-                name="LOCAL_KEYVAULT_KEY_NAME",
-                argument="key_name",
+                name="LOCAL_KEYVAULT_KEY_PATH",
+                argument="key_path",
                 required=False,
             ),
             local.ServiceSettings(
@@ -74,9 +75,7 @@ class TestLocalStorageService:
         ]
 
     def test_get(self):
-        service = local.LocalKeyVault(
-            "/path", "online.key", "key_password", "ed25519"
-        )
+        service = local.LocalKeyVault("online.key", "key_password", "ed25519")
         key_dict = {
             "keytype": "ed25519",
             "scheme": "ed25519",
@@ -97,9 +96,7 @@ class TestLocalStorageService:
         ]
 
     def test_get_securesystemslib_error(self):
-        service = local.LocalKeyVault(
-            "/path", "online.key", "key_password", "ed25519"
-        )
+        service = local.LocalKeyVault("online.key", "key_password", "ed25519")
         key_dict = {
             "keytype": "ed25519",
             "scheme": "ed25519",
