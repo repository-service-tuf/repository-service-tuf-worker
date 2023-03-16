@@ -12,16 +12,16 @@ from repository_service_tuf_worker.services.keyvault import local
 class TestLocalStorageService:
     def test_basic_init(self):
         service = local.LocalKeyVault(
-            "custom_online.key", "password", "rsassa-pss-sha256"
+            "password", "custom_online.key", "rsassa-pss-sha256"
         )
         assert service._key_path == "custom_online.key"
         assert service._key_password == "password"
         assert service._key_type == "rsassa-pss-sha256"
 
     def test_basic_init_minimum_settings(self):
-        service = local.LocalKeyVault()
+        service = local.LocalKeyVault("password")
         assert service._key_path == "online.key"
-        assert service._key_password is None
+        assert service._key_password == "password"
         assert service._key_type == "ed25519"
 
     def test_configure(self):
@@ -53,7 +53,7 @@ class TestLocalStorageService:
         assert "Cannot read private key file" in str(err)
 
     def test_settings(self):
-        service = local.LocalKeyVault("online.key", "password", "ed25519")
+        service = local.LocalKeyVault("password", "online.key", "ed25519")
         service_settings = service.settings()
 
         assert service_settings == [
@@ -66,8 +66,7 @@ class TestLocalStorageService:
             local.ServiceSettings(
                 name="LOCAL_KEYVAULT_KEY_PASSWORD",
                 argument="key_pass",
-                required=False,
-                default=None,
+                required=True,
             ),
             local.ServiceSettings(
                 name="LOCAL_KEYVAULT_KEY_TYPE",
@@ -78,7 +77,7 @@ class TestLocalStorageService:
         ]
 
     def test_get(self):
-        service = local.LocalKeyVault("online.key", "key_password", "ed25519")
+        service = local.LocalKeyVault("key_password", "online.key", "ed25519")
         key_dict = {
             "keytype": "ed25519",
             "scheme": "ed25519",
@@ -99,7 +98,7 @@ class TestLocalStorageService:
         ]
 
     def test_get_securesystemslib_error(self):
-        service = local.LocalKeyVault("online.key", "key_password", "ed25519")
+        service = local.LocalKeyVault("key_password", "online.key", "ed25519")
         key_dict = {
             "keytype": "ed25519",
             "scheme": "ed25519",

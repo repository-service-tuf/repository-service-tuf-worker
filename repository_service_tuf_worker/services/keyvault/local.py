@@ -25,20 +25,20 @@ class LocalKeyVault(IKeyVault):
 
     def __init__(
         self,
+        key_pass: str,
         key_path: Optional[str] = "online.key",
-        key_pass: Optional[str] = None,
         key_type: Optional[str] = "ed25519",
     ):
         """Configuration class for RSTUF Worker LocalKeyVault service.
 
         Args:
-            key_path: file path of the online key.
             key_pass: password to load the online key.
+            key_path: file path of the online key.
             key_type: cryptography type of the online key.
         """
-        self._key_path: Optional[str] = key_path
-        self._key_password: Optional[str] = key_pass
-        self._key_type: Optional[str] = key_type
+        self._key_password: str = key_pass
+        self._key_path: str = key_path
+        self._key_type: str = key_type
         self._secrets_handler: Callable = lambda *a: self._key_password
 
     @classmethod
@@ -76,8 +76,7 @@ class LocalKeyVault(IKeyVault):
             ServiceSettings(
                 name="LOCAL_KEYVAULT_KEY_PASSWORD",
                 argument="key_pass",
-                required=False,
-                default=None,
+                required=True,
             ),
             ServiceSettings(
                 name="LOCAL_KEYVAULT_KEY_TYPE",

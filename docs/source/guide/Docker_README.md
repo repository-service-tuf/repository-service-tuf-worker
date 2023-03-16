@@ -100,12 +100,13 @@ Select a supported type of Key Vault Service.
 Available types:
 
 * LocalKeyVault (local file system)
+  - Required variables:
+    - ``RSTUF_LOCAL_KEYVAULT_KEY_PASSWORD``
+      - password used to load the online key
   - Optional variables:
     - ``RSTUF_LOCAL_KEYVAULT_KEY_PATH``
       - file name of the online key
       - Default: `online.key`
-    - ``RSTUF_LOCAL_KEYVAULT_KEY_PASSWORD``
-      - password used to load the online key
     - ``RSTUF_LOCAL_KEYVAULT_KEY_TYPE``
       - cryptographic type of the online key, example: `ed25519`.
       - Default: `ed25519`
