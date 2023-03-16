@@ -29,6 +29,7 @@ class ServiceSettings:
     name: str
     argument: str
     required: bool
+    default: Optional[Any] = None
 
 
 class IKeyVault(ABC):

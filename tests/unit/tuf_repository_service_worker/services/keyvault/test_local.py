@@ -61,16 +61,19 @@ class TestLocalStorageService:
                 name="LOCAL_KEYVAULT_KEY_PATH",
                 argument="key_path",
                 required=False,
+                default="online.key",
             ),
             local.ServiceSettings(
                 name="LOCAL_KEYVAULT_KEY_PASSWORD",
                 argument="key_pass",
                 required=False,
+                default=None,
             ),
             local.ServiceSettings(
                 name="LOCAL_KEYVAULT_KEY_TYPE",
                 argument="key_type",
                 required=False,
+                default="ed25519",
             ),
         ]
 

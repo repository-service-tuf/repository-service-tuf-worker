@@ -149,9 +149,8 @@ class MetadataRepository:
 
             settings.STORAGE_BACKEND.configure(settings)
             storage_kwargs = {
-                s.argument: settings.store[s.name]
+                s.argument: settings.store.get(s.name, s.default)
                 for s in settings.STORAGE_BACKEND.settings()
-                if settings.store.get(s.name)
             }
             settings.STORAGE = settings.STORAGE_BACKEND(**storage_kwargs)
 
@@ -193,9 +192,8 @@ class MetadataRepository:
 
             settings.KEYVAULT_BACKEND.configure(settings)
             keyvault_kwargs = {
-                s.argument: settings.store[s.name]
+                s.argument: settings.store.get(s.name, s.default)
                 for s in settings.KEYVAULT_BACKEND.settings()
-                if settings.store.get(s.name)
             }
 
             settings.KEYVAULT = settings.KEYVAULT_BACKEND(**keyvault_kwargs)
