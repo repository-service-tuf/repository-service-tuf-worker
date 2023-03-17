@@ -147,11 +147,14 @@ class MetadataRepository:
                     f"{', '.join(missing)}"
                 )
 
+            storage_kwargs: Dict[str, Any] = {}
+            for s in settings.STORAGE_BACKEND.settings():
+                if settings.store.get(s.name) is None:
+                    settings.store[s.name] = s.default
+
+                storage_kwargs[s.argument] = settings.store[s.name]
+
             settings.STORAGE_BACKEND.configure(settings)
-            storage_kwargs = {
-                s.argument: settings.store.get(s.name, s.default)
-                for s in settings.STORAGE_BACKEND.settings()
-            }
             settings.STORAGE = settings.STORAGE_BACKEND(**storage_kwargs)
 
         keyvault_backends = [
@@ -190,12 +193,14 @@ class MetadataRepository:
                     f"{', '.join(missing)}"
                 )
 
-            settings.KEYVAULT_BACKEND.configure(settings)
-            keyvault_kwargs = {
-                s.argument: settings.store.get(s.name, s.default)
-                for s in settings.KEYVAULT_BACKEND.settings()
-            }
+            keyvault_kwargs: Dict[str, Any] = {}
+            for s in settings.KEYVAULT_BACKEND.settings():
+                if settings.store.get(s.name) is None:
+                    settings.store[s.name] = s.default
 
+                keyvault_kwargs[s.argument] = settings.store[s.name]
+
+            settings.KEYVAULT_BACKEND.configure(settings)
             settings.KEYVAULT = settings.KEYVAULT_BACKEND(**keyvault_kwargs)
 
         self._worker_settings = settings
