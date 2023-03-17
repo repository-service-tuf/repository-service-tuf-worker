@@ -14,21 +14,21 @@ class TestLocalStorageService:
         service = local.LocalKeyVault(
             "password", "custom_online.key", "rsassa-pss-sha256"
         )
-        assert service._key_path == "custom_online.key"
-        assert service._key_password == "password"
-        assert service._key_type == "rsassa-pss-sha256"
+        assert service._path == "custom_online.key"
+        assert service._password == "password"
+        assert service._type == "rsassa-pss-sha256"
 
     def test_basic_init_minimum_settings(self):
         service = local.LocalKeyVault("password")
-        assert service._key_path == "online.key"
-        assert service._key_password == "password"
-        assert service._key_type == "ed25519"
+        assert service._path == "online.key"
+        assert service._password == "password"
+        assert service._type == "ed25519"
 
     def test_configure(self):
         test_settings = pretend.stub(
-            LOCAL_KEYVAULT_KEY_PATH="/path/online.key",
-            LOCAL_KEYVAULT_KEY_TYPE="ed25519",
-            LOCAL_KEYVAULT_KEY_PASSWORD="strongPass",
+            LOCAL_KEYVAULT_PATH="/path/online.key",
+            LOCAL_KEYVAULT_TYPE="ed25519",
+            LOCAL_KEYVAULT_PASSWORD="strongPass",
         )
         local.import_privatekey_from_file = pretend.call_recorder(
             lambda *a: {}
@@ -41,9 +41,9 @@ class TestLocalStorageService:
 
     def test_configure_ValueError(self):
         test_settings = pretend.stub(
-            LOCAL_KEYVAULT_KEY_PATH="/path/online.key",
-            LOCAL_KEYVAULT_KEY_TYPE="ed25519",
-            LOCAL_KEYVAULT_KEY_PASSWORD="strongPass",
+            LOCAL_KEYVAULT_PATH="/path/online.key",
+            LOCAL_KEYVAULT_TYPE="ed25519",
+            LOCAL_KEYVAULT_PASSWORD="strongPass",
         )
         local.import_privatekey_from_file = pretend.raiser(ValueError("error"))
 
@@ -58,18 +58,18 @@ class TestLocalStorageService:
 
         assert service_settings == [
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_KEY_PATH",
+                name="LOCAL_KEYVAULT_PATH",
                 argument="key_path",
                 required=False,
                 default="online.key",
             ),
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_KEY_PASSWORD",
+                name="LOCAL_KEYVAULT_PASSWORD",
                 argument="key_pass",
                 required=True,
             ),
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_KEY_TYPE",
+                name="LOCAL_KEYVAULT_TYPE",
                 argument="key_type",
                 required=False,
                 default="ed25519",

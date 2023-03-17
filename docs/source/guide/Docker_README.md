@@ -101,13 +101,13 @@ Available types:
 
 * LocalKeyVault (local file system)
   - Required variables:
-    - ``RSTUF_LOCAL_KEYVAULT_KEY_PASSWORD``
+    - ``RSTUF_LOCAL_KEYVAULT_PASSWORD``
       - password used to load the online key
   - Optional variables:
-    - ``RSTUF_LOCAL_KEYVAULT_KEY_PATH``
+    - ``RSTUF_LOCAL_KEYVAULT_PATH``
       - file name of the online key
       - Default: `online.key`
-    - ``RSTUF_LOCAL_KEYVAULT_KEY_TYPE``
+    - ``RSTUF_LOCAL_KEYVAULT_TYPE``
       - cryptographic type of the online key, example: `ed25519`.
       - Default: `ed25519`
       - [Note: At the moment RSTUF Worker supports only `ed25519`
