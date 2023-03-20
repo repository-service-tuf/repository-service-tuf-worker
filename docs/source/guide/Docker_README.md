@@ -6,19 +6,34 @@ repository-service-tuf-worker is part of Repository Service for TUF (RSTUF)
 
 ## Getting Started
 
-These instructions will cover usage information and for the docker container
+These instructions will cover usage information and for the docker container.
 
 ## Prerequisities
 
 
 In order to run this container you'll need docker installed.
 
-Some required services:
+Other requirements include:
 
-* repository-service-tuf-api
-* Compatible Borker and Result Backend Service with
+* repository-service-tuf-api service
+* Compatible broker and result backend service with
   [Celery](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/index.html).
   Recomended: [RabbitMQ](https://www.rabbitmq.com) or [Redis](https://redis.com)
+* PostgreSQL server
+* Online key (see Online Key details below)
+
+### Online Key
+The RSTUF Worker requires an online key which is used for signing the TUF
+metadata when a target is added or removed.
+
+Here are some things you need to know:
+* The key must be compatible with
+  [Secure Systems Library](https://github.com/secure-systems-lab/securesystemslib).
+  If you do not have a key we suggest you use the [RSTUF CLI tool to generate the key](https://repository-service-tuf.readthedocs.io/en/latest/guide/repository-service-tuf-cli/index.html).
+* This key must be the same one used during the [RSTUF CLI ceremony](https://repository-service-tuf.readthedocs.io/en/latest/guide/repository-service-tuf-cli/index.html#ceremony-ceremony).
+* This key must be available to RSTUF Worker using the `RSTUF_KEYVAULT_BACKEND`.
+
+For more information read the [Deployment documentation](https://repository-service-tuf.readthedocs.io/en/latest/guide/deployment/index.html).
 
 ## Usage
 
