@@ -40,6 +40,14 @@ class LocalKeyVault(IKeyVault):
         self._password: str = key_pass
         self._path: str = key_path
         self._type: str = key_type
+
+        if self._password.startswith("/run/secrets/"):
+            # The user has stored their password using container secrets.
+            with open(self._password) as f:
+                secrets_password = f.read().rstrip("\n")
+
+            self._password = secrets_password
+
         self._secrets_handler: Callable = lambda *a: self._password
 
     @classmethod
@@ -50,10 +58,16 @@ class LocalKeyVault(IKeyVault):
         # Check that the online key can be loaded without an error.
         try:
             path = settings.LOCAL_KEYVAULT_PATH
+            password: str
+            if settings.LOCAL_KEYVAULT_PASSWORD.startswith("/run/secrets/"):
+                # The user has stored their password using container secrets.
+                with open(settings.LOCAL_KEYVAULT_PASSWORD) as f:
+                    password = f.read().rstrip("\n")
+            else:
+                password = settings.LOCAL_KEYVAULT_PASSWORD
+
             import_privatekey_from_file(
-                path,
-                settings.LOCAL_KEYVAULT_TYPE,
-                settings.LOCAL_KEYVAULT_PASSWORD,
+                path, settings.LOCAL_KEYVAULT_TYPE, password
             )
         except (
             FormatError,
