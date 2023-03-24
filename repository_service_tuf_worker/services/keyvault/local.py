@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import logging
 from typing import Callable, List, Optional
 
 from securesystemslib.exceptions import (
@@ -11,7 +12,7 @@ from securesystemslib.exceptions import (
     UnsupportedLibraryError,
 )
 from securesystemslib.interface import import_privatekey_from_file
-from securesystemslib.signer import Key, SSlibSigner
+from securesystemslib.signer import Key, SSlibSigner, SSlibKey
 
 from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
 
@@ -76,6 +77,7 @@ class LocalKeyVault(IKeyVault):
             StorageError,
             Error,
         ) as e:
+            logging.error(str(e))
             raise KeyVaultError(f"Cannot read private key file {path}") from e
 
     @classmethod
@@ -105,8 +107,11 @@ class LocalKeyVault(IKeyVault):
         """Return a signer using the online key."""
         try:
             priv_key_uri = f"file:{self._path}?encrypted=true"
+            sslib_public_key = SSlibKey.from_dict(
+                public_key.keyid, public_key.to_dict()
+            )
             return SSlibSigner.from_priv_key_uri(
-                priv_key_uri, public_key, self._secrets_handler
+                priv_key_uri, sslib_public_key, self._secrets_handler
             )
         except ValueError as e:
             raise KeyVaultError("Cannot load the online key") from e
