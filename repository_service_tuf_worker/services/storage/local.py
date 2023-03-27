@@ -8,10 +8,10 @@ import stat
 from typing import List, Optional
 
 from securesystemslib.exceptions import StorageError  # noqa
+from tuf.api.metadata import Metadata, T, Timestamp
 from tuf.api.serialization import DeserializationError
 
 from repository_service_tuf_worker.interfaces import IStorage, ServiceSettings
-from repository_service_tuf_worker.repository import Metadata, Timestamp
 
 
 class LocalStorage(IStorage):
@@ -32,7 +32,7 @@ class LocalStorage(IStorage):
             ),
         ]
 
-    def get(self, role: str, version: Optional[int] = None) -> "Metadata":
+    def get(self, role: str, version: Optional[int] = None) -> Metadata[T]:
         """
         Returns TUF role metadata object for the passed role name, from the
         configured TUF repo path, optionally at the passed version (latest if
