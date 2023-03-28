@@ -78,9 +78,10 @@ class IStorage(ABC):
         raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
-    def get(self, rolename: str, version: int) -> "Metadata[T]":
+    def get(self, rolename: str, version: Optional[int]) -> Metadata[T]:
         """
-        Return metadata from specific role name, optionally specific version.
+        Return metadata from specific role name, optionally specific version
+        (latest if None).
         """
         raise NotImplementedError  # pragma: no cover
 
