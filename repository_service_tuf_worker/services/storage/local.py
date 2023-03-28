@@ -60,7 +60,7 @@ class LocalStorage(IStorage):
         file_object = None
         try:
             file_object = open(filename, "rb")
-            return Metadata.from_bytes(file_object)
+            return Metadata.from_bytes(file_object.read())
         except (OSError, DeserializationError) as e:
             raise StorageError(f"Can't open Role '{role}'") from e
         finally:
