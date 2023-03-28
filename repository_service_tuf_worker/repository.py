@@ -77,7 +77,7 @@ class MetadataRepository:
     def __init__(self):
         self._worker_settings = get_worker_settings()
         self._settings = get_repository_settings()
-        self._storage_backend = self.refresh_settings().STORAGE
+        self._storage_backend: IStorage = self.refresh_settings().STORAGE
         self._key_storage_backend = self.refresh_settings().KEYVAULT
         self._db = self.refresh_settings().SQL
         self._redis = redis.StrictRedis.from_url(
@@ -191,16 +191,6 @@ class MetadataRepository:
         self._worker_settings = settings
         return settings
 
-    def _load(self, role_name: str) -> Metadata:
-        """
-        Loads latest version of metadata for rolename using configured storage
-        backend.
-
-        NOTE: The storage backend is expected to translate rolenames to
-        filenames and figure out the latest version.
-        """
-        return Metadata.from_file(role_name, None, self._storage_backend)
-
     def _sign(self, role: Metadata, role_name: str) -> None:
         """
         Re-signs metadata with role-specific key from global key store.
@@ -262,7 +252,7 @@ class MetadataRepository:
             db_targets: RSTUTarget DB objects will be changed as published in
                 the DB SQL.
         """
-        timestamp = self._load(Timestamp.type)
+        timestamp = self._storage_backend.get(Timestamp.type)
         timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
 
         self._bump_version(timestamp)
@@ -284,7 +274,7 @@ class MetadataRepository:
         bumps version and expiration, signs and persists. Returns new snapshot
         version, e.g. to update 'timestamp'.
         """
-        snapshot = self._load(Snapshot.type)
+        snapshot = self._storage_backend.get(Snapshot.type)
 
         for name, version in targets_meta:
             snapshot.signed.meta[f"{name}.json"] = MetaFile(version=version)
@@ -300,7 +290,7 @@ class MetadataRepository:
         """
         Return role name by target file path
         """
-        bin_role = self._load(Targets.type)
+        bin_role: Metadata[Targets] = self._storage_backend.get(Targets.type)
         bin_succinct_roles = bin_role.signed.delegations.succinct_roles
         bins_name = bin_succinct_roles.get_role_for_target(target_path)
 
@@ -467,7 +457,7 @@ class MetadataRepository:
                 # a new meta from the SQL DB.
                 # note: it might include targets from another parent task, it
                 # will speed up the process of publishing new targets.
-                role = self._load(rolename)
+                role: Metadata[Targets] = self._storage_backend.get(rolename)
                 role.signed.targets.clear()
                 role.signed.targets = {
                     target[0]: TargetFile.from_dict(target[1], target[0])
@@ -632,7 +622,7 @@ class MetadataRepository:
         Updating 'bins' also updates 'snapshot' and 'timestamp'.
         """
         try:
-            targets = self._load(Targets.type)
+            targets = self._storage_backend.get(Targets.type)
         except StorageError:
             logging.error(f"{Targets.type} not found, not bumping.")
             return False
@@ -640,7 +630,7 @@ class MetadataRepository:
         targets_succinct_roles = targets.signed.delegations.succinct_roles
         targets_meta = []
         for bins_name in targets_succinct_roles.get_roles():
-            bins_role = self._load(bins_name)
+            bins_role: Metadata[Targets] = self._storage_backend.get(bins_name)
 
             if (bins_role.signed.expires - datetime.now()) < timedelta(
                 hours=self._hours_before_expire
@@ -689,7 +679,7 @@ class MetadataRepository:
         """
 
         try:
-            snapshot = self._load(Snapshot.type)
+            snapshot = self._storage_backend.get(Snapshot.type)
         except StorageError:
             logging.error(f"{Snapshot.type} not found, not bumping.")
             return False
