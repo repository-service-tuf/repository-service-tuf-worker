@@ -12,7 +12,7 @@ from securesystemslib.exceptions import (
     UnsupportedLibraryError,
 )
 from securesystemslib.interface import import_privatekey_from_file
-from securesystemslib.signer import Key, SSlibSigner, SSlibKey
+from securesystemslib.signer import Key, SSlibKey, SSlibSigner
 
 from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
 

@@ -56,24 +56,7 @@ class TestMetadataRepository:
         with pytest.raises(ValueError):
             test_repo.refresh_settings(fake_worker_settings)
 
-<<<<<<< HEAD
-    def test__sign(self):
-        test_repo = repository.MetadataRepository.create_service()
-
-=======
-    def test__load(self, test_repo):
-        repository.Metadata = pretend.stub(
-            from_file=pretend.call_recorder(lambda *a, **kw: "root_metadata")
-        )
-
-        test_result = test_repo._load("root")
-        assert test_result == "root_metadata"
-        assert repository.Metadata.from_file.calls == [
-            pretend.call("root", None, test_repo._storage_backend)
-        ]
-
     def test__sign(self, test_repo):
->>>>>>> 1fef30c (Patch LocalKeyVault.configure for the tests)
         fake_role = pretend.stub(
             signatures=pretend.stub(clear=pretend.call_recorder(lambda: None)),
             sign=pretend.call_recorder(lambda *a, **kw: None),
@@ -1082,17 +1065,10 @@ class TestMetadataRepository:
             pretend.call("snapshot")
         ]
 
-<<<<<<< HEAD
-    def test_bump_snapshot_not_found(self):
-        test_repo = repository.MetadataRepository.create_service()
-
+    def test_bump_snapshot_not_found(self, test_repo):
         test_repo._storage_backend.get = pretend.raiser(
             repository.StorageError
         )
-=======
-    def test_bump_snapshot_not_found(self, test_repo):
-        test_repo._load = pretend.raiser(repository.StorageError)
->>>>>>> 1fef30c (Patch LocalKeyVault.configure for the tests)
 
         result = test_repo.bump_snapshot()
         assert result is False
