@@ -217,7 +217,7 @@ class MetadataRepository:
         root: Metadata[Root] = self._storage_backend.get("root")
         # All roles except root share the same one key and it doesn't matter
         # from which role we will get the key.
-        keyid: str = root.signed.roles["timestamp"]["keyids"][0]
+        keyid: str = root.signed.roles["timestamp"].keyids[0]
         public_key = root.signed.keys[keyid]
         signer = self._key_storage_backend.get(public_key)
         role.sign(signer, append=True)

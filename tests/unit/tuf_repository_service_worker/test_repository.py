@@ -57,28 +57,29 @@ class TestMetadataRepository:
             test_repo.refresh_settings(fake_worker_settings)
 
     def test__sign(self, test_repo):
-        fake_role = pretend.stub(
+        fake_role = pretend.stub(keyids=["keyid_1"])
+        fake_md = pretend.stub(
             signatures=pretend.stub(clear=pretend.call_recorder(lambda: None)),
             sign=pretend.call_recorder(lambda *a, **kw: None),
             signed=pretend.stub(
-                roles={"timestamp": {"keyids": ["keyid_1"]}},
+                roles={"timestamp": fake_role},
                 keys={"keyid_1": {}},
             ),
         )
         test_repo._storage_backend = pretend.stub(
-            get=pretend.call_recorder(lambda *a: fake_role)
+            get=pretend.call_recorder(lambda *a: fake_md)
         )
         test_repo._key_storage_backend = pretend.stub(
             get=pretend.call_recorder(lambda *a: "key_signer_1")
         )
 
-        test_result = test_repo._sign(fake_role)
+        test_result = test_repo._sign(fake_md)
 
         assert test_result is None
         assert test_repo._key_storage_backend.get.calls == [pretend.call({})]
-        assert fake_role.signatures.clear.calls == [pretend.call()]
+        assert fake_md.signatures.clear.calls == [pretend.call()]
         assert test_repo._storage_backend.get.calls == [pretend.call("root")]
-        assert fake_role.sign.calls == [
+        assert fake_md.sign.calls == [
             pretend.call("key_signer_1", append=True),
         ]
 
