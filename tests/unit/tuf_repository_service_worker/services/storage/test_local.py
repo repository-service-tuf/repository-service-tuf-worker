@@ -4,6 +4,7 @@
 
 import pretend
 import pytest
+from tuf.api.metadata import Metadata, Root, Timestamp
 
 from repository_service_tuf_worker.services.storage import local
 
@@ -51,25 +52,29 @@ class TestLocalStorageService:
                 )
             )
         )
-        fake_file_object = pretend.stub(
+        fake_file_obj = pretend.stub(
+            read=pretend.call_recorder(lambda: None),
             close=pretend.call_recorder(lambda: None),
-            read=pretend.call_recorder(lambda: b"fake_root_data"),
         )
         monkeypatch.setitem(
-            local.__builtins__, "open", lambda *a, **kw: fake_file_object
+            local.__builtins__, "open", lambda *a: fake_file_obj
         )
 
-        with service.get("root") as r:
-            result = r.read()
+        expected_root = Metadata(Root())
+        local.Metadata = pretend.stub(
+            from_bytes=pretend.call_recorder(lambda *a: expected_root)
+        )
+        result = service.get("root")
 
-        assert result == fake_file_object.read()
-        assert fake_file_object.close.calls == [pretend.call()]
-        assert fake_file_object.read.calls == [pretend.call(), pretend.call()]
+        assert result == expected_root
+        assert fake_file_obj.read.calls == [pretend.call()]
+        assert fake_file_obj.close.calls == [pretend.call()]
         assert local.glob.glob.calls == [pretend.call("/path/2.root.json")]
         assert local.os.path.join.calls == [
             pretend.call(service._path, "*.root.json"),
             pretend.call(service._path, "2.root.json"),
         ]
+        assert local.Metadata.from_bytes.calls == [pretend.call(None)]
 
     def test_get_timestamp(self, monkeypatch):
         service = local.LocalStorage("/path")
@@ -81,23 +86,26 @@ class TestLocalStorageService:
                 )
             )
         )
-        fake_file_object = pretend.stub(
+        fake_file_obj = pretend.stub(
+            read=pretend.call_recorder(lambda: None),
             close=pretend.call_recorder(lambda: None),
-            read=pretend.call_recorder(lambda: b"fake_root_data"),
         )
         monkeypatch.setitem(
-            local.__builtins__, "open", lambda *a, **kw: fake_file_object
+            local.__builtins__, "open", lambda *a: fake_file_obj
         )
+        expected_timestamp = Metadata(Timestamp())
+        local.Metadata = pretend.stub(
+            from_bytes=pretend.call_recorder(lambda *a: expected_timestamp)
+        )
+        result = service.get("timestamp")
 
-        with service.get("timestamp") as r:
-            result = r.read()
-
-        assert result == fake_file_object.read()
-        assert fake_file_object.close.calls == [pretend.call()]
-        assert fake_file_object.read.calls == [pretend.call(), pretend.call()]
+        assert result == expected_timestamp
+        assert fake_file_obj.read.calls == [pretend.call()]
+        assert fake_file_obj.close.calls == [pretend.call()]
         assert local.os.path.join.calls == [
             pretend.call(service._path, "timestamp.json"),
         ]
+        assert local.Metadata.from_bytes.calls == [pretend.call(None)]
 
     def test_get_max_version_ValueError(self, monkeypatch):
         service = local.LocalStorage("/path")
@@ -111,28 +119,31 @@ class TestLocalStorageService:
                 )
             )
         )
-        fake_file_object = pretend.stub(
+        fake_file_obj = pretend.stub(
+            read=pretend.call_recorder(lambda: None),
             close=pretend.call_recorder(lambda: None),
-            read=pretend.call_recorder(lambda: b"fake_root_data"),
         )
         monkeypatch.setitem(
             local.__builtins__, "max", pretend.raiser(ValueError)
         )
         monkeypatch.setitem(
-            local.__builtins__, "open", lambda *a, **kw: fake_file_object
+            local.__builtins__, "open", lambda *a: fake_file_obj
         )
+        expected_root = Metadata(Root())
+        local.Metadata = pretend.stub(
+            from_bytes=pretend.call_recorder(lambda *a: expected_root)
+        )
+        result = service.get("root")
 
-        with service.get("root") as r:
-            result = r.read()
-
-        assert result == fake_file_object.read()
-        assert fake_file_object.close.calls == [pretend.call()]
-        assert fake_file_object.read.calls == [pretend.call(), pretend.call()]
+        assert result == expected_root
+        assert fake_file_obj.read.calls == [pretend.call()]
+        assert fake_file_obj.close.calls == [pretend.call()]
         assert local.os.path.join.calls == [
             pretend.call(service._path, "*.root.json"),
             pretend.call(service._path, "1.root.json"),
         ]
         assert local.glob.glob.calls == [pretend.call("/path/1.root.json")]
+        assert local.Metadata.from_bytes.calls == [pretend.call(None)]
 
     def test_get_OSError(self, monkeypatch):
         service = local.LocalStorage("/path")
