@@ -2,7 +2,6 @@ version: "3.9"
 
 volumes:
   repository-service-tuf-storage:
-  repository-service-tuf-keystorage:
   repository-service-tuf-api-data:
   repository-service-tuf-mq-data:
   repository-service-tuf-settings:
@@ -14,8 +13,6 @@ services:
     image: rabbitmq:3.10.7-management-alpine
     volumes:
      - "repository-service-tuf-mq-data:/var/lib/rabbitmq"
-     - "repository-service-tuf-storage:/var/opt/repository-service-tuf/storage"
-     - "repository-service-tuf-keystorage:/var/opt/repository-service-tuf/keystorage"
     ports:
       - 5672:5672
       - 15672:15672
@@ -76,7 +73,8 @@ services:
       - RSTUF_STORAGE_BACKEND=LocalStorage
       - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
       - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
-      - RSTUF_LOCAL_KEYVAULT_PATH=/var/opt/repository-service-tuf/keystorage
+      - RSTUF_LOCAL_KEYVAULT_PATH=/opt/repository-service-tuf-worker/tests/files/key_storage/online.key
+      - RSTUF_LOCAL_KEYVAULT_PASSWORD=strongPass
       - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
       - RSTUF_SQL_SERVER=postgresql://postgres:secret@postgres:5432
       - RSTUF_REDIS_SERVER=redis://redis
@@ -84,7 +82,6 @@ services:
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
-      - repository-service-tuf-keystorage:/var/opt/repository-service-tuf/keystorage
     depends_on:
       rabbitmq:
         condition: service_healthy

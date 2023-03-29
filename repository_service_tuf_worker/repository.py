@@ -15,7 +15,6 @@ from celery.app.task import Task
 from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from securesystemslib.exceptions import StorageError  # type: ignore
-from securesystemslib.signer import SSlibSigner  # type: ignore
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
     Metadata,
@@ -75,10 +74,10 @@ class MetadataRepository:
     """
 
     def __init__(self):
-        self._worker_settings = get_worker_settings()
-        self._settings = get_repository_settings()
+        self._worker_settings: Dynaconf = get_worker_settings()
+        self._settings: Dynaconf = get_repository_settings()
         self._storage_backend: IStorage = self.refresh_settings().STORAGE
-        self._key_storage_backend = self.refresh_settings().KEYVAULT
+        self._key_storage_backend: IKeyVault = self.refresh_settings().KEYVAULT
         self._db = self.refresh_settings().SQL
         self._redis = redis.StrictRedis.from_url(
             self._worker_settings.REDIS_SERVER
@@ -88,7 +87,7 @@ class MetadataRepository:
         )
 
     @classmethod
-    def create_service(cls):
+    def create_service(cls) -> "MetadataRepository":
         """Class Method for MetadataRepository service creation."""
         return cls()
 
@@ -137,11 +136,14 @@ class MetadataRepository:
                     f"{', '.join(missing)}"
                 )
 
+            storage_kwargs: Dict[str, Any] = {}
+            for s in settings.STORAGE_BACKEND.settings():
+                if settings.store.get(s.name) is None:
+                    settings.store[s.name] = s.default
+
+                storage_kwargs[s.argument] = settings.store[s.name]
+
             settings.STORAGE_BACKEND.configure(settings)
-            storage_kwargs = {
-                s.argument: settings.store[s.name]
-                for s in settings.STORAGE_BACKEND.settings()
-            }
             settings.STORAGE = settings.STORAGE_BACKEND(**storage_kwargs)
 
         keyvault_backends = [
@@ -180,18 +182,20 @@ class MetadataRepository:
                     f"{', '.join(missing)}"
                 )
 
-            settings.KEYVAULT_BACKEND.configure(settings)
-            keyvault_kwargs = {
-                s.argument: settings.store[s.name]
-                for s in settings.KEYVAULT_BACKEND.settings()
-            }
+            keyvault_kwargs: Dict[str, Any] = {}
+            for s in settings.KEYVAULT_BACKEND.settings():
+                if settings.store.get(s.name) is None:
+                    settings.store[s.name] = s.default
 
+                keyvault_kwargs[s.argument] = settings.store[s.name]
+
+            settings.KEYVAULT_BACKEND.configure(settings)
             settings.KEYVAULT = settings.KEYVAULT_BACKEND(**keyvault_kwargs)
 
         self._worker_settings = settings
         return settings
 
-    def _sign(self, role: Metadata, role_name: str) -> None:
+    def _sign(self, role: Metadata) -> None:
         """
         Re-signs metadata with role-specific key from global key store.
 
@@ -199,9 +203,13 @@ class MetadataRepository:
         for top-level roles.
         """
         role.signatures.clear()
-        for key in self._key_storage_backend.get(role_name):
-            signer = SSlibSigner(key)
-            role.sign(signer, append=True)
+        root: Metadata[Root] = self._storage_backend.get("root")
+        # All roles except root share the same one key and it doesn't matter
+        # from which role we will get the key.
+        keyid: str = root.signed.roles["timestamp"].keyids[0]
+        public_key = root.signed.keys[keyid]
+        signer = self._key_storage_backend.get(public_key)
+        role.sign(signer, append=True)
 
     def _persist(self, role: Metadata, role_name: str) -> str:
         """
@@ -249,7 +257,7 @@ class MetadataRepository:
 
         Args:
             snapshot_version: snapshot version to add to new timestamp.
-            db_targets: RSTUTarget DB objects will be changed as published in
+            db_targets: RSTUFTarget DB objects will be changed as published in
                 the DB SQL.
         """
         timestamp = self._storage_backend.get(Timestamp.type)
@@ -257,7 +265,7 @@ class MetadataRepository:
 
         self._bump_version(timestamp)
         self._bump_expiry(timestamp, Timestamp.type)
-        self._sign(timestamp, Timestamp.type)
+        self._sign(timestamp)
         self._persist(timestamp, Timestamp.type)
 
         # TODO review if here is the best place to change the status in DB
@@ -281,7 +289,7 @@ class MetadataRepository:
 
         self._bump_expiry(snapshot, Snapshot.type)
         self._bump_version(snapshot)
-        self._sign(snapshot, Snapshot.type)
+        self._sign(snapshot)
         self._persist(snapshot, Snapshot.type)
 
         return snapshot.signed.version
@@ -394,12 +402,8 @@ class MetadataRepository:
         Add the online Keys to the Key Storage backend and the Signed Metadata
         to the Storage Backend.
         """
-
-        # Store online keys to the Key Vault
-        if settings := payload.get("settings"):
-            self.store_online_keys(settings)
-        else:
-            raise (ValueError("No settings in the payload"))
+        if payload.get("settings") is None:
+            raise ValueError("No settings in the payload")
 
         metadata = payload.get("metadata")
         if metadata is None:
@@ -469,13 +473,13 @@ class MetadataRepository:
                 # update expiry, bump version and persist to the storage
                 self._bump_expiry(role, BINS)
                 self._bump_version(role)
-                self._sign(role, BINS)
+                self._sign(role)
                 self._persist(role, rolename)
                 # append to the new snapshot targets meta
                 new_snapshot_meta.append((rolename, role.signed.version))
 
-            # update snapshop and timestamp
-            # note: the `db_published_targes` contains the targets that
+            # update snapshot and timestamp
+            # note: the `db_published_targets` contains the targets that
             # needs to updated in SQL DB as 'published' and it will be done
             # by the `_update_timestamp`
             self._update_timestamp(
@@ -637,7 +641,7 @@ class MetadataRepository:
             ):
                 self._bump_expiry(bins_role, BINS)
                 self._bump_version(bins_role)
-                self._sign(bins_role, BINS)
+                self._sign(bins_role)
                 self._persist(bins_role, bins_name)
                 targets_meta.append((bins_name, bins_role.signed.version))
 
@@ -720,18 +724,3 @@ class MetadataRepository:
             self.bump_bins_roles()
 
             return True
-
-    def store_online_keys(
-        self,
-        roles_config: Dict[str, Any],
-    ) -> bool:
-        """Store online keys in the Key Vault Backend."""
-        if role_settings := roles_config.get("roles"):
-            for rolename, items in role_settings.items():
-                # store keys in Key Vault
-                if keys := items.get("keys"):
-                    self._key_storage_backend.put(rolename, keys.values())
-        else:
-            return False
-
-        return True
