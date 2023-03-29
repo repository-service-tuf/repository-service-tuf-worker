@@ -2,13 +2,17 @@
 #
 # SPDX-License-Identifier: MIT
 
-import os
-from typing import Any, Dict, List, Optional
+import logging
+from typing import Callable, List, Optional
 
-from dynaconf import Dynaconf, loaders
-from dynaconf.utils.boxing import DynaBox
-from dynaconf.vendor.box.exceptions import BoxKeyError
-from securesystemslib.keys import decrypt_key, encrypt_key
+from securesystemslib.exceptions import (
+    Error,
+    FormatError,
+    StorageError,
+    UnsupportedLibraryError,
+)
+from securesystemslib.interface import import_privatekey_from_file
+from securesystemslib.signer import Key, SSlibKey, SSlibSigner
 
 from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
 
@@ -22,33 +26,59 @@ class LocalKeyVault(IKeyVault):
 
     def __init__(
         self,
-        path: str,
-        online_key_name: Optional[str] = "online.key",
-        online_key_pass: Optional[str] = None,
-        online_key_type: Optional[str] = "ed25519",
+        key_pass: str,
+        key_path: Optional[str] = "online.key",
+        key_type: Optional[str] = "ed25519",
     ):
         """Configuration class for RSTUF Worker LocalKeyVault service.
+        Manages all settings related to the usage of the online key.
 
         Args:
-            path: directory of the key vault.
-            online_key_name: file name of the online key.
-            online_key_pass: password to load the online key.
-            online_key_type: cryptography type of the online key.
+            key_pass: password to load the online key.
+            key_path: file path of the online key.
+            key_type: cryptography type of the online key.
         """
-        self._path: str = path
-        self._secrets_file: str = os.path.join(self._path, ".secrets.yaml")
-        self._online_key_name: Optional[str] = online_key_name
-        self._online_key_password: Optional[str] = online_key_pass
-        self._online_key_type: Optional[str] = online_key_type
-        self._keyvault = Dynaconf(
-            envvar_prefix="LOCALKEYVAULT",
-            settings_files=[self._secrets_file],
-        )
+        self._password: str = key_pass
+        self._path: str = key_path
+        self._type: str = key_type
+
+        if self._password.startswith("/run/secrets/"):
+            # The user has stored their password using container secrets.
+            with open(self._password) as f:
+                secrets_password = f.read().rstrip("\n")
+
+            self._password = secrets_password
+
+        self._secrets_handler: Callable = lambda *a: self._password
 
     @classmethod
     def configure(cls, settings) -> None:
-        """Configure using the settings."""
-        os.makedirs(settings.LOCAL_KEYVAULT_PATH, exist_ok=True)
+        """
+        Run actions to check and configure the service using the settings.
+        """
+        # Check that the online key can be loaded without an error.
+        try:
+            path = settings.LOCAL_KEYVAULT_PATH
+            password: str
+            if settings.LOCAL_KEYVAULT_PASSWORD.startswith("/run/secrets/"):
+                # The user has stored their password using container secrets.
+                with open(settings.LOCAL_KEYVAULT_PASSWORD) as f:
+                    password = f.read().rstrip("\n")
+            else:
+                password = settings.LOCAL_KEYVAULT_PASSWORD
+
+            import_privatekey_from_file(
+                path, settings.LOCAL_KEYVAULT_TYPE, password
+            )
+        except (
+            FormatError,
+            ValueError,
+            UnsupportedLibraryError,
+            StorageError,
+            Error,
+        ) as e:
+            logging.error(str(e))
+            raise KeyVaultError(f"Cannot read private key file {path}") from e
 
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
@@ -56,53 +86,34 @@ class LocalKeyVault(IKeyVault):
         return [
             ServiceSettings(
                 name="LOCAL_KEYVAULT_PATH",
-                argument="path",
+                argument="key_path",
+                required=False,
+                default="online.key",
+            ),
+            ServiceSettings(
+                name="LOCAL_KEYVAULT_PASSWORD",
+                argument="key_pass",
                 required=True,
             ),
             ServiceSettings(
-                name="LOCAL_KEYVAULT_ONLINE_KEY_NAME",
-                argument="online_key_name",
+                name="LOCAL_KEYVAULT_TYPE",
+                argument="key_type",
                 required=False,
-            ),
-            ServiceSettings(
-                name="LOCAL_KEYVAULT_ONLINE_KEY_PASSWORD",
-                argument="online_key_pass",
-                required=False,
-            ),
-            ServiceSettings(
-                name="LOCAL_KEYVAULT_ONLINE_KEY_TYPE",
-                argument="online_key_type",
-                required=False,
+                default="ed25519",
             ),
         ]
 
-    def get(self, rolename: str) -> Dict[str, Any]:
-        """Get the Key from local KeyVault by role name."""
-        keys_sslib_format: List[Dict[str, Any]] = []
+    def get(self, public_key: Key) -> SSlibSigner:
+        """Return a signer using the online key."""
         try:
-            keys: Dict[str, Any] = self.keyvault.store[rolename]
-            for key in keys:
-                keys_sslib_format.append(
-                    decrypt_key(key["key"], key["password"])
-                )
-        except (BoxKeyError, KeyError):
-            raise KeyVaultError(f"{rolename} key(s) not found.")
-
-        return keys_sslib_format
-
-    def put(self, rolename: str, keys: List[Dict[str, Any]]) -> None:
-        """Save the Key in the local KeyVault."""
-        key_vault_data: list = []
-        for key in keys:
-            ed25519_key = encrypt_key(key.get("key"), key.get("password"))
-            key_vault_data.append(
-                {
-                    "key": ed25519_key,
-                    "filename": key["filename"].split("/")[-1],
-                    "password": key["password"],
-                }
+            priv_key_uri = f"file:{self._path}?encrypted=true"
+            sslib_public_key = SSlibKey.from_dict(
+                public_key.keyid, public_key.to_dict()
             )
-
-        self.keyvault.store[rolename.upper()] = key_vault_data
-        data = self.keyvault.as_dict(env=self.keyvault.current_env)
-        loaders.write(self._secrets_file, DynaBox(data).to_dict())
+            return SSlibSigner.from_priv_key_uri(
+                priv_key_uri, sslib_public_key, self._secrets_handler
+            )
+        except ValueError as e:
+            raise KeyVaultError("Cannot load the online key") from e
+        except OSError:
+            raise KeyVaultError(f"Cannot read private key file {self._path}")
