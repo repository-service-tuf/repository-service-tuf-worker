@@ -16,8 +16,9 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
+from securesystemslib.signer import Key, Signer
 from tuf.api.metadata import Metadata, T
 
 
@@ -28,6 +29,7 @@ class ServiceSettings:
     name: str
     argument: str
     required: bool
+    default: Optional[Any] = None
 
 
 class IKeyVault(ABC):
@@ -35,7 +37,7 @@ class IKeyVault(ABC):
     @abstractmethod
     def configure(cls, settings) -> None:
         """
-        Run actions to test, configure using the settings.
+        Run actions to check and configure the service using the settings.
         """
         pass  # pragma: no cover
 
@@ -48,15 +50,8 @@ class IKeyVault(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def get(self, rolename: List[str]) -> Dict[str, Any]:
-        """Return a key from specific rolename."""
-        pass  # pragma: no cover
-
-    @abstractmethod
-    def put(self, file_object: str, filename: str) -> None:
-        """
-        Stores file object with a specific filename.
-        """
+    def get(self, public_key: Key) -> Signer:
+        """Return a signer using the online key."""
         pass  # pragma: no cover
 
 
