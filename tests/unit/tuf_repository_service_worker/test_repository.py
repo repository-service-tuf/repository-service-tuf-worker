@@ -345,8 +345,8 @@ class TestMetadataRepository:
             ),
         ]
 
-    def test__update_task_subtask_failure(self, monkeypatch):
-        test_repo = repository.MetadataRepository.create_service()
+    def test__update_task_subtask_failure(self, test_repo, monkeypatch):
+        test_repo._key_storage_backend.get = pretend.stub()
 
         test_repo._db = pretend.stub(
             refresh=pretend.call_recorder(lambda *a: None)
@@ -799,8 +799,7 @@ class TestMetadataRepository:
 
         assert "No targets in the payload" in str(err)
 
-    def test_add_targets_skip_publishing(self, monkeypatch):
-        test_repo = repository.MetadataRepository.create_service()
+    def test_add_targets_skip_publishing(self, test_repo, monkeypatch):
         test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
@@ -885,9 +884,7 @@ class TestMetadataRepository:
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_remove_targets(self, monkeypatch):
-        test_repo = repository.MetadataRepository.create_service()
-
+    def test_remove_targets(self, test_repo, monkeypatch):
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
@@ -960,9 +957,7 @@ class TestMetadataRepository:
         ]
         assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_remove_targets_skip_publishing(self, monkeypatch):
-        test_repo = repository.MetadataRepository.create_service()
-
+    def test_remove_targets_skip_publishing(self, test_repo, monkeypatch):
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
