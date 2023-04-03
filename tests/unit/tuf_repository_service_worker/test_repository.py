@@ -394,14 +394,6 @@ class TestMetadataRepository:
         ]
 
     def test_bootstrap(self, monkeypatch, test_repo):
-        test_repo._persist = pretend.call_recorder(lambda *a: None)
-        repository.Metadata = pretend.stub(
-            from_dict=pretend.call_recorder(lambda *a: "fake_metadata")
-        )
-        repository.JSONSerializer = pretend.call_recorder(lambda: None)
-        test_repo._storage_backend = pretend.stub()
-        test_repo.bump_online_roles = pretend.call_recorder(lambda *a: None)
-
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
             now=pretend.call_recorder(lambda: fake_time)
@@ -409,12 +401,32 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
+        fake_root_md = pretend.stub(
+            type="root",
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids=["online_key_id"])},
+                keys={"online_key_id": "online_public_key"},
+            ),
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_root_md
+        )
+        repository.Targets.add_key = pretend.call_recorder(lambda *a: None)
+        repository.Key.from_securesystemslib_key = pretend.call_recorder(
+            lambda *a: "key"
+        )
+        fake_online_public_key = pretend.stub(key_dict={"k": "v"})
+        test_repo._key_storage_backend.get = pretend.call_recorder(
+            lambda *a: fake_online_public_key
+        )
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
 
         payload = {
-            "settings": {"k": "v"},
+            "settings": {"services": {"number_of_delegated_bins": 2}},
             "metadata": {
-                "1.root": {"md_k1": "md_v1"},
-                "1.snapshot": {"md_k2": "md_v2"},
+                "root": {"md_k1": "md_v1"},
             },
         }
 
@@ -424,39 +436,40 @@ class TestMetadataRepository:
             "last_update": fake_time,
             "status": "Task finished.",
         }
-        assert repository.Metadata.from_dict.calls == [
-            pretend.call({"md_k1": "md_v1"}),
-            pretend.call({"md_k2": "md_v2"}),
-        ]
         assert fake_datetime.now.calls == [pretend.call()]
-        assert test_repo._persist.calls == [
-            pretend.call("fake_metadata", "1.root"),
-            pretend.call("fake_metadata", "1.snapshot"),
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call(payload["metadata"]["root"])
         ]
-        assert test_repo.bump_online_roles.calls == [pretend.call()]
+        assert repository.Key.from_securesystemslib_key.calls == [
+            pretend.call({"k": "v"}),
+            pretend.call({"k": "v"}),
+        ]
+        assert test_repo._key_storage_backend.get.calls == [
+            pretend.call("online_public_key"),
+            pretend.call("online_public_key"),
+        ]
 
     def test_bootstrap_missing_settings(self, test_repo):
         payload = {
             "metadata": {
-                "1.root": {"md_k1": "md_v1"},
-                "1.snapshot": {"md_k2": "md_v2"},
+                "root": {"md_k1": "md_v1"},
             },
         }
 
-        with pytest.raises(ValueError) as err:
+        with pytest.raises(KeyError) as err:
             test_repo.bootstrap(payload)
 
-        assert "No settings in the payload" in str(err)
+        assert "No 'settings' in the payload" in str(err)
 
     def test_bootstrap_missing_metadata(self, test_repo):
         payload = {
             "settings": {"k": "v"},
         }
 
-        with pytest.raises(ValueError) as err:
+        with pytest.raises(KeyError) as err:
             test_repo.bootstrap(payload)
 
-        assert "No metadata in the payload" in str(err)
+        assert "No 'metadata' in the payload" in str(err)
 
     def test_publish_targets(self, test_repo, monkeypatch):
         @contextmanager
