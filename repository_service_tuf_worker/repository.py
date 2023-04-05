@@ -422,13 +422,12 @@ class MetadataRepository:
         snapshot: Metadata[Snapshot] = Metadata(Snapshot())
         timestamp: Metadata[Timestamp] = Metadata(Timestamp())
 
-        # Succinct delegated roles (`bins`)
-        succinct_roles = SuccinctRoles(
-            [],
-            1,
-            int(log(tuf_settings["services"]["number_of_delegated_bins"], 2)),
-            BINS,
+        # Calculate the bit length (Number of bits between 1 and 32)
+        bit_length = int(
+            log(tuf_settings["services"]["number_of_delegated_bins"], 2)
         )
+        # Succinct delegated roles (`bins`)
+        succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
         targets.signed.delegations = Delegations(
             keys={}, succinct_roles=succinct_roles
         )
