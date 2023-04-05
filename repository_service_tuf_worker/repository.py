@@ -411,7 +411,7 @@ class MetadataRepository:
             raise KeyError("No 'metadata' in the payload")
 
         # Saves the `Root` metadata in the backend storage service and returns
-        # online public key (it uses the `Timestamp` key as reference)
+        # the online public key (it uses the `Timestamp` key as reference)
         root: Metadata[Root] = Metadata.from_dict(root_metadata[Root.type])
         self._persist(root, Root.type)
         _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
@@ -433,7 +433,7 @@ class MetadataRepository:
             keys={}, succinct_roles=succinct_roles
         )
         # Initialize all succinct delegated roles (`bins`), update expire,
-        # sign, add to `Snapshot` meta and persiste in the backend storage
+        # sign, add to `Snapshot` meta and persist in the backend storage
         # service.
         for delegated_name in succinct_roles.get_roles():
             targets.signed.add_key(
