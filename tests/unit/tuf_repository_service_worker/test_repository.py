@@ -449,9 +449,9 @@ class TestMetadataRepository:
             pretend.call("online_public_key"),
         ]
 
-        # Special checks as it uses Metadata as dynamic instance
+        # Special checks as calls use metadata object instances
 
-        # Assert that contains two args and 'role' argument is a 'Metadata'.
+        # Assert that calls contain two args and 'role' argument is a 'Metadata'.
         for call in test_repo._bump_expiry.calls:
             assert len(call.args) == 2
             assert isinstance(call.args[0], repository.Metadata)
@@ -467,7 +467,7 @@ class TestMetadataRepository:
             "timestamp",
         ]
 
-        # Assert that contains two args and 'role' argument is a 'Metadata' or
+        # Assert that calls use two args and 'role' argument is a 'Metadata' type or
         # a pretend.sub()
         for call in test_repo._persist.calls:
             assert len(call.args) == 2
@@ -487,14 +487,14 @@ class TestMetadataRepository:
             "timestamp",
         ]
 
-        # The role argument is instance which doesn't allows us to check the
+        # The role argument is an instance we cannot check the object itself
         # object itself
         for call in test_repo._sign.calls:
             assert len(call.args) == 1
             assert isinstance(call.args[0], repository.Metadata)
         # Assert the number of calls test_repos._sign excluding root which we
-        # don't sign in the worker bootstrap process. This check guarantes that
-        # we all signed metadata is persisted.
+        # don't sign during the worker bootstrap process. This check guarantees
+        # that all signed metadata is persisted.
         assert len(test_repo._sign.calls) == len(test_repo._persist.calls) - 1
 
     def test_bootstrap_missing_settings(self, test_repo):
