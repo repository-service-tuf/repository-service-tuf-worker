@@ -451,7 +451,8 @@ class TestMetadataRepository:
 
         # Special checks as calls use metadata object instances
 
-        # Assert that calls contain two args and 'role' argument is a 'Metadata'.
+        # Assert that calls contain two args and 'role' argument is a
+        # 'Metadata'.
         for call in test_repo._bump_expiry.calls:
             assert len(call.args) == 2
             assert isinstance(call.args[0], repository.Metadata)
@@ -467,8 +468,8 @@ class TestMetadataRepository:
             "timestamp",
         ]
 
-        # Assert that calls use two args and 'role' argument is a 'Metadata' type or
-        # a pretend.sub()
+        # Assert that calls use two args and 'role' argument is a 'Metadata'
+        # type or a pretend.sub()
         for call in test_repo._persist.calls:
             assert len(call.args) == 2
             assert isinstance(
