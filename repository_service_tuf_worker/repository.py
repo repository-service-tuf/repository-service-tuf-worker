@@ -8,6 +8,7 @@ import logging
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from math import log
 from typing import Any, Dict, List, Optional, Tuple
 
 import redis
@@ -17,10 +18,13 @@ from celery.result import AsyncResult, states
 from securesystemslib.exceptions import StorageError  # type: ignore
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
+    Delegations,
+    Key,
     Metadata,
     MetaFile,
     Root,
     Snapshot,
+    SuccinctRoles,
     TargetFile,
     Targets,
     Timestamp,
@@ -226,20 +230,19 @@ class MetadataRepository:
 
         bytes_data = role.to_bytes(JSONSerializer())
         self._storage_backend.put(bytes_data, filename)
-
+        logging.debug(f"{filename} saved")
         return filename
 
-    def _bump_expiry(self, role: Metadata, expiry_id: str) -> None:
+    def _bump_expiry(self, role: Metadata, role_name: str) -> None:
         """
         Bumps metadata expiration date by role-specific interval.
-
-        The metadata role type is used as default expiry id. This is only
-        allowed for top-level roles.
         """
         role.signed.expires = datetime.now().replace(
             microsecond=0
         ) + timedelta(
-            days=int(self._settings.get_fresh(f"{expiry_id}_EXPIRATION"))
+            days=int(
+                self._settings.get_fresh(f"{role_name.upper()}_EXPIRATION")
+            )
         )
 
     def _bump_version(self, role: Metadata) -> None:
@@ -398,23 +401,65 @@ class MetadataRepository:
     ) -> Dict[str, Any]:
         """
         Bootstrap the Metadata Repository
-
-        Add the online Keys to the Key Storage backend and the Signed Metadata
-        to the Storage Backend.
         """
-        if payload.get("settings") is None:
-            raise ValueError("No settings in the payload")
+        tuf_settings = payload.get("settings")
+        if tuf_settings is None:
+            raise KeyError("No 'settings' in the payload")
 
-        metadata = payload.get("metadata")
-        if metadata is None:
-            raise (ValueError("No metadata in the payload"))
+        root_metadata = payload.get("metadata")
+        if root_metadata is None:
+            raise KeyError("No 'metadata' in the payload")
 
-        for role_name, data in metadata.items():
-            metadata = Metadata.from_dict(data)
-            self._persist(metadata, role_name)
-            logging.debug(f"{role_name}.json saved")
+        # Saves the `Root` metadata in the backend storage service and returns
+        # the online public key (it uses the `Timestamp` key as reference)
+        root: Metadata[Root] = Metadata.from_dict(root_metadata[Root.type])
+        self._persist(root, Root.type)
+        _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
+        public_key = root.signed.keys[_keyid]
 
-        self.bump_online_roles()
+        # Top level roles (`Targets`, `Timestamp``, `Snapshot`) initialization
+        targets: Metadata[Targets] = Metadata(Targets())
+        snapshot: Metadata[Snapshot] = Metadata(Snapshot())
+        timestamp: Metadata[Timestamp] = Metadata(Timestamp())
+
+        # Calculate the bit length (Number of bits between 1 and 32)
+        bit_length = int(
+            log(tuf_settings["services"]["number_of_delegated_bins"], 2)
+        )
+        # Succinct delegated roles (`bins`)
+        succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
+        targets.signed.delegations = Delegations(
+            keys={}, succinct_roles=succinct_roles
+        )
+        # Initialize all succinct delegated roles (`bins`), update expire,
+        # sign, add to `Snapshot` meta and persist in the backend storage
+        # service.
+        for delegated_name in succinct_roles.get_roles():
+            targets.signed.add_key(
+                Key.from_securesystemslib_key(
+                    self._key_storage_backend.get(public_key).key_dict
+                ),
+                delegated_name,
+            )
+            bins_role = Metadata(Targets())
+            self._bump_expiry(bins_role, BINS)
+            self._sign(bins_role)
+            snapshot.signed.meta[f"{delegated_name}.json"] = MetaFile(
+                version=bins_role.signed.version
+            )
+            self._persist(bins_role, delegated_name)
+
+        # Update `Snapshot` meta with targets
+        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
+            version=targets.signed.version
+        )
+
+        # Update expire, sign and persist the top level roles (`Targets`,
+        # `Timestamp``, `Snapshot`) in the backend storage service.
+        for role in [targets, snapshot, timestamp]:
+            self._bump_expiry(role, role.signed.type)
+            self._sign(role)
+            self._persist(role, role.signed.type)
 
         result = ResultDetails(
             status="Task finished.",
