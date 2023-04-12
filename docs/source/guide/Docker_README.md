@@ -113,12 +113,12 @@ Available types:
 
 Timeout for publishing JSON metadata files. Default: 60.0 (seconds)
 
-This timeout avoids race conditions publishing JSON metadata files by multiple
+This timeout avoids race conditions leading to publishing JSON metadata files by multiple
 Worker's services. It guarantees that the metadata is consistent in the backend
 storage service (`RSTUF_STORAGE_BACKEND`).
 
 
-Mostly in use cases, the timeout of 60.0 seconds is sufficient.
+In most use cases, the timeout of 60.0 seconds is sufficient.
 
 #### (Required) `RSTUF_KEYVAULT_BACKEND`
 
