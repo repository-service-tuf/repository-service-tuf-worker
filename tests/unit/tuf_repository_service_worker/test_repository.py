@@ -521,14 +521,6 @@ class TestMetadataRepository:
         assert "No 'metadata' in the payload" in str(err)
 
     def test_publish_targets(self, test_repo, monkeypatch):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
-
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -589,6 +581,14 @@ class TestMetadataRepository:
         )
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
         test_result = test_repo.publish_targets()
 
         assert test_result == repository.asdict(
@@ -644,6 +644,7 @@ class TestMetadataRepository:
                 ],
             )
         ]
+        assert fake_datetime.now.calls == [pretend.call()]
 
     def test_publish_targets_exception_LockNotOwnedError(self, test_repo):
         @contextmanager
