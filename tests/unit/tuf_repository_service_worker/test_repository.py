@@ -601,7 +601,8 @@ class TestMetadataRepository:
             )
         )
         assert test_repo._redis.lock.calls == [
-            pretend.call("LOCK_TARGETS", timeout=60.0)
+            pretend.call(repository.LOCK_TARGETS, timeout=60.0),
+            pretend.call(repository.LOCK_TIMESTAMP, timeout=60.0),
         ]
         assert fake_crud_read_unpublished_rolenames.calls == [
             pretend.call(test_repo._db)
@@ -1400,18 +1401,16 @@ class TestMetadataRepository:
         test_repo._settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
-        test_repo.bump_snapshot = pretend.call_recorder(lambda: None)
         test_repo.bump_bins_roles = pretend.call_recorder(lambda: None)
 
         result = test_repo.bump_online_roles()
         assert result is True
         assert test_repo._redis.lock.calls == [
-            pretend.call("LOCK_SNAPSHOT_TIMESTAMP", timeout=60)
+            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
         ]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
-        assert test_repo.bump_snapshot.calls == [pretend.call()]
         assert test_repo.bump_bins_roles.calls == [pretend.call()]
 
     def test_bump_online_roles_when_no_bootstrap(self, test_repo):
@@ -1429,7 +1428,7 @@ class TestMetadataRepository:
         result = test_repo.bump_online_roles()
         assert result is False
         assert test_repo._redis.lock.calls == [
-            pretend.call("LOCK_SNAPSHOT_TIMESTAMP", timeout=60)
+            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
         ]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -1448,5 +1447,5 @@ class TestMetadataRepository:
 
         assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
         assert test_repo._redis.lock.calls == [
-            pretend.call("LOCK_SNAPSHOT_TIMESTAMP", timeout=60)
+            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
         ]

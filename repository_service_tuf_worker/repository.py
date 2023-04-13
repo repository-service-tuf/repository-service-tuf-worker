@@ -64,6 +64,10 @@ OFFLINE_KEYS = {
 BINS = "bins"
 SPEC_VERSION: str = ".".join(SPECIFICATION_VERSION)
 
+# lock constants
+LOCK_TARGETS = "LOCK_TARGETS"
+LOCK_TIMESTAMP = "LOCK_TIMESTAMP"
+
 
 @dataclass
 class ResultDetails:
@@ -478,11 +482,11 @@ class MetadataRepository:
         """
         timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
         logging.debug(f"Configured timeout: {timeout}")
-        lock_finished = False
+        lock_status_targets = False
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
         # documentation.
         try:
-            with self._redis.lock("LOCK_TARGETS", timeout=timeout):
+            with self._redis.lock(LOCK_TARGETS, timeout=timeout):
                 # get all delegated role names with unpublished targets
                 unpublished_roles = targets_crud.read_unpublished_rolenames(
                     self._db
@@ -535,16 +539,20 @@ class MetadataRepository:
                     new_snapshot_meta.append((rolename, role.signed.version))
 
                 # context lock finished
-                lock_finished = True
+                lock_status_targets = True
 
             # update snapshot and timestamp
             # note: the `db_published_targets` contains the targets that
             # needs to updated in SQL DB as 'published' and it will be done
             # by the `_update_timestamp`
-            self._update_timestamp(
-                self._update_snapshot(new_snapshot_meta),
-                db_published_targets,
-            )
+            status_lock_timestamp = False
+            with self._redis.lock(LOCK_TIMESTAMP, timeout=timeout):
+                self._update_timestamp(
+                    self._update_snapshot(new_snapshot_meta),
+                    db_published_targets,
+                )
+            # context lock timestamp finished
+            status_lock_timestamp = True
 
         except redis.exceptions.LockNotOwnedError:
             # The LockNotOwnedError happens when the task exceeds the timeout,
@@ -552,7 +560,7 @@ class MetadataRepository:
             # If the task time out, the lock is released. If it doesn't finish
             # properly, it will raise (fail) the task. Otherwise, the ignores
             # the error because another task didn't lock it.
-            if lock_finished is False:
+            if lock_status_targets is False or status_lock_timestamp is False:
                 logging.error("The task to publish targets exceeded timeout")
                 raise redis.exceptions.LockError(
                     f"RSTUF: Task exceed `LOCK_TIMEOUT` ({timeout} seconds)"
@@ -796,28 +804,27 @@ class MetadataRepository:
         """Bump online Roles (Snapshot, Timestamp, BINS)."""
         timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
         logging.debug(f"Configured timeout: {timeout}")
-        lock_finished = False
+        status_lock_timestamp = False
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
         # documentation.
         try:
-            with self._redis.lock("LOCK_SNAPSHOT_TIMESTAMP", timeout=timeout):
+            with self._redis.lock(LOCK_TIMESTAMP, timeout=timeout):
                 if self._settings.get_fresh("BOOTSTRAP") is None:
                     logging.info(
                         "[automatic_version_bump] No bootstrap, skipping..."
                     )
                     return False
 
-                self.bump_snapshot()
                 self.bump_bins_roles()
 
-            lock_finished = True
+            status_lock_timestamp = True
         except redis.exceptions.LockNotOwnedError:
             # The LockNotOwnedError happens when the task exceeds the timeout,
             # and another task owns the lock.
             # If the task time out, the lock is released. If it doesn't finish
             # properly, it will raise (fail) the task. Otherwise, the ignores
             # the error because another task didn't lock it.
-            if lock_finished is False:
+            if status_lock_timestamp is False:
                 logging.error(
                     "The task to bump Timestamp, Snapshot, and BINS exceeded "
                     "timeout."
