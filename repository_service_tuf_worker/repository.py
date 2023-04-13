@@ -707,24 +707,43 @@ class MetadataRepository:
         logging.debug(f"Delete targets. {result}")
         return asdict(result)
 
-    def bump_bins_roles(self) -> bool:
+    def bump_target_roles(self) -> bool:
         """
-        Bumps version and expiration date of 'bins' role metadata (multiple).
+        Bumps version and expiration date of targets roles metadata
+        (`Targets` and `Succinct Delegated` targets roles).
 
         The version numbers are incremented by one, the expiration dates are
         renewed using a configured expiration interval, and the metadata is
         signed and persisted using the configured key and storage services.
 
-        Updating 'bins' also updates 'snapshot' and 'timestamp'.
+        Updating also updates 'snapshot' and 'timestamp'.
         """
+        targets_meta = []
+
         try:
             targets = self._storage_backend.get(Targets.type)
         except StorageError:
             logging.error(f"{Targets.type} not found, not bumping.")
             return False
 
+        if self._settings.get_fresh("TARGETS_ONLINE_KEY") is None:
+            logging.critical("No configuration found for TARGETS_ONLINE_KEY")
+
+        elif self._settings.get_fresh("TARGETS_ONLINE_KEY") is False:
+            logging.warning(
+                f"{Targets.type} don't use online key, skipping 'Targets' role"
+            )
+
+        else:
+            if (targets.signed.expires - datetime.now()) < timedelta(
+                hours=self._hours_before_expire
+            ):
+                targets.signed.version + 1
+                self._sign(targets)
+                self._persist(targets, Targets.type)
+                targets_meta.append((Targets.type, targets.signed.version))
+
         targets_succinct_roles = targets.signed.delegations.succinct_roles
-        targets_meta = []
         for bins_name in targets_succinct_roles.get_roles():
             bins_role: Metadata[Targets] = self._storage_backend.get(bins_name)
 
@@ -739,24 +758,24 @@ class MetadataRepository:
 
         if len(targets_meta) > 0:
             logging.info(
-                "[scheduled bins bump] BINS roles version bumped: "
-                f"{targets_meta}"
+                "[scheduled targets bump] Targets and Delegated Targets roles "
+                "version bumped: {targets_meta}"
             )
             timestamp = self._update_timestamp(
                 self._update_snapshot(targets_meta)
             )
             logging.info(
-                "[scheduled bins bump] Snapshot version bumped: "
+                "[scheduled targets bump] Snapshot version bumped: "
                 f"{timestamp.signed.snapshot_meta.version}"
             )
             logging.info(
-                "[scheduled bins bump] Timestamp version bumped: "
+                "[scheduled targets bump] Timestamp version bumped: "
                 f"{timestamp.signed.version} new expire "
                 f"{timestamp.signed.expires}"
             )
         else:
             logging.debug(
-                "[scheduled bins bump] All more than "
+                "[scheduled targets bump] All more than "
                 f"{self._hours_before_expire} hour(s) to expire, "
                 "skipping"
             )
