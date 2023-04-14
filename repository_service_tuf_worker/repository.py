@@ -838,7 +838,7 @@ class MetadataRepository:
                     )
                     return False
 
-                self.bump_bins_roles()
+                self.bump_target_roles()
 
             status_lock_timestamp = True
         except redis.exceptions.LockNotOwnedError:

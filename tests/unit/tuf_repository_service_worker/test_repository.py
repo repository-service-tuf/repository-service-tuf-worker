@@ -1552,7 +1552,7 @@ class TestMetadataRepository:
         test_repo._settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
-        test_repo.bump_bins_roles = pretend.call_recorder(lambda: None)
+        test_repo.bump_target_roles = pretend.call_recorder(lambda: None)
 
         result = test_repo.bump_online_roles()
         assert result is True
@@ -1562,7 +1562,7 @@ class TestMetadataRepository:
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
-        assert test_repo.bump_bins_roles.calls == [pretend.call()]
+        assert test_repo.bump_target_roles.calls == [pretend.call()]
 
     def test_bump_online_roles_when_no_bootstrap(self, test_repo):
         @contextmanager
