@@ -581,11 +581,28 @@ class TestMetadataRepository:
         )
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
         test_result = test_repo.publish_targets()
 
-        assert test_result is None
+        assert test_result == repository.asdict(
+            repository.ResultDetails(
+                states.SUCCESS,
+                details={
+                    "target_roles": ["bins-0", "bins-e"],
+                },
+                last_update=fake_time,
+            )
+        )
         assert test_repo._redis.lock.calls == [
-            pretend.call("publish_targets", timeout=5.0)
+            pretend.call(repository.LOCK_TARGETS, timeout=60.0),
+            pretend.call(repository.LOCK_TIMESTAMP, timeout=60.0),
         ]
         assert fake_crud_read_unpublished_rolenames.calls == [
             pretend.call(test_repo._db)
@@ -628,6 +645,24 @@ class TestMetadataRepository:
                 ],
             )
         ]
+        assert fake_datetime.now.calls == [pretend.call()]
+
+    def test_publish_targets_exception_LockNotOwnedError(self, test_repo):
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            raise repository.redis.exceptions.LockNotOwnedError("timeout")
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock)
+        )
+
+        with pytest.raises(repository.redis.exceptions.LockError) as e:
+            test_repo.publish_targets()
+
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
+        assert test_repo._redis.lock.calls == [
+            pretend.call("LOCK_TARGETS", timeout=60)
+        ]
 
     def test_publish_targets_without_targets_to_publish(
         self, test_repo, monkeypatch
@@ -654,7 +689,7 @@ class TestMetadataRepository:
 
         assert test_result is None
         assert test_repo._redis.lock.calls == [
-            pretend.call("publish_targets", timeout=5.0)
+            pretend.call("LOCK_TARGETS", timeout=60.0)
         ]
         assert fake_crud_read_unpublished_rolenames.calls == [
             pretend.call(test_repo._db)
@@ -1357,8 +1392,8 @@ class TestMetadataRepository:
 
     def test_bump_online_roles(self, test_repo):
         @contextmanager
-        def mocked_lock(lock):
-            yield lock
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
 
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock)
@@ -1366,24 +1401,22 @@ class TestMetadataRepository:
         test_repo._settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
-        test_repo.bump_snapshot = pretend.call_recorder(lambda: None)
         test_repo.bump_bins_roles = pretend.call_recorder(lambda: None)
 
         result = test_repo.bump_online_roles()
         assert result is True
         assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_SNAPSHOT_TIMESTAMP")
+            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
         ]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
-        assert test_repo.bump_snapshot.calls == [pretend.call()]
         assert test_repo.bump_bins_roles.calls == [pretend.call()]
 
     def test_bump_online_roles_when_no_bootstrap(self, test_repo):
         @contextmanager
-        def mocked_lock(lock):
-            yield lock
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
 
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock)
@@ -1395,8 +1428,24 @@ class TestMetadataRepository:
         result = test_repo.bump_online_roles()
         assert result is False
         assert test_repo._redis.lock.calls == [
-            pretend.call("TUF_SNAPSHOT_TIMESTAMP")
+            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
         ]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
+        ]
+
+    def test_bump_online_roles_exception_LockNotOwnedError(self, test_repo):
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            raise repository.redis.exceptions.LockNotOwnedError("timeout")
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock)
+        )
+        with pytest.raises(repository.redis.exceptions.LockError) as e:
+            test_repo.bump_online_roles()
+
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
+        assert test_repo._redis.lock.calls == [
+            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
         ]

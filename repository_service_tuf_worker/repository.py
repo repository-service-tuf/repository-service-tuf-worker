@@ -64,6 +64,10 @@ OFFLINE_KEYS = {
 BINS = "bins"
 SPEC_VERSION: str = ".".join(SPECIFICATION_VERSION)
 
+# lock constants
+LOCK_TARGETS = "LOCK_TARGETS"
+LOCK_TIMESTAMP = "LOCK_TIMESTAMP"
+
 
 @dataclass
 class ResultDetails:
@@ -476,61 +480,104 @@ class MetadataRepository:
         Publish targets from SQL DB as persistent TUF Metadata in the backend
         storage.
         """
-
-        # lock to avoid race conditions
-        with self._redis.lock("publish_targets", timeout=5.0):
-            # get all delegated role names with unpublished targets
-            unpublished_roles = targets_crud.read_unpublished_rolenames(
-                self._db
-            )
-
-            if len(unpublished_roles) == 0:
-                logging.debug("No new targets in delegated roles. Finishing")
-                return None
-
-            # initialize the new snapshot targets meta and published targets
-            # from DB SQL
-            new_snapshot_meta: List[Tuple(str, int)] = []
-            db_published_targets: List[str] = []
-            for _, rolename in unpublished_roles:
-                # get the unpublished targets for the delegated, it will be use
-                # to update the database when Snapshot and Timestamp is
-                # published by `_update_timestamp`
-                db_targets = targets_crud.read_unpublished_by_rolename(
-                    db=self._db, rolename=rolename
+        timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
+        logging.debug(f"Configured timeout: {timeout}")
+        lock_status_targets = False
+        # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
+        # documentation.
+        try:
+            with self._redis.lock(LOCK_TARGETS, timeout=timeout):
+                # get all delegated role names with unpublished targets
+                unpublished_roles = targets_crud.read_unpublished_rolenames(
+                    self._db
                 )
-                logging.debug(f"{rolename}: New targets #: {len(db_targets)}")
-                db_published_targets += [target.path for target in db_targets]
-
-                # load the delegated targets role, clean the targets and add
-                # a new meta from the SQL DB.
-                # note: it might include targets from another parent task, it
-                # will speed up the process of publishing new targets.
-                role: Metadata[Targets] = self._storage_backend.get(rolename)
-                role.signed.targets.clear()
-                role.signed.targets = {
-                    target[0]: TargetFile.from_dict(target[1], target[0])
-                    for target in targets_crud.read_all_add_by_rolename(
-                        self._db, rolename
+                if len(unpublished_roles) == 0:
+                    logging.debug(
+                        "No new targets in delegated roles. Finishing"
                     )
-                }
+                    return None
 
-                # update expiry, bump version and persist to the storage
-                self._bump_expiry(role, BINS)
-                self._bump_version(role)
-                self._sign(role)
-                self._persist(role, rolename)
-                # append to the new snapshot targets meta
-                new_snapshot_meta.append((rolename, role.signed.version))
+                # initialize the new snapshot targets meta and published
+                # targets from DB SQL
+                new_snapshot_meta: List[Tuple(str, int)] = []
+                db_published_targets: List[str] = []
+                for _, rolename in unpublished_roles:
+                    # get the unpublished targets for the delegated, it will be
+                    # use to update the database when Snapshot and Timestamp is
+                    # published by `_update_timestamp`
+                    db_targets = targets_crud.read_unpublished_by_rolename(
+                        db=self._db, rolename=rolename
+                    )
+                    logging.debug(
+                        f"{rolename}: New targets #: {len(db_targets)}"
+                    )
+                    db_published_targets += [
+                        target.path for target in db_targets
+                    ]
+
+                    # load the delegated targets role, clean the targets and
+                    # add a new meta from the SQL DB.
+                    # note: it might include targets from another parent task,
+                    # it will speed up the process of publishing new targets.
+                    role: Metadata[Targets] = self._storage_backend.get(
+                        rolename
+                    )
+                    role.signed.targets.clear()
+                    role.signed.targets = {
+                        target[0]: TargetFile.from_dict(target[1], target[0])
+                        for target in targets_crud.read_all_add_by_rolename(
+                            self._db, rolename
+                        )
+                    }
+
+                    # update expiry, bump version and persist to the storage
+                    self._bump_expiry(role, BINS)
+                    self._bump_version(role)
+                    self._sign(role)
+                    self._persist(role, rolename)
+                    # append to the new snapshot targets meta
+                    new_snapshot_meta.append((rolename, role.signed.version))
+
+                # context lock finished
+                lock_status_targets = True
 
             # update snapshot and timestamp
             # note: the `db_published_targets` contains the targets that
             # needs to updated in SQL DB as 'published' and it will be done
             # by the `_update_timestamp`
-            self._update_timestamp(
-                self._update_snapshot(new_snapshot_meta),
-                db_published_targets,
-            )
+            # we also lock this action because it can have a race condition
+            # with the automatic job that bumps the online roles
+            # (`app.py` -> `app.conf.beat_schedule`: `bump_online_roles`)
+            status_lock_timestamp = False
+            with self._redis.lock(LOCK_TIMESTAMP, timeout=timeout):
+                self._update_timestamp(
+                    self._update_snapshot(new_snapshot_meta),
+                    db_published_targets,
+                )
+            # context lock timestamp finished
+            status_lock_timestamp = True
+
+        except redis.exceptions.LockNotOwnedError:
+            # The LockNotOwnedError happens when the task exceeds the timeout,
+            # and another task owns the lock.
+            # If the task time out, the lock is released. If it doesn't finish
+            # properly, it will raise (fail) the task. Otherwise, the ignores
+            # the error because another task didn't lock it.
+            if lock_status_targets is False or status_lock_timestamp is False:
+                logging.error("The task to publish targets exceeded timeout")
+                raise redis.exceptions.LockError(
+                    f"RSTUF: Task exceed `LOCK_TIMEOUT` ({timeout} seconds)"
+                )
+
+        result = ResultDetails(
+            states.SUCCESS,
+            details={
+                "target_roles": [meta[0] for meta in new_snapshot_meta],
+            },
+            last_update=datetime.now(),
+        )
+        logging.debug("Targets published.")
+        return asdict(result)
 
     def add_targets(
         self, payload: Dict[str, Any], update_state: Task.update_state
@@ -758,14 +805,35 @@ class MetadataRepository:
 
     def bump_online_roles(self) -> bool:
         """Bump online Roles (Snapshot, Timestamp, BINS)."""
-        with self._redis.lock("TUF_SNAPSHOT_TIMESTAMP"):
-            if self._settings.get_fresh("BOOTSTRAP") is None:
-                logging.info(
-                    "[automatic_version_bump] No bootstrap, skipping..."
+        timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
+        logging.debug(f"Configured timeout: {timeout}")
+        status_lock_timestamp = False
+        # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
+        # documentation.
+        try:
+            with self._redis.lock(LOCK_TIMESTAMP, timeout=timeout):
+                if self._settings.get_fresh("BOOTSTRAP") is None:
+                    logging.info(
+                        "[automatic_version_bump] No bootstrap, skipping..."
+                    )
+                    return False
+
+                self.bump_bins_roles()
+
+            status_lock_timestamp = True
+        except redis.exceptions.LockNotOwnedError:
+            # The LockNotOwnedError happens when the task exceeds the timeout,
+            # and another task owns the lock.
+            # If the task time out, the lock is released. If it doesn't finish
+            # properly, it will raise (fail) the task. Otherwise, the ignores
+            # the error because another task didn't lock it.
+            if status_lock_timestamp is False:
+                logging.error(
+                    "The task to bump Timestamp, Snapshot, and BINS exceeded "
+                    "timeout."
                 )
-                return False
+                raise redis.exceptions.LockError(
+                    f"RSTUF: Task exceed `LOCK_TIMEOUT` ({timeout} seconds)"
+                )
 
-            self.bump_snapshot()
-            self.bump_bins_roles()
-
-            return True
+        return True
