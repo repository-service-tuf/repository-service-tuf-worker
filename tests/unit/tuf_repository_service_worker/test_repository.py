@@ -1279,8 +1279,12 @@ class TestMetadataRepository:
             pretend.call("targets"),
             pretend.call("bin-a"),
         ]
-        assert test_repo._bump_version.calls == [pretend.call(fake_bins)]
+        assert test_repo._bump_version.calls == [
+            pretend.call(fake_targets),
+            pretend.call(fake_bins)
+        ]
         assert test_repo._bump_expiry.calls == [
+            pretend.call(fake_targets),
             pretend.call(fake_bins, "bins")
         ]
         assert test_repo._sign.calls == [
