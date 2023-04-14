@@ -716,9 +716,9 @@ class MetadataRepository:
         renewed using a configured expiration interval, and the metadata is
         signed and persisted using the configured key and storage services.
 
-        Updating also updates 'snapshot' and 'timestamp'.
+        The function also updates 'snapshot' and 'timestamp'.
         """
-        targets_meta = []
+        targets_meta: List[Tuple[str, int]] = []
 
         try:
             targets = self._storage_backend.get(Targets.type)
@@ -738,7 +738,8 @@ class MetadataRepository:
             if (targets.signed.expires - datetime.now()) < timedelta(
                 hours=self._hours_before_expire
             ):
-                targets.signed.version + 1
+                self._bump_expiry(targets)
+                self._bump_version(targets)
                 self._sign(targets)
                 self._persist(targets, Targets.type)
                 targets_meta.append((Targets.type, targets.signed.version))
@@ -758,7 +759,7 @@ class MetadataRepository:
 
         if len(targets_meta) > 0:
             logging.info(
-                "[scheduled targets bump] Targets and Delegated Targets roles "
+                "[scheduled targets bump] Targets and delegated Targets roles "
                 "version bumped: {targets_meta}"
             )
             timestamp = self._update_timestamp(
