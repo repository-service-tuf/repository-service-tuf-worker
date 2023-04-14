@@ -545,6 +545,9 @@ class MetadataRepository:
             # note: the `db_published_targets` contains the targets that
             # needs to updated in SQL DB as 'published' and it will be done
             # by the `_update_timestamp`
+            # we also lock this action because it can have a race condition
+            # with the automatic job that bumps the online roles
+            # (`app.py` -> `app.conf.beat_schedule`: `bump_online_roles`)
             status_lock_timestamp = False
             with self._redis.lock(LOCK_TIMESTAMP, timeout=timeout):
                 self._update_timestamp(
