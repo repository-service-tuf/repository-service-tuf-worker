@@ -16,6 +16,7 @@ from celery.app.task import Task
 from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from securesystemslib.exceptions import StorageError  # type: ignore
+from tuf.api.exceptions import BadVersionNumberError
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
     Delegations,
@@ -93,6 +94,7 @@ class MetadataRepository:
         self._hours_before_expire: int = self._settings.get_fresh(
             "HOURS_BEFORE_EXPIRE", 1
         )
+        self._timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
 
     @classmethod
     def create_service(cls) -> "MetadataRepository":
@@ -480,13 +482,12 @@ class MetadataRepository:
         Publish targets from SQL DB as persistent TUF Metadata in the backend
         storage.
         """
-        timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
-        logging.debug(f"Configured timeout: {timeout}")
+        logging.debug(f"Configured timeout: {self._timeout}")
         lock_status_targets = False
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
         # documentation.
         try:
-            with self._redis.lock(LOCK_TARGETS, timeout=timeout):
+            with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
                 # get all delegated role names with unpublished targets
                 unpublished_roles = targets_crud.read_unpublished_rolenames(
                     self._db
@@ -549,7 +550,7 @@ class MetadataRepository:
             # with the automatic job that bumps the online roles
             # (`app.py` -> `app.conf.beat_schedule`: `bump_online_roles`)
             status_lock_timestamp = False
-            with self._redis.lock(LOCK_TIMESTAMP, timeout=timeout):
+            with self._redis.lock(LOCK_TIMESTAMP, timeout=self._timeout):
                 self._update_timestamp(
                     self._update_snapshot(new_snapshot_meta),
                     db_published_targets,
@@ -566,7 +567,8 @@ class MetadataRepository:
             if lock_status_targets is False or status_lock_timestamp is False:
                 logging.error("The task to publish targets exceeded timeout")
                 raise redis.exceptions.LockError(
-                    f"RSTUF: Task exceed `LOCK_TIMEOUT` ({timeout} seconds)"
+                    "RSTUF: Task exceed `LOCK_TIMEOUT` "
+                    f"({self._timeout} seconds)"
                 )
 
         result = ResultDetails(
@@ -707,7 +709,7 @@ class MetadataRepository:
         logging.debug(f"Delete targets. {result}")
         return asdict(result)
 
-    def bump_target_roles(self) -> bool:
+    def bump_target_roles(self, force: Optional[bool] = False) -> bool:
         """
         Bumps version and expiration date of targets roles metadata
         (`Targets` and `Succinct Delegated` targets roles).
@@ -749,7 +751,7 @@ class MetadataRepository:
             bins_role: Metadata[Targets] = self._storage_backend.get(bins_name)
 
             if (bins_role.signed.expires - datetime.now()) < timedelta(
-                hours=self._hours_before_expire
+                hours=self._hours_before_expire or force is True
             ):
                 self._bump_expiry(bins_role, BINS)
                 self._bump_version(bins_role)
@@ -783,7 +785,7 @@ class MetadataRepository:
 
         return True
 
-    def bump_snapshot(self) -> bool:
+    def bump_snapshot(self, force: Optional[bool] = False) -> bool:
         """
         Bumps version and expiration date of TUF 'snapshot' role metadata.
 
@@ -801,7 +803,7 @@ class MetadataRepository:
             return False
 
         if (snapshot.signed.expires - datetime.now()) < timedelta(
-            hours=self._hours_before_expire
+            hours=self._hours_before_expire or force is True
         ):
             timestamp = self._update_timestamp(self._update_snapshot([]))
             logging.info(
@@ -823,15 +825,14 @@ class MetadataRepository:
 
         return True
 
-    def bump_online_roles(self) -> bool:
+    def bump_online_roles(self, force: Optional[bool] = False) -> bool:
         """Bump online Roles (Snapshot, Timestamp, BINS)."""
-        timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
-        logging.debug(f"Configured timeout: {timeout}")
+        logging.debug(f"Configured timeout: {self._timeout}")
         status_lock_timestamp = False
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
         # documentation.
         try:
-            with self._redis.lock(LOCK_TIMESTAMP, timeout=timeout):
+            with self._redis.lock(LOCK_TIMESTAMP, timeout=self._timeout):
                 if self._settings.get_fresh("BOOTSTRAP") is None:
                     logging.info(
                         "[automatic_version_bump] No bootstrap, skipping..."
@@ -853,7 +854,73 @@ class MetadataRepository:
                     "timeout."
                 )
                 raise redis.exceptions.LockError(
-                    f"RSTUF: Task exceed `LOCK_TIMEOUT` ({timeout} seconds)"
+                    f"RSTUF: Task exceed `LOCK_TIMEOUT` ({self._timeout} "
+                    "seconds)"
                 )
 
         return True
+
+    def metadata_rotation(
+        self,
+        payload: Dict[str, Any],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> Dict[str, Any]:
+        metadata = payload.get("metadata")
+        if metadata is None:
+            raise KeyError("No 'metadata' in the payload")
+
+        new_root: Metadata[Root] = Metadata.from_dict(metadata.get(Root.type))
+        old_root: Metadata[Root] = self._storage_backend.get(Root.type)
+        old_root_online_key = old_root.signed.roles[Timestamp.type].keyids
+        new_root_online_key = new_root.signed.roles[Timestamp.type].keyids
+
+        if old_root.signed.version + 1 != new_root.signed.version:
+            raise BadVersionNumberError(
+                f"New root version not expected {new_root.signed.version}"
+            )
+
+        # We always persist the new root metadata, but we cannot persist
+        # without verifying if the online key is rotate to avoid mismatch with
+        # the online public key.
+        if old_root_online_key == new_root_online_key:
+            # online key is not changed, persist the new root
+            self._persist(new_root, Root.type)
+            logging.info(f"Updating root metadata: {new_root.signed.version}")
+
+        else:
+            # we lock this action to stop all new publish targets
+            # (`publish_targets`) to avoid incosistence to the TUF clients
+            status_lock_md = False
+            try:
+                with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+                    # root metadata and online key are updated
+                    # 1. persist the new root
+                    # 2. bump all target roles
+                    self._persist(new_root, Root.type)
+                    logging.info(
+                        f"Updating root metadata: {new_root.signed.version}"
+                    )
+                    self.bump_target_roles(force=True)
+                    logging.info("Updating all targets metadata")
+                    status_lock_md = True
+            except redis.exceptions.LockNotOwnedError:
+                if status_lock_md is False:
+                    logging.error(
+                        "The task to metadata rotation exceeded timeout"
+                    )
+                    raise redis.exceptions.LockError(
+                        "RSTUF: Task exceed `LOCK_TIMEOUT` "
+                        f"({self._timeout} seconds)"
+                    )
+
+        result = ResultDetails(
+            status="Task finished.",
+            details={
+                "message": "metadata rotation finished",
+            },
+            last_update=datetime.now(),
+        )
+
+        return asdict(result)
