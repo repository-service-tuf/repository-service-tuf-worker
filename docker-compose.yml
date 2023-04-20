@@ -34,7 +34,7 @@ services:
       interval: 1s
 
   repository-service-tuf-api:
-    image: ghcr.io/vmware/repository-service-tuf-api:dev
+    image: ghcr.io/repository-service-tuf/repository-service-tuf-api:dev
     volumes:
       - repository-service-tuf-api-data:/data
     ports:

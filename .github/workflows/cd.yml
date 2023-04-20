@@ -48,7 +48,7 @@ jobs:
 
   functional-tests:
     needs: set-component-versions
-    uses: vmware/repository-service-tuf/.github/workflows/functional.yml@main
+    uses: repository-service-tuf/repository-service-tuf/.github/workflows/functional.yml@main
     with:
       worker_version: ${{ github.sha }}
       api_version: ${{ needs.set-component-versions.outputs.api_version }}
@@ -67,21 +67,21 @@ jobs:
 
     - name: Add release branch/tag name
       run: |
-        docker pull ghcr.io/vmware/repository-service-tuf-worker:${{ github.sha }}
-        docker tag ghcr.io/vmware/repository-service-tuf-worker:${{ github.sha }} ghcr.io/vmware/repository-service-tuf-worker:${{ github.ref_name }}
-        docker push ghcr.io/vmware/repository-service-tuf-worker:${{ github.ref_name }}
+        docker pull ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ github.sha }}
+        docker tag ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ github.sha }} ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ github.ref_name }}
+        docker push ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ github.ref_name }}
 
     # The workflow triggered by push tag v* will be empty, because that we check != False
     - name: Add release latest tag
       if: ${{ inputs.latest_tag != false }}
       run: |
-        docker tag ghcr.io/vmware/repository-service-tuf-worker:${{ github.sha }} ghcr.io/vmware/repository-service-tuf-worker:latest
-        docker push ghcr.io/vmware/repository-service-tuf-worker:latest
+        docker tag ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ github.sha }} ghcr.io/repository-service-tuf/repository-service-tuf-worker:latest
+        docker push ghcr.io/repository-service-tuf/repository-service-tuf-worker:latest
 
     - name: Publish GitHub Release
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
       with:
         name: ${{ github.ref_name }}
         tag_name: ${{ github.ref }}
-        body: "docker pull [ghcr.io/vmware/repository-service-tuf-worker:${{ github.ref_name }}](https://github.com/repository-service-tuf/repository-service-tuf-worker/pkgs/container/repository-service-tuf-worker)"
+        body: "docker pull [ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ github.ref_name }}](https://github.com/repository-service-tuf/repository-service-tuf-worker/pkgs/container/repository-service-tuf-worker)"
         files: /tmp/repository-service-tuf-worker_${{ github.ref_name }}.tar
