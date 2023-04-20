@@ -889,7 +889,7 @@ class MetadataRepository:
 
         Args:
             payload: payload white the metadata to be rotate
-                {"metadata": "root": Any}
+                example: {"metadata": {"root": Any}}
             update_state: *not used* it is required argument by `app.py`
         """
         metadata = payload.get("metadata")
