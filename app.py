@@ -45,7 +45,7 @@ redis_backend = redis.StrictRedis.from_url(
     db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0),
 )
 
-# TODO: Issue https://github.com/vmware/vmware/issues/6
+# TODO: Issue https://github.com/repository-service-tuf/vmware/issues/6
 # BROKER_USE_SSL = {
 #     "keyfile": "data/certs/engine_mq.pem",
 #     "certfile": "data/certs/engine_mq.crt",
@@ -66,7 +66,7 @@ app = Celery(
     task_track_started=True,
     broker_heartbeat=0,
     # broker_use_ssl=BROKER_USE_SSL
-    # (https://github.com/vmware/vmware/issues/6)
+    # (https://github.com/repository-service-tuf/vmware/issues/6)
 )
 
 
