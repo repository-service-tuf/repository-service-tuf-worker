@@ -9,7 +9,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from math import log
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import redis
 from celery.app.task import Task
@@ -719,6 +719,10 @@ class MetadataRepository:
         signed and persisted using the configured key and storage services.
 
         The function also updates 'snapshot' and 'timestamp'.
+
+        Args:
+            force: force target roles bump if they don't match the hours before
+                expire (`self._hours_before_expire`)
         """
         targets_meta: List[Tuple[str, int]] = []
 
@@ -794,6 +798,10 @@ class MetadataRepository:
         persisted using the configured key and storage services.
 
         Updating 'snapshot' also updates 'timestamp'.
+
+        Args:
+            force: force snapshot bump if it doesn't match the hours before
+                expire (`self._hours_before_expire`)
         """
 
         try:
@@ -826,7 +834,13 @@ class MetadataRepository:
         return True
 
     def bump_online_roles(self, force: Optional[bool] = False) -> bool:
-        """Bump online roles (Snapshot, Timestamp, Targets and BINS)."""
+        """
+        Bump online roles (Snapshot, Timestamp, Targets and BINS).
+
+        Args:
+            force: force target roles bump if they don't match the hours before
+                expire (`self._hours_before_expire`)
+        """
         logging.debug(f"Configured timeout: {self._timeout}")
         status_lock_timestamp = False
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
@@ -839,7 +853,7 @@ class MetadataRepository:
                     )
                     return False
 
-                self.bump_target_roles()
+                self.bump_target_roles(force=force)
 
             status_lock_timestamp = True
         except redis.exceptions.LockNotOwnedError:
@@ -862,19 +876,32 @@ class MetadataRepository:
 
     def metadata_rotation(
         self,
-        payload: Dict[str, Any],
+        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
         update_state: Optional[
             Task.update_state
         ] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
+        """
+        Rotate TUF metadata.
+
+        This support the rotation of metadata which is signed with offline keys
+        (root keys)
+
+        Args:
+            payload: payload white the metadata to be rotate
+                {"metadata": "root": Any}
+            update_state: *not used* it is required argument by `app.py`
+        """
         metadata = payload.get("metadata")
         if metadata is None:
             raise KeyError("No 'metadata' in the payload")
 
-        new_root: Metadata[Root] = Metadata.from_dict(metadata.get(Root.type))
+        root_dict = metadata.get(Root.type)
+        if root_dict is None:
+            raise KeyError("No 'root' in the 'metadata' payload.")
+
+        new_root: Metadata[Root] = Metadata.from_dict(root_dict)
         old_root: Metadata[Root] = self._storage_backend.get(Root.type)
-        old_root_online_key = old_root.signed.roles[Timestamp.type].keyids
-        new_root_online_key = new_root.signed.roles[Timestamp.type].keyids
 
         if old_root.signed.version + 1 != new_root.signed.version:
             raise BadVersionNumberError(
@@ -882,10 +909,11 @@ class MetadataRepository:
             )
 
         # We always persist the new root metadata, but we cannot persist
-        # without verifying if the online key is rotated to avoid a mismatch with
-        # the rest of the roles using the online key.
-        # the online public key.
-        if old_root_online_key == new_root_online_key:
+        # without verifying if the online key is rotated to avoid a mismatch
+        # with the rest of the roles using the online key.
+        old_online_keyids = old_root.signed.roles[Timestamp.type].keyids
+        new_online_keyids = new_root.signed.roles[Timestamp.type].keyids
+        if old_online_keyids == new_online_keyids:
             # online key is not changed, persist the new root
             self._persist(new_root, Root.type)
             logging.info(f"Updating root metadata: {new_root.signed.version}")

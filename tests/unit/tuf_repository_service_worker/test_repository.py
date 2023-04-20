@@ -1552,7 +1552,7 @@ class TestMetadataRepository:
         test_repo._settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
-        test_repo.bump_target_roles = pretend.call_recorder(lambda: None)
+        test_repo.bump_target_roles = pretend.call_recorder(lambda **kw: None)
 
         result = test_repo.bump_online_roles()
         assert result is True
@@ -1562,7 +1562,7 @@ class TestMetadataRepository:
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
-        assert test_repo.bump_target_roles.calls == [pretend.call()]
+        assert test_repo.bump_target_roles.calls == [pretend.call(force=False)]
 
     def test_bump_online_roles_when_no_bootstrap(self, test_repo):
         @contextmanager
@@ -1710,9 +1710,7 @@ class TestMetadataRepository:
         assert test_repo.bump_target_roles.calls == [pretend.call(force=True)]
         assert repository.datetime.now.calls == [pretend.call()]
 
-    def test_metadata_rotation_online_key_lock_timeout(
-        self, monkeypatch, test_repo
-    ):
+    def test_metadata_rotation_online_key_lock_timeout(self, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
