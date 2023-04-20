@@ -826,7 +826,7 @@ class MetadataRepository:
         return True
 
     def bump_online_roles(self, force: Optional[bool] = False) -> bool:
-        """Bump online Roles (Snapshot, Timestamp, BINS)."""
+        """Bump online roles (Snapshot, Timestamp, Targets and BINS)."""
         logging.debug(f"Configured timeout: {self._timeout}")
         status_lock_timestamp = False
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
@@ -851,7 +851,7 @@ class MetadataRepository:
             if status_lock_timestamp is False:
                 logging.error(
                     "The task to bump Timestamp, Snapshot, and BINS exceeded "
-                    "timeout."
+                    f"the timeout of {self._timeout} seconds."
                 )
                 raise redis.exceptions.LockError(
                     f"RSTUF: Task exceed `LOCK_TIMEOUT` ({self._timeout} "
@@ -882,7 +882,8 @@ class MetadataRepository:
             )
 
         # We always persist the new root metadata, but we cannot persist
-        # without verifying if the online key is rotate to avoid mismatch with
+        # without verifying if the online key is rotated to avoid a mismatch with
+        # the rest of the roles using the online key.
         # the online public key.
         if old_root_online_key == new_root_online_key:
             # online key is not changed, persist the new root
@@ -890,8 +891,9 @@ class MetadataRepository:
             logging.info(f"Updating root metadata: {new_root.signed.version}")
 
         else:
-            # we lock this action to stop all new publish targets
-            # (`publish_targets`) to avoid incosistence to the TUF clients
+            # We lock this action to stop all new tasks that publish targets
+            # (`publish_targets`) to avoid inconsistencies happening to the
+            # TUF clients
             status_lock_md = False
             try:
                 with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
@@ -908,7 +910,7 @@ class MetadataRepository:
             except redis.exceptions.LockNotOwnedError:
                 if status_lock_md is False:
                     logging.error(
-                        "The task to metadata rotation exceeded timeout"
+                        "The task of metadata rotation exceeded the timeout"
                     )
                     raise redis.exceptions.LockError(
                         "RSTUF: Task exceed `LOCK_TIMEOUT` "
