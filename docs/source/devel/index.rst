@@ -36,7 +36,7 @@ We have two types of tasks:
 
 - First are tasks that Repository Work consumes from the Broker Server are
   tasks published by the `Repository Service for TUF API
-  <https://github.com/vmware/repository-service-tuf-api>`_ in the ``repository_metadata``
+  <https://github.com/repository-service-tuf/repository-service-tuf-api>`_ in the ``repository_metadata``
   queue, sent by an API User.
 - Second are tasks that Repository Work generates in the queue
   ``rstuf_internals``. Those are internal tasks for the Repository Worker

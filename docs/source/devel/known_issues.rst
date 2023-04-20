@@ -2,7 +2,7 @@
 (Solved) Scalability
 ====================
 
- `[Issue 17] <https://github.com/vmware/vmware/issues/17>`_
+ `[Issue 17] <https://github.com/repository-service-tuf/vmware/issues/17>`_
 
 
 The problem
@@ -10,7 +10,7 @@ The problem
 
 The Issue is solved, but still open for improvement. Suggestions for this
 problem can be added to the `opened issue
-<https://github.com/vmware/vmware/issues/17>`_.
+<https://github.com/repository-service-tuf/vmware/issues/17>`_.
 
 
 The scalability works well for ``repository-service-tuf-api`` once you can scale
@@ -206,7 +206,7 @@ Exemple
     @enduml
 
 On one level, we optimize it `by grouping all changes for the same delegated hash
-role <https://github.com/vmware/repository-service-tuf-worker/blob/6ad68ec6d898315fcc42bcddd198619f07618d5e/repository_service_tuf_worker/tuf/repository.py#L173>`_
+role <https://github.com/repository-service-tuf/repository-service-tuf-worker/blob/6ad68ec6d898315fcc42bcddd198619f07618d5e/repository_service_tuf_worker/tuf/repository.py#L173>`_
 , avoiding multiple interactions in the same task.
 
 However we still have a problem with the snapshot and ``timestamp``.
@@ -337,4 +337,4 @@ The expected behavior
     & worker4 -> broker: finish <back:cyan>task 07</back>
     @enduml
 
-Suggestions for this problem can be added to the `opened issue <https://github.com/vmware/vmware/issues/17>`_.
+Suggestions for this problem can be added to the `opened issue <https://github.com/repository-service-tuf/vmware/issues/17>`_.
