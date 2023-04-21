@@ -13,9 +13,8 @@ Repository Service for TUF Worker
   :target: https://github.com/repository-service-tuf/repository-service-tuf-worker/actions/workflows/test_docker_build.yml
 .. |Tests and Lint| image:: https://github.com/repository-service-tuf/repository-service-tuf-worker/actions/workflows/ci.yml/badge.svg
   :target: https://github.com/repository-service-tuf/repository-service-tuf-worker/actions/workflows/ci.yml
-.. |Coverage| image:: https://codecov.io/gh/vmware/repository-service-tuf-worker/branch/main/graph/badge.svg
-  :target: https://codecov.io/gh/vmware/repository-service-tuf-worker
-
+.. |Coverage| image:: https://codecov.io/gh/repository-service-tuf/repository-service-tuf-worker/branch/main/graph/badge.svg
+  :target: https://codecov.io/gh/repository-service-tuf/repository-service-tuf-worker
 
 Repository Service for TUF Worker is part of `Repository Service for TUF
 <https://github.com/repository-service-tuf/repository-service-tuf>`_.
