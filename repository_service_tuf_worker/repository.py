@@ -15,6 +15,7 @@ import redis
 from celery.app.task import Task
 from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
+from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError  # type: ignore
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
@@ -202,6 +203,21 @@ class MetadataRepository:
 
         self._worker_settings = settings
         return settings
+
+    def write_repository_settings(self, key: str, value: Any):
+        """
+        Writes repository settings.
+
+        Repository settings uses Dynaconf and it is persistent in the Redis
+        server. It stores as a dictionary with key and value.
+
+        Args:
+            key: key name
+            value: value for the key
+        """
+        settings_data = self._settings.as_dict(env=self._settings.current_env)
+        settings_data[key] = value
+        redis_loader.write(self._settings, settings_data)
 
     def _sign(self, role: Metadata) -> None:
         """
@@ -396,6 +412,46 @@ class MetadataRepository:
             acks_late=True,
         )
 
+    def save_settings(self, root: Metadata[Root], settings: Dict[str, Any]):
+        """
+        Save settings to the repository settings.
+
+        Args:
+            root: Root metadata
+            settings: payload settings
+        """
+        logging.info("Saving settings")
+        for role in Roles:
+            rolename = role.value.upper()
+            threshold = 1
+            num_of_keys = 1
+            if rolename == Roles.ROOT.value.upper():
+                # The key to the root role is the name of the root file which
+                # uses consistent snapshot or in the format:
+                # <VERSION_NUMBER>.root.json
+                threshold = root.signed.roles[role.value].threshold
+                num_of_keys = len(root.signatures)
+
+            self.write_repository_settings(
+                f"{rolename}_EXPIRATION",
+                settings["expiration"][role.value],
+            )
+            self.write_repository_settings(f"{rolename}_THRESHOLD", threshold)
+            self.write_repository_settings(f"{rolename}_NUM_KEYS", num_of_keys)
+
+        self.write_repository_settings(
+            "NUMBER_OF_DELEGATED_BINS",
+            settings["services"]["number_of_delegated_bins"],
+        )
+
+        self.write_repository_settings(
+            "TARGETS_BASE_URL", settings["services"]["targets_base_url"]
+        )
+
+        self.write_repository_settings(
+            "TARGETS_ONLINE_KEY", settings["services"]["targets_online_key"]
+        )
+
     def bootstrap(
         self,
         payload: Dict[str, Dict[str, Any]],
@@ -420,6 +476,9 @@ class MetadataRepository:
         self._persist(root, Root.type)
         _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
         public_key = root.signed.keys[_keyid]
+
+        # save settings
+        self.save_settings(root, tuf_settings)
 
         # Top level roles (`Targets`, `Timestamp``, `Snapshot`) initialization
         targets: Metadata[Targets] = Metadata(Targets())
@@ -472,6 +531,9 @@ class MetadataRepository:
             },
             last_update=datetime.now(),
         )
+
+        self.write_repository_settings("BOOTSTRAP", payload["task_id"])
+        logging.info(f"Bootstrap locked with id {payload['task_id']}")
 
         return asdict(result)
 

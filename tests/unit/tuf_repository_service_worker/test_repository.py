@@ -58,6 +58,17 @@ class TestMetadataRepository:
         with pytest.raises(ValueError):
             test_repo.refresh_settings(fake_worker_settings)
 
+    def test_write_repository_settings(self, test_repo):
+        fake_settings = Dynaconf()
+        test_repo._settings = fake_settings
+        repository.redis_loader.write = pretend.call_recorder(lambda *a: None)
+        result = test_repo.write_repository_settings("key", "value")
+
+        assert result is None
+        assert repository.redis_loader.write.calls == [
+            pretend.call(fake_settings, {"key": "value"})
+        ]
+
     def test__sign(self, test_repo):
         fake_role = pretend.stub(keyids=["keyid_1"])
         fake_md = pretend.stub(
@@ -393,6 +404,57 @@ class TestMetadataRepository:
             ),
         ]
 
+    def test_save_settings(self, test_repo):
+        fake_root_md = pretend.stub(
+            type="root",
+            signatures=[{"keyid": "sig1"}, {"keyid": "sig2"}],
+            signed=pretend.stub(
+                roles={"root": pretend.stub(threshold=1)},
+            ),
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        payload_settings = {
+            "expiration": {
+                "root": 365,
+                "targets": 365,
+                "snapshot": 1,
+                "timestamp": 1,
+                "bins": 1,
+            },
+            "services": {
+                "targets_base_url": "http://www.example.com/repository/",
+                "number_of_delegated_bins": 4,
+                "targets_online_key": True,
+            },
+        }
+
+        result = test_repo.save_settings(fake_root_md, payload_settings)
+        assert result is None
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_EXPIRATION", 365),
+            pretend.call("ROOT_THRESHOLD", 1),
+            pretend.call("ROOT_NUM_KEYS", 2),
+            pretend.call("TARGETS_EXPIRATION", 365),
+            pretend.call("TARGETS_THRESHOLD", 1),
+            pretend.call("TARGETS_NUM_KEYS", 1),
+            pretend.call("SNAPSHOT_EXPIRATION", 1),
+            pretend.call("SNAPSHOT_THRESHOLD", 1),
+            pretend.call("SNAPSHOT_NUM_KEYS", 1),
+            pretend.call("TIMESTAMP_EXPIRATION", 1),
+            pretend.call("TIMESTAMP_THRESHOLD", 1),
+            pretend.call("TIMESTAMP_NUM_KEYS", 1),
+            pretend.call("BINS_EXPIRATION", 1),
+            pretend.call("BINS_THRESHOLD", 1),
+            pretend.call("BINS_NUM_KEYS", 1),
+            pretend.call("NUMBER_OF_DELEGATED_BINS", 4),
+            pretend.call(
+                "TARGETS_BASE_URL", "http://www.example.com/repository/"
+            ),
+            pretend.call("TARGETS_ONLINE_KEY", True),
+        ]
+
     def test_bootstrap(self, monkeypatch, test_repo):
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
@@ -416,18 +478,22 @@ class TestMetadataRepository:
             lambda *a: "key"
         )
         fake_online_public_key = pretend.stub(key_dict={"k": "v"})
+        test_repo.save_settings = pretend.call_recorder(lambda *a: None)
         test_repo._key_storage_backend.get = pretend.call_recorder(
             lambda *a: fake_online_public_key
         )
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._sign = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
-
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
         payload = {
             "settings": {"services": {"number_of_delegated_bins": 2}},
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
+            "task_id": "fake_task_id",
         }
 
         result = test_repo.bootstrap(payload)
@@ -444,11 +510,16 @@ class TestMetadataRepository:
             pretend.call({"k": "v"}),
             pretend.call({"k": "v"}),
         ]
+        assert test_repo.save_settings.calls == [
+            pretend.call(fake_root_md, payload.get("settings"))
+        ]
         assert test_repo._key_storage_backend.get.calls == [
             pretend.call("online_public_key"),
             pretend.call("online_public_key"),
         ]
-
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("BOOTSTRAP", "fake_task_id")
+        ]
         # Special checks as calls use metadata object instances
 
         # Assert that calls contain two args and 'role' argument is a
