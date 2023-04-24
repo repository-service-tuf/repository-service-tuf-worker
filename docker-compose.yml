@@ -78,7 +78,6 @@ services:
       - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
       - RSTUF_SQL_SERVER=postgresql://postgres:secret@postgres:5432
       - RSTUF_REDIS_SERVER=redis://redis
-      - RSTUF_WORKER_ID=dev1
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
