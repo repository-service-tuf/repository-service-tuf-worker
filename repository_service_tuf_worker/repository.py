@@ -846,7 +846,7 @@ class MetadataRepository:
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
         # documentation.
         try:
-            with self._redis.lock(LOCK_TIMESTAMP, timeout=self._timeout):
+            with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
                 if self._settings.get_fresh("BOOTSTRAP") is None:
                     logging.info(
                         "[automatic_version_bump] No bootstrap, skipping..."

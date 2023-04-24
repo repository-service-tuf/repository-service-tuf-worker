@@ -1557,7 +1557,7 @@ class TestMetadataRepository:
         result = test_repo.bump_online_roles()
         assert result is True
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
+            pretend.call(repository.LOCK_TARGETS, timeout=60)
         ]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -1579,7 +1579,7 @@ class TestMetadataRepository:
         result = test_repo.bump_online_roles()
         assert result is False
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
+            pretend.call(repository.LOCK_TARGETS, timeout=60)
         ]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -1598,7 +1598,7 @@ class TestMetadataRepository:
 
         assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TIMESTAMP, timeout=60)
+            pretend.call(repository.LOCK_TARGETS, timeout=60)
         ]
 
     def test_metadata_rotation_only_root(self, monkeypatch, test_repo):
