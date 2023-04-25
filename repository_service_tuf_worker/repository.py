@@ -887,9 +887,9 @@ class MetadataRepository:
         Adds support for metadata rotation signed by offline root keys.
 
         Args:
-            payload: payload white the metadata to be rotate
+            payload: contains new metadata
                 example: {"metadata": {"root": Any}}
-            update_state: *not used* it is required argument by `app.py`
+            update_state: not used, but required argument by `app.py`
         """
         metadata = payload.get("metadata")
         if metadata is None:
