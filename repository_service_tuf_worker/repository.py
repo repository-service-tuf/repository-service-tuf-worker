@@ -884,8 +884,7 @@ class MetadataRepository:
         """
         Rotate TUF metadata.
 
-        This support the rotation of metadata which is signed with offline keys
-        (root keys)
+        Adds support for metadata rotation signed by offline root keys.
 
         Args:
             payload: payload white the metadata to be rotate
