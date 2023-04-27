@@ -208,8 +208,10 @@ class MetadataRepository:
         """
         Writes repository settings.
 
-        Repository settings uses Dynaconf and it is persistent in the Redis
-        server. It stores as a dictionary with key and value.
+        Repository settings are stored in a dictionary like Dynaconf object
+        and each of them has its own key and value.
+        Additionally, repository settings are persisted in the Redis server
+        so that they can be reused by multiple RSTUF Worker instances.
 
         Args:
             key: key name
