@@ -428,9 +428,7 @@ class MetadataRepository:
             threshold = 1
             num_of_keys = 1
             if rolename == Roles.ROOT.value.upper():
-                # The key to the root role is the name of the root file which
-                # uses consistent snapshot or in the format:
-                # <VERSION_NUMBER>.root.json
+                # get treshold and number of keys from given root metadata
                 threshold = root.signed.roles[role.value].threshold
                 num_of_keys = len(root.signatures)
 
