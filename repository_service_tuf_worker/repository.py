@@ -106,11 +106,31 @@ class MetadataRepository:
             settings = self._worker_settings
         else:
             settings = worker_settings
-
+        #
         # SQL
-        settings.SQL = rstuf_db(self._worker_settings.SQL_SERVER)
+        #
+        sql_server_url = self._worker_settings.get("SQL_SERVER")
+        # clean 'postgresql://' if present
+        sql_server = sql_server_url.replace("postgresql://", "")
+        if sql_user := self._worker_settings.get("SQL_USER"):
+            if self._worker_settings.SQL_PASSWORD.startswith("/run/secrets"):
+                try:
+                    with open(self._worker_settings.SQL_PASSWORD) as f:
+                        sql_password = f.read().rstrip("\n")
+                except OSError as err:
+                    logging.error(str(err))
+                    raise err
+            else:
+                sql_password = self._worker_settings.SQL_PASSWORD
+            settings.SQL = rstuf_db(
+                f"postgresql://{sql_user}:{sql_password}@{sql_server}"
+            )
+        else:
+            settings.SQL = rstuf_db(f"postgresql://{sql_server}")
 
+        #
         # Backends
+        #
         storage_backends = [
             storage.__name__.upper() for storage in IStorage.__subclasses__()
         ]

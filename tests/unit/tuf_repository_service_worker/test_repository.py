@@ -69,6 +69,75 @@ class TestMetadataRepository:
             pretend.call(fake_settings, {"key": "value"})
         ]
 
+    def test_refresh_settings_with_sql_user_password(self, test_repo):
+        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.SQL_USER = "psql"
+        test_repo._worker_settings.SQL_PASSWORD = "psqlpass"
+        fake_sql = pretend.stub()
+        repository.rstuf_db = pretend.call_recorder(lambda *a: fake_sql)
+
+        test_repo.refresh_settings()
+
+        assert test_repo._worker_settings.SQL == fake_sql
+        assert repository.rstuf_db.calls == [
+            pretend.call("postgresql://psql:psqlpass@fake-sql:5433")
+        ]
+
+    def test_refresh_settings_with_sql_user_missing_password(self, test_repo):
+        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.SQL_USER = "psql"
+
+        with pytest.raises(AttributeError) as e:
+            test_repo.refresh_settings()
+
+        assert "'Settings' object has no attribute 'SQL_PASSWORD'" in str(e)
+
+    def test_refresh_settings_with_sql_user_password_secrets(
+        self, test_repo, monkeypatch
+    ):
+        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.SQL_USER = "psql"
+        test_repo._worker_settings.SQL_PASSWORD = "/run/secrets/SQL_PASSWORD"
+        fake_data = pretend.stub(
+            read=pretend.call_recorder(lambda: "psqlpass\n")
+        )
+        fake_file_obj = pretend.stub(
+            __enter__=pretend.call_recorder(lambda: fake_data),
+            __exit__=pretend.call_recorder(lambda *a: None),
+            close=pretend.call_recorder(lambda: None),
+        )
+        monkeypatch.setitem(
+            repository.__builtins__, "open", lambda *a: fake_file_obj
+        )
+        fake_sql = pretend.stub()
+        repository.rstuf_db = pretend.call_recorder(lambda *a: fake_sql)
+
+        test_repo.refresh_settings()
+
+        assert test_repo._worker_settings.SQL == fake_sql
+        assert repository.rstuf_db.calls == [
+            pretend.call("postgresql://psql:psqlpass@fake-sql:5433")
+        ]
+
+    def test_refresh_settings_with_sql_user_password_secrets_OSError(
+        self, test_repo, monkeypatch, caplog
+    ):
+        caplog.set_level(repository.logging.ERROR)
+        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.SQL_USER = "psql"
+        test_repo._worker_settings.SQL_PASSWORD = "/run/secrets/SQL_PASSWORD"
+        monkeypatch.setitem(
+            repository.__builtins__,
+            "open",
+            pretend.raiser(PermissionError("No permission /run/secrets/*")),
+        )
+
+        with pytest.raises(OSError) as e:
+            test_repo.refresh_settings()
+
+        assert "No permission /run/secrets/*" in str(e)
+        assert "No permission /run/secrets/*" in caplog.record_tuples[0]
+
     def test__sign(self, test_repo):
         fake_role = pretend.stub(keyids=["keyid_1"])
         fake_md = pretend.stub(
