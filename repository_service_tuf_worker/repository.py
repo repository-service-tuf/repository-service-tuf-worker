@@ -711,9 +711,8 @@ class MetadataRepository:
 
     def _run_online_roles_bump(self, force: Optional[bool] = False) -> bool:
         """
-        Bumps version and expiration date of targets roles metadata
-        (`Targets` and `Succinct Delegated` targets roles). The function also
-        updates 'snapshot' and 'timestamp'.
+        Bumps version and expiration date of all online roles (`Targets`,
+        `Succinct Delegated` targets roles, `Timestamp` and `Snapshot`).
 
         ** It might require a lock context to avoid race conditions **
 
