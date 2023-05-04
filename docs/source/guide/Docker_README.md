@@ -82,10 +82,10 @@ Example: `postgres:secret@postgres:5432`
   * `RSTUF_SQL_USER` optional information about the user name
 
     If using this optional variable:
-    - Do not include user in the `RSTUF_SQL_SERVER`.
+    - Do not include the user in the `RSTUF_SQL_SERVER`.
     - The `RSTUF_SQL_PASSWORD` becomes required
 
-  * `RSTUF_SQL_PASSWORD` use this variable to inform the password separated.
+  * `RSTUF_SQL_PASSWORD` use this variable to provide the password separately.
     - Do not include the password in the `RSTUF_SQL_SERVER`
     - This environment variable supports container secrets when the `/run/secrets`
       volume is added to the path.
