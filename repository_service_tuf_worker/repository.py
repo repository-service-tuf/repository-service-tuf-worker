@@ -9,7 +9,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from math import log
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 
 import redis
 from celery.app.task import Task
@@ -68,7 +68,6 @@ SPEC_VERSION: str = ".".join(SPECIFICATION_VERSION)
 
 # lock constants
 LOCK_TARGETS = "LOCK_TARGETS"
-LOCK_TIMESTAMP = "LOCK_TIMESTAMP"
 
 
 @dataclass
@@ -296,7 +295,6 @@ class MetadataRepository:
     def _update_timestamp(
         self,
         snapshot_version: int,
-        db_targets: Optional[List[str]] = None,
     ) -> Metadata[Timestamp]:
         """
         Loads 'timestamp', updates meta info about passed 'snapshot'
@@ -307,7 +305,9 @@ class MetadataRepository:
             db_targets: RSTUFTarget DB objects will be changed as published in
                 the DB SQL.
         """
-        timestamp = self._storage_backend.get(Timestamp.type)
+        timestamp: Metadata[Timestamp] = self._storage_backend.get(
+            Timestamp.type, None
+        )
         timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
 
         self._bump_version(timestamp)
@@ -315,25 +315,59 @@ class MetadataRepository:
         self._sign(timestamp)
         self._persist(timestamp, Timestamp.type)
 
-        # TODO review if here is the best place to change the status in DB
-        if db_targets:
-            targets_crud.update_to_published(self._db, db_targets)
-
         return timestamp
 
     def _update_snapshot(
-        self, targets_meta: List[Tuple[str, int]]
-    ) -> Metadata[Snapshot]:
+        self, target_roles: Optional[List[str]] = None
+    ) -> int:
         """
-        Loads 'snapshot', updates meta info about passed 'targets' metadata,
-        bumps version and expiration, signs and persists. Returns new snapshot
-        version, e.g. to update 'timestamp'.
+        Loads 'snapshot', updates meta info about when passed 'target_roles'
+        role names, bumps version and expiration, signs and persists.
+        Returns new snapshot version.
         """
-        snapshot = self._storage_backend.get(Snapshot.type)
+        snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
 
-        for name, version in targets_meta:
-            snapshot.signed.meta[f"{name}.json"] = MetaFile(version=version)
+        if target_roles is not None:
+            db_target_roles = targets_crud.read_role_with_files_to_add(
+                self._db, target_roles
+            )
 
+            for target_roles in db_target_roles:
+                bins_md: Metadata[Targets] = self._storage_backend.get(
+                    target_roles.rolename
+                )
+                bins_md.signed.targets.clear()
+                bins_md.signed.targets = {
+                    file.path: TargetFile.from_dict(file.info, file.path)
+                    for file in target_roles.target_files
+                    if file.action == targets_schema.TargetAction.ADD
+                    # the condition of filtering the files with action 'ADD'
+                    # cannot be done in the CRUD. If a target role doesn't have
+                    # any targets as 'ADD' (only 'REMOVE') it will not return
+                    # the target role and it will be not updated. For example
+                    # when removing the last file from a target role.
+                }
+
+                # update expiry, bump version and persist to the storage
+                self._bump_expiry(bins_md, BINS)
+                self._bump_version(bins_md)
+                self._sign(bins_md)
+                self._persist(bins_md, target_roles.rolename)
+                # update targetfile in db
+                # note: It update only if is not published see the CRUD.
+                targets_crud.update_files_to_published(
+                    self._db, [file.path for file in target_roles.target_files]
+                )
+
+                snapshot.signed.meta[
+                    f"{target_roles.rolename}.json"
+                ] = MetaFile(version=bins_md.signed.version)
+
+            targets_crud.update_roles_version(
+                self._db, [int(bins.id) for bins in db_target_roles]
+            )
+
+        # update expiry, bump version and persist to the storage
         self._bump_expiry(snapshot, Snapshot.type)
         self._bump_version(snapshot)
         self._sign(snapshot)
@@ -353,7 +387,7 @@ class MetadataRepository:
 
     def _update_task(
         self,
-        bin_targets: Dict[str, List[targets_models.RSTUFTargets]],
+        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
         update_state: Task.update_state,
         subtask: Optional[AsyncResult] = None,
     ):
@@ -366,7 +400,7 @@ class MetadataRepository:
 
         def _update_state(
             state: states,
-            bin_targets: Dict[str, List[targets_models.RSTUFTargets]],
+            bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
             completed_roles: List[str],
             exc_type: Optional[str] = None,
             exc_message: Optional[List[str]] = None,
@@ -415,20 +449,19 @@ class MetadataRepository:
             else:
                 break
 
-    def _send_publish_targets_task(self, task_id: str):  # pragma: no cover
+    def _send_publish_targets_task(
+        self, task_id: str, bins_targets: Optional[List[str]]
+    ):  # pragma: no cover
         """
         Send a new task to the `rstuf_internals` queue to publish targets.
         """
         # it is imported in the call to avoid a circular import
         from app import repository_service_tuf_worker
 
-        # TODO: all tasks has the same id `publish_targets`. Should be unique?
-        # Should we check and avoid multiple tasks? Check that the function
-        # `publish_target` has a lock to avoid race conditions.
         return repository_service_tuf_worker.apply_async(
             kwargs={
                 "action": "publish_targets",
-                "payload": None,
+                "payload": {"bin_targets": bins_targets},
                 "refresh_settings": False,
             },
             task_id=f"publish_targets-{task_id}",
@@ -534,6 +567,15 @@ class MetadataRepository:
             )
             self._persist(bins_role, delegated_name)
 
+        # Create all Target Roles in the database RSTUFTargetRoles
+        db_target_roles = [
+            targets_schema.RSTUFTargetRolesCreate(
+                rolename=target_role, version=1
+            )
+            for target_role in succinct_roles.get_roles()
+        ]
+        targets_crud.create_roles(self._db, db_target_roles)
+
         # Update `Snapshot` meta with targets
         snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
             version=targets.signed.version
@@ -559,10 +601,16 @@ class MetadataRepository:
 
         return asdict(result)
 
-    def publish_targets(self):
+    def publish_targets(
+        self,
+        payload: Optional[Dict[str, Any]] = None,
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ):
         """
-        Publish targets from SQL DB as persistent TUF Metadata in the backend
-        storage.
+        Publish targets as persistent TUF Metadata in the backend storage,
+        updating Snapshot and Timestamp.
         """
         logging.debug(f"Configured timeout: {self._timeout}")
         lock_status_targets = False
@@ -571,74 +619,36 @@ class MetadataRepository:
         try:
             with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
                 # get all delegated role names with unpublished targets
-                unpublished_roles = targets_crud.read_unpublished_rolenames(
-                    self._db
-                )
-                if len(unpublished_roles) == 0:
-                    logging.debug(
-                        "No new targets in delegated roles. Finishing"
+                if payload is None or payload.get("bins_targets") is None:
+                    db_roles = targets_crud.read_roles_with_unpublished_files(
+                        self._db
                     )
-                    return None
+                    if db_roles is None:
+                        bins_targets = []
+                    else:
+                        bins_targets = [bins_role[0] for bins_role in db_roles]
 
-                # initialize the new snapshot targets meta and published
-                # targets from DB SQL
-                new_snapshot_meta: List[Tuple(str, int)] = []
-                db_published_targets: List[str] = []
-                for _, rolename in unpublished_roles:
-                    # get the unpublished targets for the delegated, it will be
-                    # use to update the database when Snapshot and Timestamp is
-                    # published by `_update_timestamp`
-                    db_targets = targets_crud.read_unpublished_by_rolename(
-                        db=self._db, rolename=rolename
-                    )
+                if len(bins_targets) == 0:
                     logging.debug(
-                        f"{rolename}: New targets #: {len(db_targets)}"
+                        "No new targets in delegated target roles. Finishing"
                     )
-                    db_published_targets += [
-                        target.path for target in db_targets
-                    ]
-
-                    # load the delegated targets role, clean the targets and
-                    # add a new meta from the SQL DB.
-                    # note: it might include targets from another parent task,
-                    # it will speed up the process of publishing new targets.
-                    role: Metadata[Targets] = self._storage_backend.get(
-                        rolename
-                    )
-                    role.signed.targets.clear()
-                    role.signed.targets = {
-                        target[0]: TargetFile.from_dict(target[1], target[0])
-                        for target in targets_crud.read_all_add_by_rolename(
-                            self._db, rolename
+                    return asdict(
+                        ResultDetails(
+                            states.SUCCESS,
+                            details={
+                                "target_roles": "Not new targets found.",
+                            },
+                            last_update=datetime.now(),
                         )
-                    }
-
-                    # update expiry, bump version and persist to the storage
-                    self._bump_expiry(role, BINS)
-                    self._bump_version(role)
-                    self._sign(role)
-                    self._persist(role, rolename)
-                    # append to the new snapshot targets meta
-                    new_snapshot_meta.append((rolename, role.signed.version))
+                    )
 
                 # context lock finished
-                lock_status_targets = True
-
-            # update snapshot and timestamp
-            # note: the `db_published_targets` contains the targets that
-            # needs to updated in SQL DB as 'published' and it will be done
-            # by the `_update_timestamp`
-            # we also lock this action because it can have a race condition
-            # with the automatic job that bumps the online roles
-            # (`app.py` -> `app.conf.beat_schedule`: `bump_online_roles`)
-            status_lock_timestamp = False
-            with self._redis.lock(LOCK_TIMESTAMP, timeout=self._timeout):
+                # lock_status_targets = True
                 self._update_timestamp(
-                    self._update_snapshot(new_snapshot_meta),
-                    db_published_targets,
+                    self._update_snapshot(bins_targets),
                 )
-            # context lock timestamp finished
-            status_lock_timestamp = True
+
+            lock_status_targets = True
 
         except redis.exceptions.LockNotOwnedError:
             # The LockNotOwnedError happens when the task exceeds the timeout,
@@ -646,7 +656,7 @@ class MetadataRepository:
             # If the task time out, the lock is released. If it doesn't finish
             # properly, it will raise (fail) the task. Otherwise, the ignores
             # the error because another task didn't lock it.
-            if lock_status_targets is False or status_lock_timestamp is False:
+            if lock_status_targets is False:
                 logging.error("The task to publish targets exceeded timeout")
                 raise redis.exceptions.LockError(
                     "RSTUF: Task exceed `LOCK_TIMEOUT` "
@@ -656,7 +666,7 @@ class MetadataRepository:
         result = ResultDetails(
             states.SUCCESS,
             details={
-                "target_roles": [meta[0] for meta in new_snapshot_meta],
+                "target_roles": bins_targets,
             },
             last_update=datetime.now(),
         )
@@ -683,25 +693,29 @@ class MetadataRepository:
         task_id = payload.get("task_id")
         # Group target files by responsible 'bins' delegated roles.
         # This will be used to by `_update_task` for updating task status.
-        bin_targets: Dict[str, List[targets_models.RSTUFTargets]] = {}
+        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
             bins_name = self._get_path_succinct_role(target["path"])
-            db_target = targets_crud.read_by_path(self._db, target.get("path"))
-            if db_target is None:
-                db_target = targets_crud.create(
+            db_target_file = targets_crud.read_file_by_path(
+                self._db, target.get("path")
+            )
+            if db_target_file is None:
+                db_target_file = targets_crud.create_file(
                     self._db,
-                    targets_schema.TargetsCreate(
+                    targets_schema.RSTUFTargetFilesCreate(
                         path=target.get("path"),
                         info=target.get("info"),
                         published=False,
                         action=targets_schema.TargetAction.ADD,
-                        rolename=bins_name,
+                    ),
+                    target_role=targets_crud.read_role_by_rolename(
+                        self._db, bins_name
                     ),
                 )
             else:
-                db_target = targets_crud.update(
+                db_target_file = targets_crud.update_file_path_and_info(
                     self._db,
-                    db_target,
+                    db_target_file,
                     target.get("path"),
                     target.get("info"),
                 )
@@ -709,13 +723,15 @@ class MetadataRepository:
             if bins_name not in bin_targets:
                 bin_targets[bins_name] = []
 
-            bin_targets[bins_name].append(db_target)
+            bin_targets[bins_name].append(db_target_file)
 
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
         subtask = None
         if publish_targets is True:
-            subtask = self._send_publish_targets_task(task_id)
+            subtask = self._send_publish_targets_task(
+                task_id, [bins_role for bins_role in bin_targets]
+            )
 
         self._update_task(bin_targets, update_state, subtask)
 
@@ -750,10 +766,10 @@ class MetadataRepository:
 
         # Group target files by responsible 'bins' delegated roles.
         # This will be used to by `publish_targets`
-        bin_targets: Dict[str, List[targets_models.RSTUFTargets]] = {}
+        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
             bins_name = self._get_path_succinct_role(target)
-            db_target = targets_crud.read_by_path(self._db, target)
+            db_target = targets_crud.read_file_by_path(self._db, target)
             if db_target is None or (
                 db_target.action == targets_schema.TargetAction.REMOVE
                 and db_target.published is True
@@ -762,7 +778,7 @@ class MetadataRepository:
                 # published are not found.
                 not_found_targets.append(target)
             else:
-                db_target = targets_crud.update_action_remove(
+                db_target = targets_crud.update_file_action_to_remove(
                     self._db, db_target
                 )
                 deleted_targets.append(target)
@@ -771,11 +787,14 @@ class MetadataRepository:
                     bin_targets[bins_name] = []
 
                 bin_targets[bins_name].append(db_target)
+
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
         subtask = None
         if len(deleted_targets) > 0 and publish_targets is True:
-            subtask = self._send_publish_targets_task(task_id)
+            subtask = self._send_publish_targets_task(
+                task_id, [t_role for t_role in bin_targets]
+            )
 
         self._update_task(bin_targets, update_state, subtask)
 
@@ -806,7 +825,7 @@ class MetadataRepository:
             force: force target roles bump if they don't match the hours before
                 expire (`self._hours_before_expire`)
         """
-        targets_meta: List[Tuple[str, int]] = []
+        targets_roles: List[str] = []
 
         try:
             targets = self._storage_backend.get(Targets.type)
@@ -830,7 +849,7 @@ class MetadataRepository:
                 self._bump_version(targets)
                 self._sign(targets)
                 self._persist(targets, Targets.type)
-                targets_meta.append((Targets.type, targets.signed.version))
+                targets_roles.append(Targets.type)
 
         targets_succinct_roles = targets.signed.delegations.succinct_roles
         for bins_name in targets_succinct_roles.get_roles():
@@ -843,15 +862,15 @@ class MetadataRepository:
                 self._bump_version(bins_role)
                 self._sign(bins_role)
                 self._persist(bins_role, bins_name)
-                targets_meta.append((bins_name, bins_role.signed.version))
+                targets_roles.append(bins_name)
 
-        if len(targets_meta) > 0:
+        if len(targets_roles) > 0:
             logging.info(
                 "[scheduled targets bump] Targets and delegated Targets roles "
                 "version bumped: {targets_meta}"
             )
             timestamp = self._update_timestamp(
-                self._update_snapshot(targets_meta)
+                self._update_snapshot(targets_roles)
             )
             logging.info(
                 "[scheduled targets bump] Snapshot version bumped: "
@@ -895,7 +914,7 @@ class MetadataRepository:
         if (snapshot.signed.expires - datetime.now()) < timedelta(
             hours=self._hours_before_expire or force is True
         ):
-            timestamp = self._update_timestamp(self._update_snapshot([]))
+            timestamp = self._update_timestamp(self._update_snapshot())
             logging.info(
                 "[scheduled snapshot bump] Snapshot version bumped: "
                 f"{snapshot.signed.version + 1}"

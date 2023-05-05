@@ -2,108 +2,116 @@
 #
 # SPDX-License-Identifier: MIT
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
 from repository_service_tuf_worker.models.targets import models, schemas
 
 
-def create(db: Session, target: schemas.TargetsCreate):
+def create_roles(
+    db: Session, target_roles: List[schemas.RSTUFTargetRolesCreate]
+) -> List[models.RSTUFTargetRoles]:
     """
-    Create a new Target entry in the DB.
+    Create new Target roles
     """
-    db_target = models.RSTUFTargets(**target.dict())
-    db.add(db_target)
+    db_delegated_roles_objects = [
+        models.RSTUFTargetRoles(**role.dict()) for role in target_roles
+    ]
+    db.add_all(db_delegated_roles_objects)
     db.commit()
-    db.refresh(db_target)
 
-    return db_target
+    return db_delegated_roles_objects
 
 
-def read_unpublished_rolenames(db: Session) -> Tuple[bool, str]:
+def create_file(
+    db: Session,
+    target_file: schemas.RSTUFTargetFilesCreate,
+    target_role: models.RSTUFTargetRoles,
+) -> models.RSTUFTargetFiles:
     """
-    Read delegated role names that contains unpublished Targets.
+    Create a new Target file
+    """
+    target_file = models.RSTUFTargetFiles(
+        **target_file.dict(), targets_role=target_role.id
+    )
+    db.add(target_file)
+    db.commit()
+    db.refresh(target_file)
+
+    return target_file
+
+
+def read_roles_with_unpublished_files(db: Session) -> List[Tuple[str]]:
+    """
+    Read Target Roles with contains unpublished Target Files.
     """
     return (
-        db.query(models.RSTUFTargets.published, models.RSTUFTargets.rolename)
-        .filter(
-            models.RSTUFTargets.published == False,  # noqa
+        db.query(
+            models.RSTUFTargetRoles.rolename,
         )
-        .order_by(models.RSTUFTargets.rolename)
+        .join(models.RSTUFTargetFiles)
+        .filter(
+            models.RSTUFTargetFiles.published == False,  # noqa
+        )
+        .order_by(models.RSTUFTargetRoles.rolename)
         .distinct()
         .all()
     )
 
 
-def read_by_path(db: Session, path: str) -> models.RSTUFTargets:
+def read_file_by_path(
+    db: Session, path: str
+) -> Optional[models.RSTUFTargetFiles]:
     """
-    Read the Target based in the path (unique value).
+    Read the Target File by path (unique value).
     """
     return (
-        db.query(models.RSTUFTargets)
-        .filter(models.RSTUFTargets.path == path)
+        db.query(models.RSTUFTargetFiles)
+        .filter(models.RSTUFTargetFiles.path == path)
         .first()
     )
 
 
-def read_by_rolename(db: Session, rolename: str) -> List[models.RSTUFTargets]:
+def read_role_by_rolename(
+    db: Session, rolename: str
+) -> Optional[models.RSTUFTargetRoles]:
     """
-    Read all Targets by the delegated role name.
+    Read Target role by role name
     """
     return (
-        db.query(models.RSTUFTargets)
+        db.query(models.RSTUFTargetRoles)
         .filter(
-            models.RSTUFTargets.rolename == rolename,
+            models.RSTUFTargetRoles.rolename == rolename,
         )
-        .all()
+        .first()
     )
 
 
-def read_unpublished_by_rolename(
-    db: Session, rolename: str
-) -> List[models.RSTUFTargets]:
+def read_role_with_files_to_add(
+    db: Session, rolenames: List[str]
+) -> List[models.RSTUFTargetFiles]:
     """
-    Read all unpublished Targets by a delegated role name.
+    Read all unpublished Targets files by Target role names.
     """
     return (
         db.query(
-            models.RSTUFTargets,
+            models.RSTUFTargetRoles,
         )
+        .join(models.RSTUFTargetFiles)
         .filter(
-            models.RSTUFTargets.published == False,  # noqa
-            models.RSTUFTargets.rolename == rolename,
+            models.RSTUFTargetRoles.rolename.in_(rolenames),
         )
         .all()
     )
 
 
-def read_all_add_by_rolename(
-    db: Session, rolename: str
-) -> List[Tuple[str, Dict[str, Any]]]:
-    """
-    Read all delegated role names `path` and `info` that contains targets
-    with action 'ADD'.
-    """
-    return (
-        db.query(
-            models.RSTUFTargets.path,
-            models.RSTUFTargets.info,
-        )
-        .filter(
-            models.RSTUFTargets.rolename == rolename,
-            models.RSTUFTargets.action == schemas.TargetAction.ADD,
-        )
-        .all()
-    )
-
-
-def update(
+def update_file_path_and_info(
     db: Session,
-    target: models.RSTUFTargets,
+    target: models.RSTUFTargetFiles,
     new_path: str,
     new_info: Dict[str, Any],
-):
+) -> models.RSTUFTargetFiles:
     """
     Update a Target (`path` and `info`)
     """
@@ -119,27 +127,44 @@ def update(
     return target
 
 
-def update_to_published(db: Session, paths: List[str]) -> None:
+def update_files_to_published(db: Session, paths: List[str]) -> None:
     """
-    Update Target to `published` to `True`.
+    Update Target files to `published` to `True`.
     """
 
-    db.query(models.RSTUFTargets).filter(
-        models.RSTUFTargets.path.in_(paths)
+    db.query(models.RSTUFTargetFiles).filter(
+        models.RSTUFTargetFiles.published == False,  # noqa
+        models.RSTUFTargetFiles.path.in_(paths),
     ).update(
         {
-            models.RSTUFTargets.published: True,
-            models.RSTUFTargets.last_update: datetime.now(),
+            models.RSTUFTargetFiles.published: True,
+            models.RSTUFTargetFiles.last_update: datetime.now(),
         }
     )
     db.commit()
 
 
-def update_action_remove(
-    db: Session, target: models.RSTUFTargets
-) -> models.RSTUFTargets:
+def update_roles_version(db: Session, bins_ids: List[int]) -> None:
     """
-    Update Target to `action` to `REMOVE`.
+    Update Target roles version +1
+    """
+    db.query(models.RSTUFTargetRoles).filter(
+        models.RSTUFTargetRoles.id.in_(bins_ids)
+    ).update(
+        {
+            models.RSTUFTargetRoles.version: models.RSTUFTargetRoles.version
+            + 1,
+            models.RSTUFTargetRoles.last_update: datetime.now(),
+        }
+    )
+    db.commit()
+
+
+def update_file_action_to_remove(
+    db: Session, target: models.RSTUFTargetFiles
+) -> models.RSTUFTargetFiles:
+    """
+    Update Target file `action` to `REMOVE`.
     """
     target.published = False
     target.action = schemas.TargetAction.REMOVE
