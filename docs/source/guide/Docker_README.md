@@ -149,8 +149,16 @@ Available types:
         Example: ``RSTUF_LOCAL_KEYVAULT_PATH=/var/opt/repository-service-tuf/key_storage``
 
     - ``RSTUF_LOCAL_KEYVAULT_KEYS``
-      - Define the key(s) with format ``<file name>,<password>,<(optional) type>``
-        - file name: defines the key file name.
+      - Define the key(s) with format ``<file>,<password>,<(optional) type>``
+        - file: defines the key file
+          - `base64|<key content in base64>` allows to inform directly the key content.
+            It will dynamically manage the file in the
+            ``RSTUF_LOCAL_KEYVAULT_PATH``
+
+            Requires content as base64.
+
+            Example: ``RSTUF_LOCAL_KEYVAULT_KEYS=base64|LnRveC8KdmVudi8KLmlkZWEvCi52c2NvZGUvC...,strongPass,rsa``
+
         - password: credential used to load the key
         - (optional) type: The key type. Default: `ed25519`
 
@@ -166,7 +174,7 @@ Available types:
 
       - This environment variable supports container secrets when the
         ``/run/secrets`` volume is added to the path. The content must to be
-        the standard format ``<file name>,<password>,<(optional) type>``
+        the standard format ``<file>,<password>,<(optional) type>``
 
         Example: ``RSTUF_LOCAL_KEYVAULT_KEYS=/run/secrets/ONLINE_KEY_1:/run/secrets/ONLINE_KEY_2``
 
