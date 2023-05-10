@@ -42,12 +42,14 @@ class LocalKeyVault(IKeyVault):
         Args:
             path: path for key vault (used to define the volume)
             keys: list of online keys to be used. String uses two separators
-               `:` to separate the keys and `,` to separate the field.
-               `<file>,<password>,<type>`
-               file: the file or base64 content (base64|<key body in base64>)
-               password: the key password
-               type: optional, default=ed25519
-               Example:`key1.key,pass1:key2.key,pass2,rsa`
+                `:` to separate the keys and `,` to separate the field.
+                `<file>,<password>,<type>`
+                Where:
+                    file: the file name or base64 content in the format:
+                        (base64|<key body in base64>)
+                    password: the key password
+                    type: optional, default=ed25519
+                    Example:`key1.key,pass1:key2.key,pass2,rsa`
         """
         self._path: str = path
         self._keys: str = keys
