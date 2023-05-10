@@ -35,11 +35,7 @@ class KeyVaultError(Exception):
 class LocalKeyVault(IKeyVault):
     """Local KeyVault type"""
 
-    def __init__(
-        self,
-        path: str,
-        keys: str,
-    ):
+    def __init__(self, path: str, keys: str):
         """Configuration class for RSTUF Worker LocalKeyVault service.
         Manages all settings related to the usage of the online key(s).
 
