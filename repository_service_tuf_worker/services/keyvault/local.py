@@ -57,21 +57,35 @@ class LocalKeyVault(IKeyVault):
         self._keys: str = keys
 
     @classmethod
-    def _base64_key(cls, keyvault_path, base64_key) -> str:
-        key_content = base64_key.split("base64|")[1]
+    def _base64_key(cls, keyvault_path, base64_key_body) -> str:
+        """
+        Decode a base64 key body and store in a file using unique hash file
+        name (based in the data) in the `keyvault_path`
+        (`RSTUF_LOCAL_KEYVAYLT_PATH`) and return the key filename.
+        Args:
+            keyvault_path: The key vault path defined in
+                `RSTUF_LOCAL_KEYVAYLT_PATH`.
+            base64_key_body: The key body on base64
+        Returns: key file_name as str
+        """
+        key_content = base64_key_body
         hash_key = hashlib.blake2b(key_content.encode("utf-8"), digest_size=16)
         file_name = hash_key.hexdigest()
         key_path = os.path.join(keyvault_path, file_name)
         if os.path.isfile(key_path):
-            return key_path
+            return file_name
         else:
             with open(key_path, "w") as f:
                 f.write(base64.b64decode(key_content).decode())
 
-            return key_path
+            return file_name
 
     @classmethod
-    def _raw_key_parser(cls, keys: str) -> List[LocalKey]:
+    def _raw_key_parser(cls, path: str, keys: str) -> List[LocalKey]:
+        """
+        Parses the key(s) given in the `RSTUF_LOCAL_KEYVAULT_KEYS` and returns
+        as `LocalKey` object.
+        """
         parsed_keys: List[LocalKey] = []
         for raw_key in keys.split(":"):
             if raw_key.startswith("/run/secrets/"):
@@ -86,17 +100,20 @@ class LocalKeyVault(IKeyVault):
                 pass
 
             if len(key_data) == 2:  # filename and password
-                parsed_keys.append(
-                    LocalKey(file=key_data[0], password=key_data[1])
-                )
+                file = key_data[0]
+                password = key_data[1]
+                if file.startswith("base64|"):
+                    file = cls._base64_key(path, file.split("base64|")[1])
+                parsed_keys.append(LocalKey(file=file, password=password))
 
             elif len(key_data) == 3:  # filename, type, password
+                file = key_data[0]
+                password = key_data[1]
+                key_type = key_data[2]
+                if file.startswith("base64|"):
+                    file = cls._base64_key(path, file.split("base64|")[1])
                 parsed_keys.append(
-                    LocalKey(
-                        file=key_data[0],
-                        password=key_data[1],
-                        type=key_data[2],
-                    )
+                    LocalKey(file=file, password=password, type=key_type)
                 )
             else:
                 logging.error("Key is invalid")
@@ -116,13 +133,10 @@ class LocalKeyVault(IKeyVault):
         """
         # Check that the online key can be loaded without an error.
         path = settings.LOCAL_KEYVAULT_PATH
-        local_keys = cls._raw_key_parser(settings.LOCAL_KEYVAULT_KEYS)
+        local_keys = cls._raw_key_parser(path, settings.LOCAL_KEYVAULT_KEYS)
         valid_key_found = False  # we look for at least one key is load
         for local_key in local_keys:
-            if local_key.file.startswith("base64|"):
-                local_key_path = cls._base64_key(path, local_key.file)
-            else:
-                local_key_path = os.path.join(path, local_key.file)
+            local_key_path = os.path.join(path, local_key.file)
             try:
                 import_privatekey_from_file(
                     local_key_path, local_key.type, local_key.password
@@ -165,13 +179,10 @@ class LocalKeyVault(IKeyVault):
 
     def get(self, public_key: Key) -> SSlibSigner:
         """Return a signer using the online key."""
-        keys = self._raw_key_parser(self._keys)
+        keys = self._raw_key_parser(self._path, self._keys)
         valid_key = False
         for key in keys:
-            if key.file.startswith("base64|"):
-                key_path = self._base64_key(self._path, key.file)
-            else:
-                key_path = os.path.join(self._path, key.file)
+            key_path = os.path.join(self._path, key.file)
             priv_key_uri = f"file:{key_path}?encrypted=true"
             try:
                 sslib_public_key = SSlibKey.from_dict(
