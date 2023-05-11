@@ -152,8 +152,8 @@ Available types:
       - Define the key(s) with format ``<file>,<password>,<(optional) type>``
         - file: defines the key file
           - `base64|<key content in base64>` allows to inform directly the key content.
-            It will dynamically manage the file in the
-            ``RSTUF_LOCAL_KEYVAULT_PATH``
+            It will dynamically manage the file and write a key file in
+            ``RSTUF_LOCAL_KEYVAULT_PATH`` (write permissions required).
 
             Requires content as base64.
 
@@ -168,7 +168,11 @@ Available types:
 
       - Support multiple keys with separator ``:``.
 
-        **It is used in case of metadata/online key rotation.**
+        It accepts multiple keys, but RSTUF supports only one online key.
+
+        The Local Key Vault will find the key that matches the online key
+        defined in the Root metadata. It is helpful for metadata/key rotation
+        for cases without disruption.
 
         Example: ``RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass:online-rsa.key,newStrongPass,rsa``
 
