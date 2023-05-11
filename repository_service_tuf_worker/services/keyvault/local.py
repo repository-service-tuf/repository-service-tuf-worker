@@ -55,7 +55,7 @@ class LocalKeyVault(IKeyVault):
         self._keys: str = keys
 
     @classmethod
-    def _base64_key(cls, keyvault_path, base64_key_body) -> str:
+    def _base64_key(cls, keyvault_path: str, base64_key_body: str) -> str:
         """
         Decode a base64 key body and store in a file using unique hash file
         name (based in the data) in the `keyvault_path`
@@ -66,15 +66,16 @@ class LocalKeyVault(IKeyVault):
             base64_key_body: The key body on base64
         Returns: key file_name as str
         """
-        key_content = base64_key_body
-        hash_key = hashlib.blake2b(key_content.encode("utf-8"), digest_size=16)
+        hash_key = hashlib.blake2b(
+            base64_key_body.encode("utf-8"), digest_size=16
+        )
         file_name = hash_key.hexdigest()
         key_path = os.path.join(keyvault_path, file_name)
         if os.path.isfile(key_path):
             return file_name
         else:
             with open(key_path, "w") as f:
-                f.write(base64.b64decode(key_content).decode())
+                f.write(base64.b64decode(base64_key_body).decode())
 
             return file_name
 
@@ -104,7 +105,7 @@ class LocalKeyVault(IKeyVault):
                     file = cls._base64_key(path, file.split("base64|")[1])
                 parsed_keys.append(LocalKey(file=file, password=password))
 
-            elif len(key_data) == 3:  # filename, type, password
+            elif len(key_data) == 3:  # filename, password, type
                 file = key_data[0]
                 password = key_data[1]
                 key_type = key_data[2]
