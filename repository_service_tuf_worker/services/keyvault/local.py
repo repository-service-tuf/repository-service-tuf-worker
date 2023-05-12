@@ -49,6 +49,7 @@ class LocalKeyVault(IKeyVault):
                         (base64|<key body in base64>)
                     password: the key password
                     type: optional, default=ed25519
+
                     Example:`key1.key,pass1:key2.key,pass2,rsa`
         """
         self._path: str = path
