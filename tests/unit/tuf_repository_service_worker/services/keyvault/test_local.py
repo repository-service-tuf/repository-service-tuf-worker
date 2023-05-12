@@ -78,13 +78,13 @@ class TestLocalStorageService:
             lambda *a: pretend.stub(decode=pretend.call_recorder(lambda: "k"))
         )
         result = service._base64_key(
-            "/test/key_vault", "base64|fakebase64keybody"
+            "/test/key_vault", "fakebase64keybody"
         )
 
         assert result == "fake_hash"
         assert local.hashlib.blake2b.calls == [
             pretend.call(
-                "base64|fakebase64keybody".encode("utf-8"), digest_size=16
+                "fakebase64keybody".encode("utf-8"), digest_size=16
             )
         ]
         assert local.os.path.isfile.calls == [
@@ -92,7 +92,7 @@ class TestLocalStorageService:
         ]
         assert fake_data.write.calls == [pretend.call("k")]
         assert local.base64.b64decode.calls == [
-            pretend.call("base64|fakebase64keybody")
+            pretend.call("fakebase64keybody")
         ]
 
     def test__raw_key_parser(self):
