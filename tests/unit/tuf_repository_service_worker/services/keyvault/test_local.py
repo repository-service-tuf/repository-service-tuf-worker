@@ -77,15 +77,11 @@ class TestLocalStorageService:
         local.base64.b64decode = pretend.call_recorder(
             lambda *a: pretend.stub(decode=pretend.call_recorder(lambda: "k"))
         )
-        result = service._base64_key(
-            "/test/key_vault", "fakebase64keybody"
-        )
+        result = service._base64_key("/test/key_vault", "fakebase64keybody")
 
         assert result == "fake_hash"
         assert local.hashlib.blake2b.calls == [
-            pretend.call(
-                "fakebase64keybody".encode("utf-8"), digest_size=16
-            )
+            pretend.call("fakebase64keybody".encode("utf-8"), digest_size=16)
         ]
         assert local.os.path.isfile.calls == [
             pretend.call("/test/key_vault/fake_hash")
