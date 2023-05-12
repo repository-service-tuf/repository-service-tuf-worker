@@ -57,14 +57,17 @@ class LocalKeyVault(IKeyVault):
     @classmethod
     def _base64_key(cls, keyvault_path: str, base64_key_body: str) -> str:
         """
-        Decode a base64 key body and store in a file using unique hash file
-        name (based in the data) in the `keyvault_path`
+        Decode a base64 key body and store it in a file using a unique hash
+        file name (based in the data) in the `keyvault_path`
         (`RSTUF_LOCAL_KEYVAYLT_PATH`) and return the key filename.
+
         Args:
             keyvault_path: The key vault path defined in
                 `RSTUF_LOCAL_KEYVAYLT_PATH`.
             base64_key_body: The key body on base64
-        Returns: key file_name as str
+
+        Returns:
+            key file_name as str
         """
         hash_key = hashlib.blake2b(
             base64_key_body.encode("utf-8"), digest_size=16
