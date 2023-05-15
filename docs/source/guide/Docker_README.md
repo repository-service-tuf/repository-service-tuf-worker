@@ -43,7 +43,8 @@ For more information read the [Deployment documentation](https://repository-serv
 docker run --env="RSTUF_STORAGE_BACKEND=LocalStorage" \
     --env="RSTUF_LOCAL_STORAGE_BACKEND_PATH=storage" \
     --env="RSTUF_KEYVAULT_BACKEND=LocalKeyVault" \
-    --env="RSTUF_LOCAL_KEYVAULT_PASSWORD=mypass" \
+    --env="RSTUF_LOCAL_KEYVAULT_PATH=keyvault" \
+    --env="RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass" \
     --env="RSTUF_BROKER_SERVER=guest:guest@rabbitmq:5672" \
     --env="RSTUF_REDIS_SERVER=redis://redis" \
     --env="RSTUF_SQL_SERVER=postgresql://postgres:secret@postgres:5432" \
