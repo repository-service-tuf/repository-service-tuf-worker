@@ -60,11 +60,11 @@ class LocalKeyVault(IKeyVault):
         """
         Decode a base64 key body and store it in a file using a unique hash
         file name (based in the data) in the `keyvault_path`
-        (`RSTUF_LOCAL_KEYVAYLT_PATH`) and return the key filename.
+        (`RSTUF_LOCAL_KEYVAULT_PATH`) and return the key filename.
 
         Args:
             keyvault_path: The key vault path defined in
-                `RSTUF_LOCAL_KEYVAYLT_PATH`.
+                `RSTUF_LOCAL_KEYVAULT_PATH`.
             base64_key_body: The key body on base64
 
         Returns:
