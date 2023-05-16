@@ -53,6 +53,8 @@ jobs:
       worker_version: ${{ github.sha }}
       api_version: ${{ needs.set-component-versions.outputs.api_version }}
       cli_version: ${{ needs.set-component-versions.outputs.cli_version }}
+    secrets:
+      RSTUF_ONLINE_KEY: ${{ secrets.RSTUF_ONLINE_KEY }}
 
   release:
     runs-on: ubuntu-latest
