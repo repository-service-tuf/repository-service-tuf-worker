@@ -90,7 +90,7 @@ def read_role_by_rolename(
 
 def read_roles_joint_files(
     db: Session, rolenames: List[str]
-) -> List[models.RSTUFTargetFiles]:
+) -> List[models.RSTUFTargetRoles]:
     """
     Read all roles with a name in 'rolenames' joining with
     RSTUFTargetFiles database in the process.

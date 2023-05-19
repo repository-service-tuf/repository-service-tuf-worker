@@ -644,11 +644,11 @@ class MetadataRepository:
                         )
                     )
 
-                # context lock finished
                 self._update_timestamp(
                     self._update_snapshot(bins_targets),
                 )
 
+            # context lock finished
             lock_status_targets = True
 
         except redis.exceptions.LockNotOwnedError:
