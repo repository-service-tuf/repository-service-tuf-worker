@@ -13,7 +13,7 @@ class TargetAction(enum.Enum):
     REMOVE = "REMOVE"
 
 
-class RSTUFTargetRolesCreate(BaseModel):
+class RSTUFTargetRoleCreate(BaseModel):
     rolename: str
     version: int
 
@@ -21,7 +21,7 @@ class RSTUFTargetRolesCreate(BaseModel):
         orm_mode = True
 
 
-class RSTUFTargetFilesCreate(BaseModel):
+class RSTUFTargetFileCreate(BaseModel):
     path: str
     info: Dict[str, Any]
     published: bool

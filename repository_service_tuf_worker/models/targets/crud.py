@@ -13,7 +13,7 @@ def create_roles(
     db: Session, target_roles: List[schemas.RSTUFTargetRolesCreate]
 ) -> List[models.RSTUFTargetRoles]:
     """
-    Create new Target roles
+    Create a new set of Target roles in the DB.
     """
     db_delegated_roles_objects = [
         models.RSTUFTargetRoles(**role.dict()) for role in target_roles
@@ -30,7 +30,7 @@ def create_file(
     target_role: models.RSTUFTargetRoles,
 ) -> models.RSTUFTargetFiles:
     """
-    Create a new Target file
+    Create a new Target file in the DB.
     """
     target_file = models.RSTUFTargetFiles(
         **target_file.dict(), targets_role=target_role.id
@@ -44,7 +44,7 @@ def create_file(
 
 def read_roles_with_unpublished_files(db: Session) -> List[Tuple[str]]:
     """
-    Read Target Roles with contains unpublished Target Files.
+    Read Target Roles containing unpublished Target Files.
     """
     return (
         db.query(
@@ -64,7 +64,7 @@ def read_file_by_path(
     db: Session, path: str
 ) -> Optional[models.RSTUFTargetFiles]:
     """
-    Read the Target File by path (unique value).
+    Read a Target File by a given path (unique value).
     """
     return (
         db.query(models.RSTUFTargetFiles)
@@ -77,7 +77,7 @@ def read_role_by_rolename(
     db: Session, rolename: str
 ) -> Optional[models.RSTUFTargetRoles]:
     """
-    Read Target role by role name
+    Read a Target role by a given role name.
     """
     return (
         db.query(models.RSTUFTargetRoles)
@@ -88,11 +88,12 @@ def read_role_by_rolename(
     )
 
 
-def read_role_with_files_to_add(
+def read_roles_joint_files(
     db: Session, rolenames: List[str]
 ) -> List[models.RSTUFTargetFiles]:
     """
-    Read all unpublished Targets files by Target role names.
+    Read all roles with a name in 'rolenames' joining with
+    RSTUFTargetFiles database in the process.
     """
     return (
         db.query(
@@ -129,7 +130,7 @@ def update_file_path_and_info(
 
 def update_files_to_published(db: Session, paths: List[str]) -> None:
     """
-    Update Target files to `published` to `True`.
+    Update Target Files `published` attribute to `True`.
     """
 
     db.query(models.RSTUFTargetFiles).filter(
@@ -146,7 +147,7 @@ def update_files_to_published(db: Session, paths: List[str]) -> None:
 
 def update_roles_version(db: Session, bins_ids: List[int]) -> None:
     """
-    Update Target roles version +1
+    Update Target roles version +1.
     """
     db.query(models.RSTUFTargetRoles).filter(
         models.RSTUFTargetRoles.id.in_(bins_ids)
@@ -164,7 +165,7 @@ def update_file_action_to_remove(
     db: Session, target: models.RSTUFTargetFiles
 ) -> models.RSTUFTargetFiles:
     """
-    Update Target file `action` to `REMOVE`.
+    Update Target File `action` attribute to `REMOVE`.
     """
     target.published = False
     target.action = schemas.TargetAction.REMOVE
