@@ -321,9 +321,9 @@ class MetadataRepository:
         self, target_roles: Optional[List[str]] = None
     ) -> int:
         """
-        Loads 'snapshot', updates meta info about when passed 'target_roles'
-        role names, bumps version and expiration, signs and persists.
-        Returns new snapshot version.
+        Loads 'snapshot', updates meta info when 'target_roles' role names are
+        given, bumps version and expiration, signs and persists.
+        Returns the new snapshot version.
         """
         snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
 
@@ -332,7 +332,7 @@ class MetadataRepository:
                 self._db, target_roles
             )
 
-            for target_roles in db_target_roles:
+            for target_role in db_target_roles:
                 bins_md: Metadata[Targets] = self._storage_backend.get(
                     target_roles.rolename
                 )
@@ -341,11 +341,13 @@ class MetadataRepository:
                     file.path: TargetFile.from_dict(file.info, file.path)
                     for file in target_roles.target_files
                     if file.action == targets_schema.TargetAction.ADD
-                    # the condition of filtering the files with action 'ADD'
-                    # cannot be done in the CRUD. If a target role doesn't have
-                    # any targets as 'ADD' (only 'REMOVE') it will not return
-                    # the target role and it will be not updated. For example
-                    # when removing the last file from a target role.
+                    # Filtering the files with action 'ADD' cannot be done in
+                    # CRUD. If a target role doesn't have any target files with
+                    # an action 'ADD' (only 'REMOVE') then using CRUD will not
+                    # return the target role and it won't be updated.
+                    # An example can be when there is a role with one target
+                    # file with action "REMOVE" and the CRUD will return None
+                    # for this specific role.
                 }
 
                 # update expiry, bump version and persist to the storage
@@ -643,7 +645,6 @@ class MetadataRepository:
                     )
 
                 # context lock finished
-                # lock_status_targets = True
                 self._update_timestamp(
                     self._update_snapshot(bins_targets),
                 )
