@@ -361,9 +361,9 @@ class MetadataRepository:
                     self._db, [file.path for file in db_role.target_files]
                 )
 
-                snapshot.signed.meta[
-                    f"{db_role.rolename}.json"
-                ] = MetaFile(version=bins_md.signed.version)
+                snapshot.signed.meta[f"{db_role.rolename}.json"] = MetaFile(
+                    version=bins_md.signed.version
+                )
 
             targets_crud.update_roles_version(
                 self._db, [int(db_role.id) for db_role in db_target_roles]
