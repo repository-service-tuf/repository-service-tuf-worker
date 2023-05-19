@@ -345,7 +345,7 @@ class TestMetadataRepository:
 
         monkeypatch.setattr(
             repository.targets_crud,
-            "read_role_with_files_to_add",
+            "read_roles_joint_files",
             pretend.call_recorder(lambda *a: fake_bins_targets),
         )
         monkeypatch.setattr(
@@ -368,7 +368,7 @@ class TestMetadataRepository:
         result = test_repo._update_snapshot(targets)
 
         assert result is snapshot_version
-        assert repository.targets_crud.read_role_with_files_to_add.calls == [
+        assert repository.targets_crud.read_roles_joint_files.calls == [
             pretend.call(test_repo._db, targets)
         ]
         assert repository.TargetFile.from_dict.calls == [
@@ -642,10 +642,10 @@ class TestMetadataRepository:
             pretend.call(
                 "db_session",
                 [
-                    repository.targets_schema.RSTUFTargetRolesCreate(
+                    repository.targets_schema.RSTUFTargetRoleCreate(
                         rolename="bins-0", version=1
                     ),
-                    repository.targets_schema.RSTUFTargetRolesCreate(
+                    repository.targets_schema.RSTUFTargetRoleCreate(
                         rolename="bins-1", version=1
                     ),
                 ],
@@ -972,7 +972,7 @@ class TestMetadataRepository:
         assert repository.targets_crud.create_file.calls == [
             pretend.call(
                 test_repo._db,
-                repository.targets_schema.RSTUFTargetFilesCreate(
+                repository.targets_schema.RSTUFTargetFileCreate(
                     path="file1.tar.gz",
                     info={
                         "length": 11342,
@@ -1183,7 +1183,7 @@ class TestMetadataRepository:
         assert repository.targets_crud.create_file.calls == [
             pretend.call(
                 test_repo._db,
-                repository.targets_schema.RSTUFTargetFilesCreate(
+                repository.targets_schema.RSTUFTargetFileCreate(
                     path="file1.tar.gz",
                     info={
                         "length": 11342,

@@ -19,7 +19,7 @@ class TestCrud:
             add_all=pretend.call_recorder(lambda *a: None),
             commit=pretend.call_recorder(lambda: None),
         )
-        test_target = crud.schemas.RSTUFTargetRolesCreate(
+        test_target = crud.schemas.RSTUFTargetRoleCreate(
             rolename="bins-0",
             version=1,
         )
@@ -44,7 +44,7 @@ class TestCrud:
             commit=pretend.call_recorder(lambda: None),
             refresh=pretend.call_recorder(lambda *a: None),
         )
-        test_target_file = crud.schemas.RSTUFTargetFilesCreate(
+        test_target_file = crud.schemas.RSTUFTargetFileCreate(
             path="file1.tar.gz",
             info={"info": {"k": "v"}},
             published=False,
@@ -146,7 +146,7 @@ class TestCrud:
         assert mocked_filter.filter.calls == [pretend.call(True)]
         assert mocked_first.first.calls == [pretend.call()]
 
-    def test_read_role_with_files_to_add(self, monkeypatch):
+    def test_read_roles_joint_files(self, monkeypatch):
         monkeypatch.setattr(
             crud.models,
             "RSTUFTargetFiles",
@@ -168,7 +168,7 @@ class TestCrud:
             query=pretend.call_recorder(lambda *a: mocked_join)
         )
 
-        test_result = crud.read_role_with_files_to_add(mocked_db, "bin-0")
+        test_result = crud.read_roles_joint_files(mocked_db, "bin-0")
 
         assert test_result == [crud.models.RSTUFTargetRoles]
         assert mocked_db.query.calls == [
@@ -193,7 +193,7 @@ class TestCrud:
             fake_datetime,
         )
 
-        test_target_file = crud.schemas.RSTUFTargetFilesCreate(
+        test_target_file = crud.schemas.RSTUFTargetFileCreate(
             path="file1.tar.gz",
             info={"info": {"k": "v"}},
             rolename="bins-0",
@@ -330,7 +330,7 @@ class TestCrud:
             fake_datetime,
         )
 
-        test_target = crud.schemas.RSTUFTargetFilesCreate(
+        test_target = crud.schemas.RSTUFTargetFileCreate(
             path="file1.tar.gz",
             info={"info": {"k": "v"}},
             rolename="bins-0",

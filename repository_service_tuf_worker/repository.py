@@ -328,18 +328,18 @@ class MetadataRepository:
         snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
 
         if target_roles is not None:
-            db_target_roles = targets_crud.read_role_with_files_to_add(
+            db_target_roles = targets_crud.read_roles_joint_files(
                 self._db, target_roles
             )
 
-            for target_role in db_target_roles:
+            for db_role in db_target_roles:
                 bins_md: Metadata[Targets] = self._storage_backend.get(
-                    target_roles.rolename
+                    db_role.rolename
                 )
                 bins_md.signed.targets.clear()
                 bins_md.signed.targets = {
                     file.path: TargetFile.from_dict(file.info, file.path)
-                    for file in target_roles.target_files
+                    for file in db_role.target_files
                     if file.action == targets_schema.TargetAction.ADD
                     # Filtering the files with action 'ADD' cannot be done in
                     # CRUD. If a target role doesn't have any target files with
@@ -354,19 +354,19 @@ class MetadataRepository:
                 self._bump_expiry(bins_md, BINS)
                 self._bump_version(bins_md)
                 self._sign(bins_md)
-                self._persist(bins_md, target_roles.rolename)
+                self._persist(bins_md, db_role.rolename)
                 # update targetfile in db
                 # note: It update only if is not published see the CRUD.
                 targets_crud.update_files_to_published(
-                    self._db, [file.path for file in target_roles.target_files]
+                    self._db, [file.path for file in db_role.target_files]
                 )
 
                 snapshot.signed.meta[
-                    f"{target_roles.rolename}.json"
+                    f"{db_role.rolename}.json"
                 ] = MetaFile(version=bins_md.signed.version)
 
             targets_crud.update_roles_version(
-                self._db, [int(bins.id) for bins in db_target_roles]
+                self._db, [int(db_role.id) for db_role in db_target_roles]
             )
 
         # update expiry, bump version and persist to the storage
@@ -571,7 +571,7 @@ class MetadataRepository:
 
         # Create all Target Roles in the database RSTUFTargetRoles
         db_target_roles = [
-            targets_schema.RSTUFTargetRolesCreate(
+            targets_schema.RSTUFTargetRoleCreate(
                 rolename=target_role, version=1
             )
             for target_role in succinct_roles.get_roles()
@@ -703,7 +703,7 @@ class MetadataRepository:
             if db_target_file is None:
                 db_target_file = targets_crud.create_file(
                     self._db,
-                    targets_schema.RSTUFTargetFilesCreate(
+                    targets_schema.RSTUFTargetFileCreate(
                         path=target.get("path"),
                         info=target.get("info"),
                         published=False,

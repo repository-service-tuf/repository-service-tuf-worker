@@ -10,7 +10,7 @@ from repository_service_tuf_worker.models.targets import models, schemas
 
 
 def create_roles(
-    db: Session, target_roles: List[schemas.RSTUFTargetRolesCreate]
+    db: Session, target_roles: List[schemas.RSTUFTargetRoleCreate]
 ) -> List[models.RSTUFTargetRoles]:
     """
     Create a new set of Target roles in the DB.
@@ -26,7 +26,7 @@ def create_roles(
 
 def create_file(
     db: Session,
-    target_file: schemas.RSTUFTargetFilesCreate,
+    target_file: schemas.RSTUFTargetFileCreate,
     target_role: models.RSTUFTargetRoles,
 ) -> models.RSTUFTargetFiles:
     """
