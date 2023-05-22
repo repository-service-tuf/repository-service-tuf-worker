@@ -27,13 +27,23 @@ class TestMetadataRepository:
     def test_create_service(self, test_repo):
         assert isinstance(test_repo, repository.MetadataRepository) is True
 
+    def test__settings(self, monkeypatch, test_repo):
+        fake_settings = pretend.stub()
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        result = test_repo._settings
+
+        assert result == fake_settings
+
     def test_refresh_settings_with_none_arg(self, test_repo):
         test_repo.refresh_settings()
 
         assert (
             isinstance(test_repo._worker_settings, repository.Dynaconf) is True
         )
-        assert isinstance(test_repo._settings, repository.Dynaconf) is True
 
     def test_refresh_settings_with_worker_settings_arg(self, test_repo):
         FAKE_SETTINGS_FILE_PATH = "/data/mysettings.ini"
@@ -48,7 +58,6 @@ class TestMetadataRepository:
             test_repo._worker_settings.to_dict()
             == fake_worker_settings.to_dict()
         )
-        assert isinstance(test_repo._settings, repository.Dynaconf) is True
 
     def test_refresh_settings_with_invalid_storage_backend(self, test_repo):
         fake_worker_settings = pretend.stub(
@@ -58,9 +67,13 @@ class TestMetadataRepository:
         with pytest.raises(ValueError):
             test_repo.refresh_settings(fake_worker_settings)
 
-    def test_write_repository_settings(self, test_repo):
+    def test_write_repository_settings(self, monkeypatch, test_repo):
         fake_settings = Dynaconf()
-        test_repo._settings = fake_settings
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         repository.redis_loader.write = pretend.call_recorder(lambda *a: None)
         result = test_repo.write_repository_settings("key", "value")
 
@@ -208,8 +221,13 @@ class TestMetadataRepository:
         self._test_helper_persist(test_repo, "timestamp", 2, "timestamp.json")
 
     def test_bump_expiry(self, monkeypatch, test_repo):
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: 1460)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
@@ -1369,7 +1387,7 @@ class TestMetadataRepository:
 
         assert "At list one target is required" in str(err)
 
-    def test__run_online_roles_bump(self, test_repo):
+    def test__run_online_roles_bump(self, monkeypatch, test_repo):
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
@@ -1396,7 +1414,14 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda r: mocked_get(r)
         )
-        test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: True)
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: True)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         test_repo._bump_version = pretend.call_recorder(lambda *a: None)
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._sign = pretend.call_recorder(lambda *a: None)
@@ -1443,7 +1468,7 @@ class TestMetadataRepository:
         ]
 
     def test__run_online_roles_bump_target_no_online_keys(
-        self, caplog, test_repo
+        self, monkeypatch, caplog, test_repo
     ):
         caplog.set_level(repository.logging.WARNING)
         fake_targets = pretend.stub(
@@ -1472,7 +1497,14 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda r: mocked_get(r)
         )
-        test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: False)
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: False)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         test_repo._bump_version = pretend.call_recorder(lambda *a: None)
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._sign = pretend.call_recorder(lambda *a: None)
@@ -1685,7 +1717,7 @@ class TestMetadataRepository:
         result = test_repo.bump_snapshot()
         assert result is False
 
-    def test_bump_online_roles(self, test_repo):
+    def test_bump_online_roles(self, monkeypatch, test_repo):
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -1693,8 +1725,13 @@ class TestMetadataRepository:
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock)
         )
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         test_repo._run_online_roles_bump = pretend.call_recorder(
             lambda **kw: None
@@ -1712,24 +1749,35 @@ class TestMetadataRepository:
             pretend.call(force=False)
         ]
 
-    def test_bump_online_roles_when_no_bootstrap(self, test_repo):
-        test_repo._settings = pretend.stub(
+    def test_bump_online_roles_when_no_bootstrap(self, monkeypatch, test_repo):
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: None)
         )
-
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         result = test_repo.bump_online_roles()
         assert result is False
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
 
-    def test_bump_online_roles_exception_LockNotOwnedError(self, test_repo):
+    def test_bump_online_roles_exception_LockNotOwnedError(
+        self, monkeypatch, test_repo
+    ):
         @contextmanager
         def mocked_lock(lock, timeout):
             raise repository.redis.exceptions.LockNotOwnedError("timeout")
 
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock)
@@ -1758,8 +1806,13 @@ class TestMetadataRepository:
                 version=1,
             )
         )
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_new_root_md
@@ -1812,8 +1865,13 @@ class TestMetadataRepository:
                 version=1,
             )
         )
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_new_root_md
@@ -1870,7 +1928,9 @@ class TestMetadataRepository:
         ]
         assert repository.datetime.now.calls == [pretend.call()]
 
-    def test_metadata_rotation_online_key_lock_timeout(self, test_repo):
+    def test_metadata_rotation_online_key_lock_timeout(
+        self, monkeypatch, test_repo
+    ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -1883,8 +1943,13 @@ class TestMetadataRepository:
                 version=1,
             )
         )
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_new_root_md
@@ -1929,10 +1994,15 @@ class TestMetadataRepository:
 
         assert "No 'root' in the 'metadata' payload." in str(e)
 
-    def test_metadata_rotation_no_bootstrap(self, test_repo):
+    def test_metadata_rotation_no_bootstrap(self, monkeypatch, test_repo):
         payload = {"metadata": {"root": {}}}
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: None)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         with pytest.raises(RuntimeError) as e:
             test_repo.metadata_rotation(payload)
@@ -1942,7 +2012,9 @@ class TestMetadataRepository:
             pretend.call("BOOTSTRAP")
         ]
 
-    def test_metadata_rotation_unexpected_version_higher(self, test_repo):
+    def test_metadata_rotation_unexpected_version_higher(
+        self, monkeypatch, test_repo
+    ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -1955,8 +2027,13 @@ class TestMetadataRepository:
                 version=1,
             )
         )
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_new_root_md
@@ -1983,7 +2060,9 @@ class TestMetadataRepository:
             pretend.call(repository.Root.type)
         ]
 
-    def test_metadata_rotation_unexpected_version_lower(self, test_repo):
+    def test_metadata_rotation_unexpected_version_lower(
+        self, monkeypatch, test_repo
+    ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -1996,8 +2075,13 @@ class TestMetadataRepository:
                 version=5,
             )
         )
-        test_repo._settings = pretend.stub(
+        fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_new_root_md

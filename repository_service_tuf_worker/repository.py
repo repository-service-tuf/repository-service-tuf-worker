@@ -85,7 +85,6 @@ class MetadataRepository:
 
     def __init__(self):
         self._worker_settings: Dynaconf = get_worker_settings()
-        self._settings: Dynaconf = get_repository_settings()
         self._storage_backend: IStorage = self.refresh_settings().STORAGE
         self._key_storage_backend: IKeyVault = self.refresh_settings().KEYVAULT
         self._db = self.refresh_settings().SQL
@@ -96,6 +95,10 @@ class MetadataRepository:
             "HOURS_BEFORE_EXPIRE", 1
         )
         self._timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
+
+    @property
+    def _settings(self) -> Dynaconf:
+        return get_repository_settings()
 
     @classmethod
     def create_service(cls) -> "MetadataRepository":
