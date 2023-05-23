@@ -267,7 +267,7 @@ class TestCrud:
         assert mocked_db.commit.calls == [pretend.call()]
         assert fake_datetime.now.calls == [pretend.call()]
 
-    def testupdate_roles_version(self, monkeypatch):
+    def test_update_roles_version(self, monkeypatch):
         monkeypatch.setattr(
             crud.models,
             "RSTUFTargetRoles",

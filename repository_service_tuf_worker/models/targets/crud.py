@@ -133,7 +133,9 @@ def update_files_to_published(db: Session, paths: List[str]) -> None:
     Update Target Files `published` attribute to `True`.
     """
 
-    db.query(models.RSTUFTargetFiles).filter(
+    db.query(
+        models.RSTUFTargetFiles
+    ).filter(
         models.RSTUFTargetFiles.published == False,  # noqa
         models.RSTUFTargetFiles.path.in_(paths),
     ).update(
@@ -149,7 +151,9 @@ def update_roles_version(db: Session, bins_ids: List[int]) -> None:
     """
     Update Target roles version +1.
     """
-    db.query(models.RSTUFTargetRoles).filter(
+    db.query(
+        models.RSTUFTargetRoles
+    ).filter(
         models.RSTUFTargetRoles.id.in_(bins_ids)
     ).update(
         {

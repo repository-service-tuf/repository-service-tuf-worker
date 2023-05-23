@@ -742,13 +742,13 @@ class TestMetadataRepository:
             lock=pretend.call_recorder(mocked_lock),
         )
 
-        fake_crud_read_unpublished_rolenames = pretend.call_recorder(
+        fake_crud_read_roles_with_unpublished_files = pretend.call_recorder(
             lambda *a: [("bins-0",), ("bins-e",)]
         )
         monkeypatch.setattr(
             repository.targets_crud,
             "read_roles_with_unpublished_files",
-            fake_crud_read_unpublished_rolenames,
+            fake_crud_read_roles_with_unpublished_files,
         )
         test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
@@ -775,7 +775,7 @@ class TestMetadataRepository:
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=60.0),
         ]
-        assert fake_crud_read_unpublished_rolenames.calls == [
+        assert fake_crud_read_roles_with_unpublished_files.calls == [
             pretend.call(test_repo._db)
         ]
         assert test_repo._update_snapshot.calls == [
@@ -796,13 +796,13 @@ class TestMetadataRepository:
             lock=pretend.call_recorder(mocked_lock),
         )
 
-        fake_crud_read_unpublished_rolenames = pretend.call_recorder(
+        fake_crud_read_roles_with_unpublished_files = pretend.call_recorder(
             lambda *a: [("bins-0",), ("bins-e",)]
         )
         monkeypatch.setattr(
             repository.targets_crud,
             "read_roles_with_unpublished_files",
-            fake_crud_read_unpublished_rolenames,
+            fake_crud_read_roles_with_unpublished_files,
         )
         test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
@@ -830,7 +830,7 @@ class TestMetadataRepository:
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=60.0),
         ]
-        assert fake_crud_read_unpublished_rolenames.calls == [
+        assert fake_crud_read_roles_with_unpublished_files.calls == [
             pretend.call(test_repo._db)
         ]
         assert test_repo._update_snapshot.calls == [
@@ -867,12 +867,12 @@ class TestMetadataRepository:
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock),
         )
-        fake_crud_read_unpublished_rolenames = pretend.call_recorder(
+        fake_crud_read_roles_with_unpublished_files = pretend.call_recorder(
             lambda *a: None
         )
         monkeypatch.setattr(
             repository.targets_crud,
-            "read_roles_with_unpublished_files",
+            fake_crud_read_roles_with_unpublished_files,
             fake_crud_read_unpublished_rolenames,
         )
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
