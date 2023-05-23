@@ -872,8 +872,8 @@ class TestMetadataRepository:
         )
         monkeypatch.setattr(
             repository.targets_crud,
+            "read_roles_with_unpublished_files",
             fake_crud_read_roles_with_unpublished_files,
-            fake_crud_read_unpublished_rolenames,
         )
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_datetime = pretend.stub(
