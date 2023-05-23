@@ -25,15 +25,15 @@ class TestCrud:
         )
         test_result = crud.create_roles(mocked_db, [test_target])
         assert test_result == ["test_target_roles"]
+        assert crud.models.RSTUFTargetRoles.calls == [
+            pretend.call(
+                rolename=test_target.rolename, version=test_target.version
+            )
+        ]
         assert mocked_db.add_all.calls == [pretend.call(["test_target_roles"])]
         assert mocked_db.commit.calls == [pretend.call()]
 
     def test_create_file(self, monkeypatch):
-        monkeypatch.setattr(
-            crud.models,
-            "RSTUFTargetRoles",
-            pretend.call_recorder(lambda *a, **kw: "test_target_roles"),
-        )
         monkeypatch.setattr(
             crud.models,
             "RSTUFTargetFiles",
@@ -56,6 +56,16 @@ class TestCrud:
             mocked_db, test_target_file, test_target_role
         )
         assert test_result == "test_target_files"
+        assert crud.models.RSTUFTargetFiles.calls == [
+            pretend.call(
+                path=test_target_file.path,
+                info=test_target_file.info,
+                published=False,
+                action=crud.schemas.TargetAction.ADD,
+                last_update=None,
+                targets_role=256,
+            )
+        ]
         assert mocked_db.add.calls == [pretend.call("test_target_files")]
         assert mocked_db.commit.calls == [pretend.call()]
         assert mocked_db.refresh.calls == [pretend.call("test_target_files")]
@@ -65,11 +75,11 @@ class TestCrud:
             crud.models, "RSTUFTargetFiles", pretend.stub(published=False)
         )
         monkeypatch.setattr(
-            crud.models, "RSTUFTargetRoles", pretend.stub(rolename="bin-0")
+            crud.models, "RSTUFTargetRoles", pretend.stub(rolename="bins-0")
         )
         mocked_all = pretend.stub(
             all=pretend.call_recorder(
-                lambda: [(False, "bin-e"), (False, "bin-3")]
+                lambda: [(False, "bins-e"), (False, "bins-3")]
             )
         )
         mocked_distinct = pretend.stub(
@@ -90,13 +100,13 @@ class TestCrud:
 
         test_result = crud.read_roles_with_unpublished_files(mocked_db)
 
-        assert test_result == [(False, "bin-e"), (False, "bin-3")]
-        assert mocked_db.query.calls == [pretend.call("bin-0")]
+        assert test_result == [(False, "bins-e"), (False, "bins-3")]
+        assert mocked_db.query.calls == [pretend.call("bins-0")]
         assert mocked_join.join.calls == [
             pretend.call(crud.models.RSTUFTargetFiles)
         ]
         assert mocked_filter.filter.calls == [pretend.call(True)]
-        assert mocked_order_by.order_by.calls == [pretend.call("bin-0")]
+        assert mocked_order_by.order_by.calls == [pretend.call("bins-0")]
         assert mocked_distinct.distinct.calls == [pretend.call()]
         assert mocked_all.all.calls == [pretend.call()]
 
@@ -125,7 +135,7 @@ class TestCrud:
 
     def test_read_role_by_rolename(self, monkeypatch):
         monkeypatch.setattr(
-            crud.models, "RSTUFTargetRoles", pretend.stub(rolename="bin-0")
+            crud.models, "RSTUFTargetRoles", pretend.stub(rolename="bins-0")
         )
         mocked_first = pretend.stub(
             first=pretend.call_recorder(lambda: [crud.models.RSTUFTargetRoles])
@@ -137,7 +147,7 @@ class TestCrud:
             query=pretend.call_recorder(lambda *a: mocked_filter)
         )
 
-        test_result = crud.read_role_by_rolename(mocked_db, "bin-0")
+        test_result = crud.read_role_by_rolename(mocked_db, "bins-0")
 
         assert test_result == [crud.models.RSTUFTargetRoles]
         assert mocked_db.query.calls == [
@@ -146,12 +156,7 @@ class TestCrud:
         assert mocked_filter.filter.calls == [pretend.call(True)]
         assert mocked_first.first.calls == [pretend.call()]
 
-    def test_read_roles_joint_files(self, monkeypatch):
-        monkeypatch.setattr(
-            crud.models,
-            "RSTUFTargetFiles",
-            pretend.stub(action=crud.schemas.TargetAction.ADD),
-        )
+    def test_read_roles_joint_files(self):
         crud.models.RSTUFTargetRoles = pretend.stub(
             rolename=pretend.stub(in_=pretend.call_recorder(lambda *a: True))
         )
@@ -168,13 +173,19 @@ class TestCrud:
             query=pretend.call_recorder(lambda *a: mocked_join)
         )
 
-        test_result = crud.read_roles_joint_files(mocked_db, "bin-0")
+        test_result = crud.read_roles_joint_files(mocked_db, "bins-0")
 
         assert test_result == [crud.models.RSTUFTargetRoles]
         assert mocked_db.query.calls == [
             pretend.call(crud.models.RSTUFTargetRoles)
         ]
         assert mocked_filter.filter.calls == [pretend.call(True)]
+        assert crud.models.RSTUFTargetRoles.rolename.in_.calls == [
+            pretend.call("bins-0")
+        ]
+        assert mocked_join.join.calls == [
+            pretend.call(crud.models.RSTUFTargetFiles)
+        ]
         assert mocked_all.all.calls == [pretend.call()]
 
     def test_update_file_path_and_info(self, monkeypatch):
@@ -258,6 +269,9 @@ class TestCrud:
         assert mocked_db.query.calls == [
             pretend.call(crud.models.RSTUFTargetFiles)
         ]
+        assert crud.models.RSTUFTargetFiles.path.in_.calls == [
+            pretend.call(test_targets)
+        ]
         assert mocked_filter.filter.calls == [
             pretend.call(False, test_targets)
         ]
@@ -302,6 +316,7 @@ class TestCrud:
         assert mocked_db.query.calls == [
             pretend.call(crud.models.RSTUFTargetRoles)
         ]
+        assert crud.models.RSTUFTargetRoles.id.in_.calls == [pretend.call([4])]
         assert mocked_filter.filter.calls == [pretend.call(4)]
         assert mocked_update.update.calls == [
             pretend.call(
