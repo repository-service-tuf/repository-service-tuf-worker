@@ -149,9 +149,7 @@ def update_roles_version(db: Session, bins_ids: List[int]) -> None:
     """
     Update Target roles version +1.
     """
-    db.query(
-        models.RSTUFTargetRoles
-    ).filter(
+    db.query(models.RSTUFTargetRoles).filter(
         models.RSTUFTargetRoles.id.in_(bins_ids)
     ).update(
         {
