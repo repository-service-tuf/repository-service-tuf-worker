@@ -218,6 +218,38 @@ class TestMetadataRepository:
     def test__persist_file_has_number_name(self, test_repo):
         self._test_helper_persist(test_repo, "bin-3", 2, "2.bin-3.json")
 
+    def test__persist_root(self, test_repo):
+        fake_bytes = b""
+
+        fake_role = pretend.stub(
+            signed=pretend.stub(version=3),
+            to_bytes=pretend.call_recorder(lambda *a, **kw: fake_bytes),
+        )
+
+        repository.JSONSerializer = pretend.call_recorder(lambda: None)
+
+        test_repo._storage_backend = pretend.stub(
+            put=pretend.call_recorder(lambda *a: None)
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        test_result = test_repo._persist(fake_role, "root")
+        assert test_result == "3.root.json"
+        assert fake_role.to_bytes.calls == [
+            pretend.call(repository.JSONSerializer())
+        ]
+        assert test_repo._storage_backend.put.calls == [
+            pretend.call(
+                fake_bytes,
+                "3.root.json",
+            )
+        ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_SIGNING", None)
+        ]
+
     def test__persist_timestamp(self, test_repo):
         self._test_helper_persist(test_repo, "timestamp", 2, "timestamp.json")
 
@@ -613,65 +645,7 @@ class TestMetadataRepository:
             ),
         ]
 
-    def test_save_settings(self, test_repo):
-        fake_root_md = pretend.stub(
-            type="root",
-            signatures=[{"keyid": "sig1"}, {"keyid": "sig2"}],
-            signed=pretend.stub(
-                roles={"root": pretend.stub(threshold=1)},
-            ),
-        )
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: None
-        )
-        payload_settings = {
-            "expiration": {
-                "root": 365,
-                "targets": 365,
-                "snapshot": 1,
-                "timestamp": 1,
-                "bins": 1,
-            },
-            "services": {
-                "targets_base_url": "http://www.example.com/repository/",
-                "number_of_delegated_bins": 4,
-                "targets_online_key": True,
-            },
-        }
-
-        result = test_repo.save_settings(fake_root_md, payload_settings)
-        assert result is None
-        assert test_repo.write_repository_settings.calls == [
-            pretend.call("ROOT_EXPIRATION", 365),
-            pretend.call("ROOT_THRESHOLD", 1),
-            pretend.call("ROOT_NUM_KEYS", 2),
-            pretend.call("TARGETS_EXPIRATION", 365),
-            pretend.call("TARGETS_THRESHOLD", 1),
-            pretend.call("TARGETS_NUM_KEYS", 1),
-            pretend.call("SNAPSHOT_EXPIRATION", 1),
-            pretend.call("SNAPSHOT_THRESHOLD", 1),
-            pretend.call("SNAPSHOT_NUM_KEYS", 1),
-            pretend.call("TIMESTAMP_EXPIRATION", 1),
-            pretend.call("TIMESTAMP_THRESHOLD", 1),
-            pretend.call("TIMESTAMP_NUM_KEYS", 1),
-            pretend.call("BINS_EXPIRATION", 1),
-            pretend.call("BINS_THRESHOLD", 1),
-            pretend.call("BINS_NUM_KEYS", 1),
-            pretend.call("NUMBER_OF_DELEGATED_BINS", 4),
-            pretend.call(
-                "TARGETS_BASE_URL", "http://www.example.com/repository/"
-            ),
-            pretend.call("TARGETS_ONLINE_KEY", True),
-        ]
-
-    def test_bootstrap(self, monkeypatch, test_repo):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test__bootstrap_online_roles(self, test_repo, monkeypatch):
         fake_root_md = pretend.stub(
             type="root",
             signed=pretend.stub(
@@ -679,8 +653,13 @@ class TestMetadataRepository:
                 keys={"online_key_id": "online_public_key"},
             ),
         )
-        repository.Metadata.from_dict = pretend.call_recorder(
-            lambda *a: fake_root_md
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: 4)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         repository.Targets.add_key = pretend.call_recorder(lambda *a: None)
         repository.SSlibKey.from_securesystemslib_key = pretend.call_recorder(
@@ -693,7 +672,6 @@ class TestMetadataRepository:
         )
         fake_online_public_key = pretend.stub(key_dict={"k": "v"})
         test_repo._db = "db_session"
-        test_repo.save_settings = pretend.call_recorder(lambda *a: None)
         test_repo._key_storage_backend.get = pretend.call_recorder(
             lambda *a: fake_online_public_key
         )
@@ -704,24 +682,8 @@ class TestMetadataRepository:
             lambda *a: None
         )
 
-        payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
-            "metadata": {
-                "root": {"md_k1": "md_v1"},
-            },
-            "task_id": "fake_task_id",
-        }
-
-        result = test_repo.bootstrap(payload)
-        assert result == {
-            "details": {"bootstrap": True},
-            "last_update": fake_time,
-            "status": "Task finished.",
-        }
-        assert fake_datetime.now.calls == [pretend.call()]
-        assert repository.Metadata.from_dict.calls == [
-            pretend.call(payload["metadata"]["root"])
-        ]
+        result = test_repo._bootstrap_online_roles(fake_root_md, "task_id")
+        assert result is None
         assert repository.SSlibKey.from_securesystemslib_key.calls == [
             pretend.call({"k": "v"}),
             pretend.call({"k": "v"}),
@@ -739,15 +701,13 @@ class TestMetadataRepository:
                 ],
             )
         ]
-        assert test_repo.save_settings.calls == [
-            pretend.call(fake_root_md, payload.get("settings"))
-        ]
         assert test_repo._key_storage_backend.get.calls == [
             pretend.call("online_public_key"),
             pretend.call("online_public_key"),
         ]
         assert test_repo.write_repository_settings.calls == [
-            pretend.call("BOOTSTRAP", "fake_task_id")
+            pretend.call("ROOT", None),
+            pretend.call("BOOTSTRAP", "task_id"),
         ]
         # Special checks as calls use metadata object instances
 
@@ -780,7 +740,6 @@ class TestMetadataRepository:
             call.args[1] for call in test_repo._persist.calls
         ]
         assert _persist_persist_role_names == [
-            "root",
             "bins-0",
             "bins-1",
             "targets",
@@ -793,32 +752,76 @@ class TestMetadataRepository:
         for call in test_repo._sign.calls:
             assert len(call.args) == 1
             assert isinstance(call.args[0], repository.Metadata)
-        # Assert the number of calls test_repos._sign excluding root which we
-        # don't sign during the worker bootstrap process. This check guarantees
-        # that all signed metadata is persisted.
-        assert len(test_repo._sign.calls) == len(test_repo._persist.calls) - 1
+        # Assert the number of calls test_repos._sign
+        assert len(test_repo._sign.calls) == len(test_repo._persist.calls)
 
-    def test_bootstrap_missing_settings(self, test_repo):
-        payload = {
-            "metadata": {
-                "root": {"md_k1": "md_v1"},
-            },
-        }
+    def test__validate_signatures(self, test_repo):
+        fake_public_key = pretend.stub(
+            verify_signature=pretend.call_recorder(lambda *a: True)
+        )
+        fake_metadata = pretend.stub(
+            signatures=["keyid1", "keyid2"],
+            signed=pretend.stub(
+                keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
+                roles={
+                    "root": pretend.stub(
+                        keyids={"keyid1": "key", "keyid2": "key"},
+                        threshold=2,
+                    )
+                },
+            ),
+        )
 
-        with pytest.raises(KeyError) as err:
-            test_repo.bootstrap(payload)
+        result = test_repo._validate_signatures(fake_metadata, "root")
+        assert result is True
+        assert fake_public_key.verify_signature.calls == [
+            pretend.call(fake_metadata),
+            pretend.call(fake_metadata),
+        ]
 
-        assert "No 'settings' in the payload" in str(err)
+    def test__validate_signatures_without_signatures(self, test_repo):
+        fake_public_key = pretend.stub(
+            verify_signature=pretend.call_recorder(lambda *a: True)
+        )
+        fake_metadata = pretend.stub(
+            signatures=[],
+            signed=pretend.stub(
+                keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
+                roles={
+                    "root": pretend.stub(
+                        keyids={"keyid1": "key", "keyid2": "key"},
+                        threshold=2,
+                    )
+                },
+            ),
+        )
 
-    def test_bootstrap_missing_metadata(self, test_repo):
-        payload = {
-            "settings": {"k": "v"},
-        }
+        with pytest.raises(repository.RepositoryError) as err:
+            test_repo._validate_signatures(fake_metadata, "root")
+        assert "At least one initial signature is required" in str(err)
 
-        with pytest.raises(KeyError) as err:
-            test_repo.bootstrap(payload)
+    def test__validate_signatures_incomplete_signatures(self, test_repo):
+        fake_public_key = pretend.stub(
+            verify_signature=pretend.call_recorder(lambda *a: True)
+        )
+        fake_metadata = pretend.stub(
+            signatures=["keyid1"],
+            signed=pretend.stub(
+                keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
+                roles={
+                    "root": pretend.stub(
+                        keyids={"keyid1": "key", "keyid2": "key"},
+                        threshold=2,
+                    )
+                },
+            ),
+        )
 
-        assert "No 'metadata' in the payload" in str(err)
+        result = test_repo._validate_signatures(fake_metadata, "root")
+        assert result is False
+        assert fake_public_key.verify_signature.calls == [
+            pretend.call(fake_metadata),
+        ]
 
     def test_update_settings(self, test_repo):
         test_repo.write_repository_settings = pretend.call_recorder(
@@ -933,6 +936,275 @@ class TestMetadataRepository:
             pretend.call(f"{Targets.type.upper()}_EXPIRATION", TARGETS_EXP),
             pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
         ]
+
+    def test_publish_targets(self, test_repo, monkeypatch):
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
+    def test__validate_signatures_not_authorized(self, test_repo):
+        fake_public_key = pretend.stub(
+            verify_signature=pretend.call_recorder(lambda *a: True)
+        )
+        fake_metadata = pretend.stub(
+            signatures=["keyid1", "keyid3"],
+            signed=pretend.stub(
+                keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
+                roles={
+                    "root": pretend.stub(
+                        keyids={"keyid1": "key", "keyid2": "key"},
+                        threshold=2,
+                    )
+                },
+            ),
+        )
+
+        with pytest.raises(repository.RepositoryError) as err:
+            test_repo._validate_signatures(fake_metadata, "root")
+        assert "not authorized" in str(err)
+        assert fake_public_key.verify_signature.calls == [
+            pretend.call(fake_metadata),
+        ]
+
+    def test__validate_signatures_no_key_for_signature(self, test_repo):
+        fake_public_key = pretend.stub(
+            verify_signature=pretend.call_recorder(lambda *a: True)
+        )
+        fake_metadata = pretend.stub(
+            signatures=["keyid1", "keyid3"],
+            signed=pretend.stub(
+                keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
+                roles={
+                    "root": pretend.stub(
+                        keyids={"keyid1": "key", "keyid3": "key"},
+                        threshold=2,
+                    )
+                },
+            ),
+        )
+
+        with pytest.raises(repository.RepositoryError) as err:
+            test_repo._validate_signatures(fake_metadata, "root")
+        assert "no key for signature" in str(err)
+        assert fake_public_key.verify_signature.calls == [
+            pretend.call(fake_metadata),
+        ]
+
+    def test_save_settings(self, test_repo):
+        fake_root_md = pretend.stub(
+            type="root",
+            signatures=[{"keyid": "sig1"}, {"keyid": "sig2"}],
+            signed=pretend.stub(
+                roles={"root": pretend.stub(threshold=1)},
+            ),
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        payload_settings = {
+            "expiration": {
+                "root": 365,
+                "targets": 365,
+                "snapshot": 1,
+                "timestamp": 1,
+                "bins": 1,
+            },
+            "services": {
+                "targets_base_url": "http://www.example.com/repository/",
+                "number_of_delegated_bins": 4,
+                "targets_online_key": True,
+            },
+        }
+
+        result = test_repo.save_settings(fake_root_md, payload_settings)
+        assert result is None
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_EXPIRATION", 365),
+            pretend.call("ROOT_THRESHOLD", 1),
+            pretend.call("ROOT_NUM_KEYS", 2),
+            pretend.call("TARGETS_EXPIRATION", 365),
+            pretend.call("TARGETS_THRESHOLD", 1),
+            pretend.call("TARGETS_NUM_KEYS", 1),
+            pretend.call("SNAPSHOT_EXPIRATION", 1),
+            pretend.call("SNAPSHOT_THRESHOLD", 1),
+            pretend.call("SNAPSHOT_NUM_KEYS", 1),
+            pretend.call("TIMESTAMP_EXPIRATION", 1),
+            pretend.call("TIMESTAMP_THRESHOLD", 1),
+            pretend.call("TIMESTAMP_NUM_KEYS", 1),
+            pretend.call("BINS_EXPIRATION", 1),
+            pretend.call("BINS_THRESHOLD", 1),
+            pretend.call("BINS_NUM_KEYS", 1),
+            pretend.call("NUMBER_OF_DELEGATED_BINS", 4),
+            pretend.call(
+                "TARGETS_BASE_URL", "http://www.example.com/repository/"
+            ),
+            pretend.call("TARGETS_ONLINE_KEY", True),
+        ]
+
+    def test_bootstrap(self, monkeypatch, test_repo):
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+        fake_root_md = pretend.stub(
+            type="root",
+            signed=pretend.stub(
+                roles={
+                    "root": pretend.stub(
+                        keyids=["keyid1", "keyid2"], threshold=2
+                    ),
+                    "timestamp": pretend.stub(
+                        keyids=["online_key_id"], threshold=2
+                    ),
+                },
+                keys={"online_key_id": "online_public_key"},
+            ),
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_root_md
+        )
+        test_repo._validate_signatures = pretend.call_recorder(lambda *a: True)
+        test_repo._db = "db_session"
+        test_repo.save_settings = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        test_repo._bootstrap_online_roles = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        payload = {
+            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "metadata": {
+                "root": {"md_k1": "md_v1"},
+            },
+            "task_id": "fake_task_id",
+        }
+
+        result = test_repo.bootstrap(payload)
+        assert result == {
+            "details": {
+                "bootstrap": True,
+                "signature": "complete",
+                "message": "Bootstrap finished",
+            },
+            "last_update": fake_time,
+            "status": "Task finished.",
+        }
+        assert fake_datetime.now.calls == [pretend.call()]
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call(payload["metadata"]["root"])
+        ]
+        assert test_repo.save_settings.calls == [
+            pretend.call(fake_root_md, payload.get("settings"))
+        ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("BOOTSTRAP", "fake_task_id")
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(fake_root_md, repository.Root.type)
+        ]
+        assert test_repo._bootstrap_online_roles.calls == [
+            pretend.call(fake_root_md, "fake_task_id")
+        ]
+
+    def test_bootstrap_distributed_async_sign(self, monkeypatch, test_repo):
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+        fake_root_md = pretend.stub(
+            type="root",
+            signed=pretend.stub(
+                roles={
+                    "root": pretend.stub(
+                        keyids=["keyid1", "keyid2"], threshold=2
+                    ),
+                    "timestamp": pretend.stub(
+                        keyids=["online_key_id"], threshold=2
+                    ),
+                },
+                keys={"online_key_id": "online_public_key"},
+                version=1,
+            ),
+            to_dict=pretend.call_recorder(lambda: {"root": "fake_md"}),
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_root_md
+        )
+        test_repo._validate_signatures = pretend.call_recorder(
+            lambda *a: False
+        )
+        test_repo._db = "db_session"
+        test_repo.save_settings = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        test_repo._bootstrap_online_roles = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        payload = {
+            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "metadata": {
+                "root": {"md_k1": "md_v1"},
+            },
+            "task_id": "fake_task_id",
+        }
+
+        result = test_repo.bootstrap(payload)
+        assert result == {
+            "details": {
+                "bootstrap": False,
+                "signature": "pending",
+                "message": "Root version 1 is pending sign",
+            },
+            "last_update": fake_time,
+            "status": "Task finished.",
+        }
+        assert fake_datetime.now.calls == [pretend.call()]
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call(payload["metadata"]["root"])
+        ]
+        assert test_repo.save_settings.calls == [
+            pretend.call(fake_root_md, payload.get("settings"))
+        ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_SIGNING", {"root": "fake_md"}),
+            pretend.call("BOOTSTRAP", "signing-fake_task_id"),
+        ]
+        assert fake_root_md.to_dict.calls == [pretend.call()]
+        assert test_repo._persist.calls == []
+        assert test_repo._bootstrap_online_roles.calls == []
+
+    def test_bootstrap_missing_settings(self, test_repo):
+        payload = {
+            "metadata": {
+                "root": {"md_k1": "md_v1"},
+            },
+        }
+
+        with pytest.raises(KeyError) as err:
+            test_repo.bootstrap(payload)
+
+        assert "No 'settings' in the payload" in str(err)
+
+    def test_bootstrap_missing_metadata(self, test_repo):
+        payload = {
+            "settings": {"k": "v"},
+        }
+
+        with pytest.raises(KeyError) as err:
+            test_repo.bootstrap(payload)
+
+        assert "No 'metadata' in the payload" in str(err)
 
     def test_publish_targets(self, test_repo, monkeypatch):
         @contextmanager
@@ -2174,6 +2446,7 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_old_root_md
         )
+        test_repo._validate_signatures = pretend.call_recorder(lambda *a: True)
         test_repo._trusted_root_update = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
         fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
@@ -2195,12 +2468,58 @@ class TestMetadataRepository:
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
         ]
+        assert test_repo._validate_signatures.calls == [
+            pretend.call(fake_new_root_md, "root")
+        ]
         assert test_repo._trusted_root_update.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
         ]
         assert test_repo._persist.calls == [
             pretend.call(fake_new_root_md, repository.Root.type)
         ]
+        assert repository.datetime.now.calls == [pretend.call()]
+
+    def test__root_metadata_update_distributed_async_sign(
+        self, monkeypatch, test_repo
+    ):
+        fake_new_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                version=2,
+            ),
+            to_dict=pretend.call_recorder(lambda: {"root": "fake_md"}),
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda *a: "fake_old_md"
+        )
+        test_repo._validate_signatures = pretend.call_recorder(
+            lambda *a: False
+        )
+        test_repo._trusted_root_update = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+        result = test_repo._root_metadata_update(fake_new_root_md)
+
+        assert result == {
+            "status": "Task finished.",
+            "details": {"message": "Root version 2 pending sign."},
+            "last_update": fake_time,
+        }
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(repository.Root.type)
+        ]
+        test_repo._validate_signatures.calls == [
+            pretend.call(fake_new_root_md, "root")
+        ]
+        assert fake_new_root_md.to_dict.calls == [pretend.call()]
+        assert test_repo._trusted_root_update.calls == []
+        assert test_repo._persist.calls == []
         assert repository.datetime.now.calls == [pretend.call()]
 
     def test__root_metadata_update_online_key(self, monkeypatch, test_repo):
@@ -2219,6 +2538,7 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_old_root_md
         )
+        test_repo._validate_signatures = pretend.call_recorder(lambda *a: True)
         test_repo._trusted_root_update = pretend.call_recorder(lambda *a: None)
 
         @contextmanager
@@ -2250,6 +2570,9 @@ class TestMetadataRepository:
         }
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
+        ]
+        assert test_repo._validate_signatures.calls == [
+            pretend.call(fake_new_root_md, "root")
         ]
         assert test_repo._trusted_root_update.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
@@ -2291,6 +2614,7 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_old_root_md
         )
+        test_repo._validate_signatures = pretend.call_recorder(lambda *a: True)
         test_repo._trusted_root_update = pretend.call_recorder(lambda *a: None)
 
         @contextmanager
@@ -2307,13 +2631,22 @@ class TestMetadataRepository:
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
         ]
+        test_repo._validate_signatures.calls == [
+            pretend.call(fake_new_root_md, "root")
+        ]
         assert test_repo._trusted_root_update.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
         ]
 
     def test_metadata_update(self, monkeypatch, test_repo):
+        def get_fresh_settings(key):
+            if key == "BOOTSTRAP":
+                return "fake_bootstrap_id"
+            elif key == "ROOT_SIGNING":
+                return None
+
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+            get_fresh=pretend.call_recorder(get_fresh_settings)
         )
         monkeypatch.setattr(
             repository,
@@ -2338,7 +2671,8 @@ class TestMetadataRepository:
             pretend.call("fake_md")
         ]
         assert test_repo._settings.get_fresh.calls == [
-            pretend.call("BOOTSTRAP")
+            pretend.call("BOOTSTRAP"),
+            pretend.call("ROOT_SIGNING"),
         ]
 
     def test_metadata_update_invalid_metadata_type(
@@ -2398,6 +2732,84 @@ class TestMetadataRepository:
             pretend.call("BOOTSTRAP")
         ]
 
+    def test_metadata_update_bootstrap_pre_state(self, monkeypatch, test_repo):
+        payload = {"metadata": {"root": {}}}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "pre-task_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        with pytest.raises(repository.RepositoryError) as e:
+            test_repo.metadata_update(payload)
+
+        assert "Metadata Update requires a complete bootstrap" in str(e)
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
+    def test_metadata_update_bootstrap_signing_state(
+        self, monkeypatch, test_repo
+    ):
+        payload = {"metadata": {"root": {}}}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "signing-task_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        with pytest.raises(repository.RepositoryError) as e:
+            test_repo.metadata_update(payload)
+
+        assert "Metadata Update requires a complete bootstrap" in str(e)
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
+    def test_metadata_update_root_signing(self, monkeypatch, test_repo):
+        def get_fresh_settings(key):
+            if key == "BOOTSTRAP":
+                return "fake_bootstrap_id"
+            elif key == "ROOT_SIGNING":
+                return pretend.stub(
+                    to_dict=pretend.call_recorder(
+                        lambda: {"root": "fake_signing_md"}
+                    )
+                )
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(get_fresh_settings)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: pretend.stub(signed=pretend.stub(version=5))
+        )
+        test_repo._root_metadata_update = pretend.call_recorder(
+            lambda *a: "fake_result"
+        )
+
+        payload = {"metadata": {"root": "root_metadata"}}
+        with pytest.raises(repository.RepositoryError) as err:
+            test_repo.metadata_update(payload)
+
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP"),
+            pretend.call("ROOT_SIGNING"),
+        ]
+        assert "Root update process to version" in str(err)
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call({"root": "fake_signing_md"})
+        ]
+        assert test_repo._root_metadata_update.calls == []
+
     def test_metadata_rotation_deprecation_warning(self, test_repo, caplog):
         caplog.set_level(repository.logging.WARNING)
         payload = {"metadata": {"root": "fake_root"}}
@@ -2417,3 +2829,304 @@ class TestMetadataRepository:
                 ),
             )
         ]
+
+    def test__sign_root(self, monkeypatch, test_repo):
+        fake_settings = pretend.stub(
+            ROOT_SIGNING=pretend.stub(to_dict={"metadata": "fake_root"}),
+            get_fresh=pretend.call_recorder(lambda *a: "fake-id"),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo._validate_signatures = pretend.call_recorder(lambda *a: True)
+        test_repo._root_metadata_update = pretend.call_recorder(
+            lambda *a: None
+        )
+        fake_root_md = pretend.stub(signed=pretend.stub(version=3))
+
+        result, message = test_repo._sign_root(fake_root_md)
+
+        assert result is True
+        assert message == f"Root version {fake_root_md.signed.version} signed."
+        assert fake_settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._validate_signatures.calls == [
+            pretend.call(fake_root_md, "root")
+        ]
+        assert test_repo._root_metadata_update.calls == [
+            pretend.call(fake_root_md)
+        ]
+
+    def test__sign_root_for_bootstrap(self, monkeypatch, test_repo):
+        fake_settings = pretend.stub(
+            ROOT_SIGNING=pretend.stub(to_dict={"metadata": "fake_root"}),
+            get_fresh=pretend.call_recorder(lambda *a: "signing-fake_id"),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo._validate_signatures = pretend.call_recorder(lambda *a: True)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        test_repo._bootstrap_online_roles = pretend.call_recorder(
+            lambda *a: None
+        )
+        fake_root_md = pretend.stub(signed=pretend.stub(version=3))
+
+        result, message = test_repo._sign_root(fake_root_md)
+
+        assert result is True
+        assert message == "Bootstrap finished"
+        assert fake_settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._validate_signatures.calls == [
+            pretend.call(fake_root_md, "root")
+        ]
+        assert test_repo._persist.calls == [pretend.call(fake_root_md, "root")]
+        assert test_repo._bootstrap_online_roles.calls == [
+            pretend.call(fake_root_md, "fake_id")
+        ]
+
+    def test__sign_root_but_still_pending_signatures_for_threshold(
+        self, monkeypatch, test_repo
+    ):
+        fake_settings = pretend.stub(
+            ROOT_SIGNING=pretend.stub(to_dict={"metadata": "fake_root"}),
+            get_fresh=pretend.call_recorder(lambda *a: "fake_id"),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo._validate_signatures = pretend.call_recorder(
+            lambda *a: False
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        fake_root_md = pretend.stub(
+            signed=pretend.stub(version=3),
+            to_dict=pretend.call_recorder(lambda *a: {"root": "fake_md"}),
+        )
+
+        result, message = test_repo._sign_root(fake_root_md)
+
+        assert result is False
+        assert (
+            message
+            == f"Root version {fake_root_md.signed.version} pending sign."
+        )
+        assert fake_settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_SIGNING", {"root": "fake_md"})
+        ]
+
+    def test__sign_metadata(self, test_repo, monkeypatch):
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
+        def fake_get_fresh(var_name):
+            if var_name == "BOOTSTRAP":
+                return "signing-fake_id"
+            else:
+                return pretend.stub(
+                    to_dict=pretend.call_recorder(lambda: {"metadata": "fake"})
+                )
+
+        fake_settings = pretend.stub(
+            ROOT_SIGNING=pretend.stub(to_dict={"metadata": "fake_root"}),
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_root_md = pretend.stub(signatures={})
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_root_md
+        )
+        repository.Signature.from_dict = pretend.call_recorder(
+            lambda *a: pretend.stub(keyid="fake_sig")
+        )
+        test_repo._sign_root = pretend.call_recorder(
+            lambda *a: (True, "Signature root added")
+        )
+
+        payload = {
+            "role": "root",
+            "signature": {"keyid": "keyid2", "sig": "sig2"},
+        }
+        result = test_repo.sign_metadata(payload)
+
+        assert result == {
+            "status": "Task finished.",
+            "details": {"signed": True, "message": "Signature root added"},
+            "last_update": fake_time,
+        }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP"),
+            pretend.call("ROOT_SIGNING"),
+        ]
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call({"metadata": "fake"})
+        ]
+        assert repository.Signature.from_dict.calls == [
+            pretend.call(payload["signature"])
+        ]
+        assert test_repo._sign_root.calls == [pretend.call(fake_root_md)]
+
+    def test__sign_metadata_no_bootstrap(self, test_repo, monkeypatch):
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
+        def fake_get_fresh(var_name):
+            if var_name == "BOOTSTRAP":
+                return None
+            else:
+                return pretend.stub(
+                    to_dict=pretend.call_recorder(lambda: {"metadata": "fake"})
+                )
+
+        fake_settings = pretend.stub(
+            TARGETS_SIGNING={"metadata": "fake"},
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        payload = {
+            "role": "root",
+            "signature": {"keyid": "keyid2", "sig": "sig2"},
+        }
+        result = test_repo.sign_metadata(payload)
+        assert result == {
+            "status": "Task finished.",
+            "details": {
+                "signed": False,
+                "message": "Signing requires RSTUF bootstrap",
+            },
+            "last_update": fake_time,
+        }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP"),
+        ]
+
+    def test__sign_metadata_no_pending_sign_for_role(
+        self, test_repo, monkeypatch
+    ):
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
+        def fake_get_fresh(var_name):
+            if var_name == "BOOTSTRAP":
+                return "signing-fake_id"
+            else:
+                return pretend.stub(
+                    to_dict=pretend.call_recorder(lambda: {"metadata": "fake"})
+                )
+
+        fake_settings = pretend.stub(
+            TARGETS_SIGNING={"metadata": "fake"},
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        payload = {
+            "role": "root",
+            "signature": {"keyid": "keyid2", "sig": "sig2"},
+        }
+        result = test_repo.sign_metadata(payload)
+        assert result == {
+            "status": "Task finished.",
+            "details": {
+                "signed": False,
+                "message": "No signatures pending for root.",
+            },
+            "last_update": fake_time,
+        }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP"),
+        ]
+
+    def test__sign_metadata_unsupported_role_type(
+        self, test_repo, monkeypatch
+    ):
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+
+        def fake_get_fresh(var_name):
+            if var_name == "BOOTSTRAP":
+                return "signing-fake_id"
+            else:
+                return pretend.stub(
+                    to_dict=pretend.call_recorder(lambda: {"metadata": "fake"})
+                )
+
+        fake_settings = pretend.stub(
+            TIMESTAMP_SIGNING=pretend.stub(to_dict={"metadata": "fake_md"}),
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_md = pretend.stub(signatures={})
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_md
+        )
+        repository.Signature.from_dict = pretend.call_recorder(
+            lambda *a: pretend.stub(keyid="fake_sig")
+        )
+        test_repo._sign_root = pretend.call_recorder(
+            lambda *a: (True, "Signature added")
+        )
+
+        payload = {
+            "role": "timestamp",
+            "signature": {"keyid": "keyid2", "sig": "sig2"},
+        }
+
+        with pytest.raises(repository.RepositoryError) as err:
+            test_repo.sign_metadata(payload)
+
+        assert "Unsupported Metadata role" in str(err)
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP"),
+            pretend.call("TIMESTAMP_SIGNING"),
+        ]
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call({"metadata": "fake"})
+        ]
+        assert repository.Signature.from_dict.calls == [
+            pretend.call(payload["signature"])
+        ]
+        assert test_repo._sign_root.calls == []

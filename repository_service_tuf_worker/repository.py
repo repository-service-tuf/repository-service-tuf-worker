@@ -10,7 +10,7 @@ import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from math import log
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import redis
 from celery.app.task import Task
@@ -18,7 +18,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError  # type: ignore
-from securesystemslib.signer import SSlibKey
+from securesystemslib.signer import SSlibKey, Signature
 from tuf.api.exceptions import BadVersionNumberError, RepositoryError
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
@@ -282,6 +282,10 @@ class MetadataRepository:
 
         bytes_data = role.to_bytes(JSONSerializer())
         self._storage_backend.put(bytes_data, filename)
+        if role_name == Root.type:
+            self.write_repository_settings(
+                f"{Root.type.upper()}_SIGNING", None
+            )
         logging.debug(f"{filename} saved")
         return filename
 
@@ -501,6 +505,98 @@ class MetadataRepository:
             acks_late=True,
         )
 
+    def _bootstrap_online_roles(self, root: Metadata[Root], task_id: str):
+        """
+        Bootstrap the roles that uses the online key
+        """
+        _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
+        public_key = root.signed.keys[_keyid]
+
+        # Top level roles (`Targets`, `Timestamp``, `Snapshot`) initialization
+        targets: Metadata[Targets] = Metadata(Targets())
+        snapshot: Metadata[Snapshot] = Metadata(Snapshot())
+        timestamp: Metadata[Timestamp] = Metadata(Timestamp())
+
+        # Calculate the bit length (Number of bits between 1 and 32)
+        bit_length = int(
+            log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"))
+        )
+        # Succinct delegated roles (`bins`)
+        succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
+        targets.signed.delegations = Delegations(
+            keys={}, succinct_roles=succinct_roles
+        )
+        # Initialize all succinct delegated roles (`bins`), update expire,
+        # sign, add to `Snapshot` meta and persist in the backend storage
+        # service.
+        for delegated_name in succinct_roles.get_roles():
+            targets.signed.add_key(
+                SSlibKey.from_securesystemslib_key(
+                    self._key_storage_backend.get(public_key).key_dict
+                ),
+                delegated_name,
+            )
+            bins_role = Metadata(Targets())
+            self._bump_expiry(bins_role, BINS)
+            self._sign(bins_role)
+            snapshot.signed.meta[f"{delegated_name}.json"] = MetaFile(
+                version=bins_role.signed.version
+            )
+            self._persist(bins_role, delegated_name)
+
+        # Create all Target Roles in the database RSTUFTargetRoles
+        db_target_roles = [
+            targets_schema.RSTUFTargetRoleCreate(
+                rolename=target_role, version=1
+            )
+            for target_role in succinct_roles.get_roles()
+        ]
+        targets_crud.create_roles(self._db, db_target_roles)
+
+        # Update `Snapshot` meta with targets
+        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
+            version=targets.signed.version
+        )
+
+        # Update expire, sign and persist the top level roles (`Targets`,
+        # `Timestamp``, `Snapshot`) in the backend storage service.
+        for role in [targets, snapshot, timestamp]:
+            self._bump_expiry(role, role.signed.type)
+            self._sign(role)
+            self._persist(role, role.signed.type)
+
+        self.write_repository_settings("ROOT", None)
+        self.write_repository_settings("BOOTSTRAP", task_id)
+        logging.info(f"Bootstrap finished with id {task_id}")
+
+    def _validate_signatures(self, metadata: Metadata, rolename: str) -> bool:
+        """
+        Validates metadata signatures for a role name and returns if it
+        is complete signed (threshold signatures).
+        """
+        if len(metadata.signatures) == 0:
+            raise RepositoryError("At least one initial signature is required")
+
+        valid_singing_keys = set()
+        for signature in metadata.signatures:
+            if signature not in metadata.signed.roles[rolename].keyids:
+                raise RepositoryError(f"Signature {signature} not authorized")
+
+            if signature not in metadata.signed.keys:
+                raise RepositoryError(
+                    f"Signature {signature} no key for signature"
+                )
+
+            public_key = metadata.signed.keys.get(signature)
+            public_key.verify_signature(metadata)
+
+            valid_singing_keys.add(signature)
+
+        if len(valid_singing_keys) < metadata.signed.roles[rolename].threshold:
+            return False
+
+        return True
+
     def save_settings(self, root: Metadata[Root], settings: Dict[str, Any]):
         """
         Save settings to the repository settings.
@@ -557,80 +653,41 @@ class MetadataRepository:
         if root_metadata is None:
             raise KeyError("No 'metadata' in the payload")
 
-        # Saves the `Root` metadata in the backend storage service and returns
-        # the online public key (it uses the `Timestamp` key as reference)
         root: Metadata[Root] = Metadata.from_dict(root_metadata[Root.type])
-        self._persist(root, Root.type)
-        _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
-        public_key = root.signed.keys[_keyid]
+
+        signed = self._validate_signatures(root, Root.type)
 
         # save settings
         self.save_settings(root, tuf_settings)
 
-        # Top level roles (`Targets`, `Timestamp``, `Snapshot`) initialization
-        targets: Metadata[Targets] = Metadata(Targets())
-        snapshot: Metadata[Snapshot] = Metadata(Snapshot())
-        timestamp: Metadata[Timestamp] = Metadata(Timestamp())
+        task_id: str = payload["task_id"]
 
-        # Calculate the bit length (Number of bits between 1 and 32)
-        bit_length = int(
-            log(tuf_settings["services"]["number_of_delegated_bins"], 2)
-        )
-        # Succinct delegated roles (`bins`)
-        succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
-        targets.signed.delegations = Delegations(
-            keys={}, succinct_roles=succinct_roles
-        )
-        # Initialize all succinct delegated roles (`bins`), update expire,
-        # sign, add to `Snapshot` meta and persist in the backend storage
-        # service.
-        for delegated_name in succinct_roles.get_roles():
-            targets.signed.add_key(
-                SSlibKey.from_securesystemslib_key(
-                    self._key_storage_backend.get(public_key).key_dict
-                ),
-                delegated_name,
+        if signed:
+            self._persist(root, Root.type)
+            self._bootstrap_online_roles(root, task_id)
+            self.write_repository_settings("BOOTSTRAP", task_id)
+            signature = "complete"
+            message = "Bootstrap finished"
+            logging.info(message)
+
+        else:
+            signature = "pending"
+            self.write_repository_settings(
+                f"{Root.type.upper()}_SIGNING", root.to_dict()
             )
-            bins_role = Metadata(Targets())
-            self._bump_expiry(bins_role, BINS)
-            self._sign(bins_role)
-            snapshot.signed.meta[f"{delegated_name}.json"] = MetaFile(
-                version=bins_role.signed.version
-            )
-            self._persist(bins_role, delegated_name)
-
-        # Create all Target Roles in the database RSTUFTargetRoles
-        db_target_roles = [
-            targets_schema.RSTUFTargetRoleCreate(
-                rolename=target_role, version=1
-            )
-            for target_role in succinct_roles.get_roles()
-        ]
-        targets_crud.create_roles(self._db, db_target_roles)
-
-        # Update `Snapshot` meta with targets
-        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
-            version=targets.signed.version
-        )
-
-        # Update expire, sign and persist the top level roles (`Targets`,
-        # `Timestamp``, `Snapshot`) in the backend storage service.
-        for role in [targets, snapshot, timestamp]:
-            self._bump_expiry(role, role.signed.type)
-            self._sign(role)
-            self._persist(role, role.signed.type)
+            self.write_repository_settings("BOOTSTRAP", f"signing-{task_id}")
+            message = f"Root version {root.signed.version} is pending sign"
+            logging.info(message)
 
         result = ResultDetails(
             status="Task finished.",
             details={
-                "bootstrap": True,
+                "bootstrap": signed,
+                "signature": signature,
+                "message": message,
             },
             last_update=datetime.now(),
         )
-
-        self.write_repository_settings("BOOTSTRAP", payload["task_id"])
-        logging.info(f"Bootstrap locked with id {payload['task_id']}")
-
         return asdict(result)
 
     def update_settings(
@@ -1112,8 +1169,24 @@ class MetadataRepository:
         """
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
-        self._trusted_root_update(current_root, new_root)
+        # Do not update the Root if still not full signed
+        signed = self._validate_signatures(new_root, Root.type)
+        if signed is False:
+            self.write_repository_settings(
+                f"{Root.type.upper()}_SIGNING", new_root.to_dict()
+            )
+            message = f"Root version {new_root.signed.version} pending sign."
+            result = ResultDetails(
+                status="Task finished.",
+                details={
+                    "message": message,
+                },
+                last_update=datetime.now(),
+            )
 
+            return asdict(result)
+
+        self._trusted_root_update(current_root, new_root)
         # We always persist the new root metadata, but we cannot persist
         # without verifying if the online key is rotated to avoid a mismatch
         # with the rest of the roles using the online key.
@@ -1182,7 +1255,7 @@ class MetadataRepository:
 
         # there is also a verification in the RSTUF API calls
         bootstrap = self._settings.get_fresh("BOOTSTRAP")
-        if bootstrap is None or "pre-" in bootstrap:
+        if bootstrap is None or "pre-" in bootstrap or "signing-" in bootstrap:
             raise RepositoryError(
                 "Metadata Update requires a complete bootstrap"
             )
@@ -1192,6 +1265,14 @@ class MetadataRepository:
             raise KeyError("No 'metadata' in the payload")
 
         if Root.type in metadata:
+            sigining = self._settings.get_fresh(f"{Root.type.upper()}_SIGNING")
+            if sigining:
+                root_signing = Metadata.from_dict(sigining.to_dict())
+                raise RepositoryError(
+                    "Root update process to version "
+                    f"{root_signing.signed.version} is waiting signatures"
+                )
+
             new_root = Metadata.from_dict(metadata[Root.type])
             return self._root_metadata_update(new_root)
         else:
@@ -1212,3 +1293,96 @@ class MetadataRepository:
         logging.warn(deprecation_message)
 
         return self.metadata_update(payload, update_state)
+
+    def _sign_root(self, root: Metadata[Root]) -> Tuple[bool, str]:
+        """
+        Sign the root metadata and call actions depending on the bootstrap
+        state, and if it matches the threshold
+        """
+        signed = self._validate_signatures(root, Root.type)
+        bootstrap = self._settings.get_fresh("BOOTSTRAP")
+
+        if signed and "signing" not in bootstrap:
+            self._root_metadata_update(root)
+            message = f"Root version {root.signed.version} signed."
+
+        elif signed and "signing" in bootstrap:
+            bootstrap_task_id = bootstrap.split("signing-")[1]
+            self._persist(root, Root.type)
+            self._bootstrap_online_roles(root, bootstrap_task_id)
+            message = "Bootstrap finished"
+
+        else:
+            self.write_repository_settings(
+                f"{Root.type.upper()}_SIGNING", root.to_dict()
+            )
+            message = f"Root version {root.signed.version} pending sign."
+
+        return signed, message
+
+    def sign_metadata(
+        self,
+        payload: Dict[str, str],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> Dict[str, Any]:
+        """
+        Start the signing metadata process
+        """
+        rolename = payload["role"]
+        sig_dict = payload["signature"]
+
+        bootstrap = self._settings.get_fresh("BOOTSTRAP")
+        if bootstrap is None:
+            result = ResultDetails(
+                status="Task finished.",
+                details={
+                    "signed": False,
+                    "message": "Signing requires RSTUF bootstrap",
+                },
+                last_update=datetime.now(),
+            )
+
+            return asdict(result)
+
+        available_signing = list(
+            filter(lambda var: "SIGNING" in var, dir(self._settings))
+        )
+
+        if f"{rolename.upper()}_SIGNING" not in available_signing:
+            result = ResultDetails(
+                status="Task finished.",
+                details={
+                    "signed": False,
+                    "message": f"No signatures pending for {rolename}.",
+                },
+                last_update=datetime.now(),
+            )
+
+            return asdict(result)
+
+        dict_metadata = self._settings.get_fresh(f"{rolename.upper()}_SIGNING")
+
+        metadata = Metadata.from_dict(dict_metadata.to_dict())
+        signature = Signature.from_dict(sig_dict)
+        metadata.signatures[signature.keyid] = signature
+
+        # singing root
+        if rolename == Root.type:
+            signed, message = self._sign_root(metadata)
+
+        # Note: It will never raise as will not have available siging
+        else:
+            raise RepositoryError("Unsupported Metadata role")
+
+        result = ResultDetails(
+            status="Task finished.",
+            details={
+                "signed": signed,
+                "message": message,
+            },
+            last_update=datetime.now(),
+        )
+
+        return asdict(result)
