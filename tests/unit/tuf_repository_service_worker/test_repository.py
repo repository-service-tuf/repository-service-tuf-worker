@@ -1905,7 +1905,7 @@ class TestMetadataRepository:
             pretend.call(repository.LOCK_TARGETS, timeout=60)
         ]
 
-    def test_metadata_rotation_only_root(self, monkeypatch, test_repo):
+    def test_metadata_update_only_root(self, monkeypatch, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -1941,12 +1941,12 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         payload = {"metadata": {"root": "root_metadata"}}
-        result = test_repo.metadata_rotation(payload)
+        result = test_repo.metadata_update(payload)
 
         assert result == {
             "status": "Task finished.",
             "details": {
-                "message": "metadata rotation finished",
+                "message": "metadata update finished",
             },
             "last_update": fake_time,
         }
@@ -1964,7 +1964,7 @@ class TestMetadataRepository:
         ]
         assert repository.datetime.now.calls == [pretend.call()]
 
-    def test_metadata_rotation_online_key(self, monkeypatch, test_repo):
+    def test_metadata_update_online_key(self, monkeypatch, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -2011,12 +2011,12 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         payload = {"metadata": {"root": "root_metadata"}}
-        result = test_repo.metadata_rotation(payload)
+        result = test_repo.metadata_update(payload)
 
         assert result == {
             "status": "Task finished.",
             "details": {
-                "message": "metadata rotation finished",
+                "message": "metadata update finished",
             },
             "last_update": fake_time,
         }
@@ -2040,7 +2040,7 @@ class TestMetadataRepository:
         ]
         assert repository.datetime.now.calls == [pretend.call()]
 
-    def test_metadata_rotation_online_key_lock_timeout(
+    def test_metadata_update_online_key_lock_timeout(
         self, monkeypatch, test_repo
     ):
         fake_new_root_md = pretend.stub(
@@ -2079,7 +2079,7 @@ class TestMetadataRepository:
         )
         payload = {"metadata": {"root": "root_metadata"}}
         with pytest.raises(repository.redis.exceptions.LockError) as e:
-            test_repo.metadata_rotation(payload)
+            test_repo.metadata_update(payload)
 
         assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
         assert test_repo._settings.get_fresh.calls == [
@@ -2092,21 +2092,21 @@ class TestMetadataRepository:
             pretend.call(repository.Root.type)
         ]
 
-    def test_metadata_rotation_no_metadata(self, test_repo):
+    def test_metadata_update_no_metadata(self, test_repo):
         payload = {}
         with pytest.raises(KeyError) as e:
-            test_repo.metadata_rotation(payload)
+            test_repo.metadata_update(payload)
 
         assert "No 'metadata' in the payload" in str(e)
 
-    def test_metadata_rotation_no_root_in_metadata(self, test_repo):
+    def test_metadata_update_no_root_in_metadata(self, test_repo):
         payload = {"metadata": {"targets": {}}}
         with pytest.raises(KeyError) as e:
-            test_repo.metadata_rotation(payload)
+            test_repo.metadata_update(payload)
 
         assert "No 'root' in the 'metadata' payload." in str(e)
 
-    def test_metadata_rotation_no_bootstrap(self, monkeypatch, test_repo):
+    def test_metadata_update_no_bootstrap(self, monkeypatch, test_repo):
         payload = {"metadata": {"root": {}}}
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: None)
@@ -2117,14 +2117,14 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         with pytest.raises(RuntimeError) as e:
-            test_repo.metadata_rotation(payload)
+            test_repo.metadata_update(payload)
 
-        assert "metadata rotation requires RSTUF with bootstrap" in str(e)
+        assert "metadata update requires RSTUF with bootstrap" in str(e)
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
 
-    def test_metadata_rotation_unexpected_version_higher(
+    def test_metadata_update_unexpected_version_higher(
         self, monkeypatch, test_repo
     ):
         fake_new_root_md = pretend.stub(
@@ -2156,7 +2156,7 @@ class TestMetadataRepository:
 
         payload = {"metadata": {"root": "root_metadata"}}
         with pytest.raises(repository.BadVersionNumberError) as e:
-            test_repo.metadata_rotation(payload)
+            test_repo.metadata_update(payload)
 
         assert (
             f"New root version not expected {fake_new_root_md.signed.version}"
@@ -2172,7 +2172,7 @@ class TestMetadataRepository:
             pretend.call(repository.Root.type)
         ]
 
-    def test_metadata_rotation_unexpected_version_lower(
+    def test_metadata_update_unexpected_version_lower(
         self, monkeypatch, test_repo
     ):
         fake_new_root_md = pretend.stub(
@@ -2204,7 +2204,7 @@ class TestMetadataRepository:
 
         payload = {"metadata": {"root": "root_metadata"}}
         with pytest.raises(repository.BadVersionNumberError) as e:
-            test_repo.metadata_rotation(payload)
+            test_repo.metadata_update(payload)
 
         assert (
             f"New root version not expected {fake_new_root_md.signed.version}"
@@ -2218,4 +2218,24 @@ class TestMetadataRepository:
         ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
+        ]
+
+    def test_metadata_rotation_deprecation_warning(self, test_repo, caplog):
+        caplog.set_level(repository.logging.WARNING)
+        payload = {"metadata": {"root": "fake_root"}}
+
+        test_repo.metadata_update = pretend.call_recorder(lambda *a: "result")
+
+        result = test_repo.metadata_rotation(payload)
+        assert result == "result"
+        assert test_repo.metadata_update.calls == [pretend.call(payload, None)]
+        assert caplog.record_tuples == [
+            (
+                "root",
+                30,
+                (
+                    "Function `metadata_rotation` will be deprecated on "
+                    "version 1.0.0. Use `metadata_update`."
+                ),
+            )
         ]

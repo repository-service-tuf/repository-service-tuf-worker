@@ -6,6 +6,7 @@ import enum
 import importlib
 import logging
 import time
+import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from math import log
@@ -977,7 +978,7 @@ class MetadataRepository:
 
         return True
 
-    def metadata_rotation(
+    def metadata_update(
         self,
         payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
         update_state: Optional[
@@ -987,7 +988,7 @@ class MetadataRepository:
         """
         Rotate TUF metadata.
 
-        Adds support for metadata rotation signed by offline root keys.
+        Adds support for metadata update signed by offline root keys.
 
         Args:
             payload: contains new metadata
@@ -1003,9 +1004,7 @@ class MetadataRepository:
             raise KeyError("No 'root' in the 'metadata' payload.")
 
         if self._settings.get_fresh("BOOTSTRAP") is None:
-            raise RuntimeError(
-                "metadata rotation requires RSTUF with bootstrap"
-            )
+            raise RuntimeError("metadata update requires RSTUF with bootstrap")
 
         new_root: Metadata[Root] = Metadata.from_dict(root_dict)
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
@@ -1047,7 +1046,7 @@ class MetadataRepository:
             except redis.exceptions.LockNotOwnedError:
                 if status_lock_targets is False:
                     logging.error(
-                        "The task of metadata rotation exceeded the timeout"
+                        "The task of metadata update exceeded the timeout"
                     )
                     raise redis.exceptions.LockError(
                         "RSTUF: Task exceed `LOCK_TIMEOUT` "
@@ -1057,9 +1056,25 @@ class MetadataRepository:
         result = ResultDetails(
             status="Task finished.",
             details={
-                "message": "metadata rotation finished",
+                "message": "metadata update finished",
             },
             last_update=datetime.now(),
         )
 
         return asdict(result)
+
+    def metadata_rotation(
+        self,
+        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> Dict[str, Any]:
+        deprecation_message = (
+            "Function `metadata_rotation` will be deprecated on version "
+            "1.0.0. Use `metadata_update`."
+        )
+        warnings.warn(deprecation_message, DeprecationWarning)
+        logging.warn(deprecation_message)
+
+        return self.metadata_update(payload, update_state)
