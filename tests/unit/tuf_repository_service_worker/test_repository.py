@@ -1905,7 +1905,7 @@ class TestMetadataRepository:
             pretend.call(repository.LOCK_TARGETS, timeout=60)
         ]
 
-    def test_metadata_update_only_root(self, monkeypatch, test_repo):
+    def test__root_metadata_update(self, monkeypatch, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -1917,17 +1917,6 @@ class TestMetadataRepository:
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
                 version=1,
             )
-        )
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
-        )
-        monkeypatch.setattr(
-            repository,
-            "get_repository_settings",
-            lambda *a, **kw: fake_settings,
-        )
-        repository.Metadata.from_dict = pretend.call_recorder(
-            lambda *a: fake_new_root_md
         )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_old_root_md
@@ -1940,8 +1929,7 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
-        payload = {"metadata": {"root": "root_metadata"}}
-        result = test_repo.metadata_update(payload)
+        result = test_repo._root_metadata_update(fake_new_root_md)
 
         assert result == {
             "status": "Task finished.",
@@ -1950,12 +1938,6 @@ class TestMetadataRepository:
             },
             "last_update": fake_time,
         }
-        assert test_repo._settings.get_fresh.calls == [
-            pretend.call("BOOTSTRAP")
-        ]
-        assert repository.Metadata.from_dict.calls == [
-            pretend.call("root_metadata")
-        ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
         ]
@@ -1964,7 +1946,7 @@ class TestMetadataRepository:
         ]
         assert repository.datetime.now.calls == [pretend.call()]
 
-    def test_metadata_update_online_key(self, monkeypatch, test_repo):
+    def test__root_metadata_update_online_key(self, monkeypatch, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -1976,17 +1958,6 @@ class TestMetadataRepository:
                 roles={"timestamp": pretend.stub(keyids={"k2": "v2"})},
                 version=1,
             )
-        )
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
-        )
-        monkeypatch.setattr(
-            repository,
-            "get_repository_settings",
-            lambda *a, **kw: fake_settings,
-        )
-        repository.Metadata.from_dict = pretend.call_recorder(
-            lambda *a: fake_new_root_md
         )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_old_root_md
@@ -2010,8 +1981,7 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
-        payload = {"metadata": {"root": "root_metadata"}}
-        result = test_repo.metadata_update(payload)
+        result = test_repo._root_metadata_update(fake_new_root_md)
 
         assert result == {
             "status": "Task finished.",
@@ -2020,12 +1990,6 @@ class TestMetadataRepository:
             },
             "last_update": fake_time,
         }
-        assert test_repo._settings.get_fresh.calls == [
-            pretend.call("BOOTSTRAP")
-        ]
-        assert repository.Metadata.from_dict.calls == [
-            pretend.call("root_metadata")
-        ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
         ]
@@ -2040,7 +2004,7 @@ class TestMetadataRepository:
         ]
         assert repository.datetime.now.calls == [pretend.call()]
 
-    def test_metadata_update_online_key_lock_timeout(
+    def test__root_metadata_update_online_key_lock_timeout(
         self, monkeypatch, test_repo
     ):
         fake_new_root_md = pretend.stub(
@@ -2062,9 +2026,6 @@ class TestMetadataRepository:
             repository,
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
-        )
-        repository.Metadata.from_dict = pretend.call_recorder(
-            lambda *a: fake_new_root_md
         )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_old_root_md
@@ -2077,34 +2038,82 @@ class TestMetadataRepository:
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock),
         )
-        payload = {"metadata": {"root": "root_metadata"}}
         with pytest.raises(repository.redis.exceptions.LockError) as e:
-            test_repo.metadata_update(payload)
+            test_repo._root_metadata_update(fake_new_root_md)
 
         assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
-        assert test_repo._settings.get_fresh.calls == [
-            pretend.call("BOOTSTRAP")
-        ]
-        assert repository.Metadata.from_dict.calls == [
-            pretend.call("root_metadata")
-        ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
         ]
 
-    def test_metadata_update_no_metadata(self, test_repo):
+    def test_metadata_update(self, monkeypatch, test_repo):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: "fake_md"
+        )
+        test_repo._root_metadata_update = pretend.call_recorder(
+            lambda *a: "fake_result"
+        )
+
+        payload = {"metadata": {"root": "root_metadata"}}
+        result = test_repo.metadata_update(payload)
+
+        assert result == "fake_result"
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call("root_metadata")
+        ]
+        assert test_repo._root_metadata_update.calls == [
+            pretend.call("fake_md")
+        ]
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
+    def test_metadata_update_invalid_metadata_type(
+        self, monkeypatch, test_repo
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        payload = {"metadata": {"bins": "bins_metadata"}}
+        with pytest.raises(ValueError) as err:
+            test_repo.metadata_update(payload)
+
+        assert "Unsupported Metadata type" in str(err)
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
+    def test_metadata_update_no_metadata(self, monkeypatch, test_repo):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         payload = {}
         with pytest.raises(KeyError) as e:
             test_repo.metadata_update(payload)
 
         assert "No 'metadata' in the payload" in str(e)
-
-    def test_metadata_update_no_root_in_metadata(self, test_repo):
-        payload = {"metadata": {"targets": {}}}
-        with pytest.raises(KeyError) as e:
-            test_repo.metadata_update(payload)
-
-        assert "No 'root' in the 'metadata' payload." in str(e)
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
 
     def test_metadata_update_no_bootstrap(self, monkeypatch, test_repo):
         payload = {"metadata": {"root": {}}}
@@ -2116,108 +2125,12 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        with pytest.raises(RuntimeError) as e:
+        with pytest.raises(repository.RepositoryError) as e:
             test_repo.metadata_update(payload)
 
-        assert "metadata update requires RSTUF with bootstrap" in str(e)
+        assert "Metadata Update requires a complete bootstrap" in str(e)
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
-        ]
-
-    def test_metadata_update_unexpected_version_higher(
-        self, monkeypatch, test_repo
-    ):
-        fake_new_root_md = pretend.stub(
-            signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
-                version=3,
-            )
-        )
-        fake_old_root_md = pretend.stub(
-            signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k2": "v2"})},
-                version=1,
-            )
-        )
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
-        )
-        monkeypatch.setattr(
-            repository,
-            "get_repository_settings",
-            lambda *a, **kw: fake_settings,
-        )
-        repository.Metadata.from_dict = pretend.call_recorder(
-            lambda *a: fake_new_root_md
-        )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_old_root_md
-        )
-
-        payload = {"metadata": {"root": "root_metadata"}}
-        with pytest.raises(repository.BadVersionNumberError) as e:
-            test_repo.metadata_update(payload)
-
-        assert (
-            f"New root version not expected {fake_new_root_md.signed.version}"
-            in str(e)
-        )
-        assert test_repo._settings.get_fresh.calls == [
-            pretend.call("BOOTSTRAP")
-        ]
-        assert repository.Metadata.from_dict.calls == [
-            pretend.call("root_metadata")
-        ]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(repository.Root.type)
-        ]
-
-    def test_metadata_update_unexpected_version_lower(
-        self, monkeypatch, test_repo
-    ):
-        fake_new_root_md = pretend.stub(
-            signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
-                version=2,
-            )
-        )
-        fake_old_root_md = pretend.stub(
-            signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k2": "v2"})},
-                version=5,
-            )
-        )
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
-        )
-        monkeypatch.setattr(
-            repository,
-            "get_repository_settings",
-            lambda *a, **kw: fake_settings,
-        )
-        repository.Metadata.from_dict = pretend.call_recorder(
-            lambda *a: fake_new_root_md
-        )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_old_root_md
-        )
-
-        payload = {"metadata": {"root": "root_metadata"}}
-        with pytest.raises(repository.BadVersionNumberError) as e:
-            test_repo.metadata_update(payload)
-
-        assert (
-            f"New root version not expected {fake_new_root_md.signed.version}"
-            in str(e)
-        )
-        assert test_repo._settings.get_fresh.calls == [
-            pretend.call("BOOTSTRAP")
-        ]
-        assert repository.Metadata.from_dict.calls == [
-            pretend.call("root_metadata")
-        ]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(repository.Root.type)
         ]
 
     def test_metadata_rotation_deprecation_warning(self, test_repo, caplog):

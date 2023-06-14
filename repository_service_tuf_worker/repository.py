@@ -18,7 +18,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError  # type: ignore
-from tuf.api.exceptions import BadVersionNumberError
+from tuf.api.exceptions import BadVersionNumberError, RepositoryError
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
     Delegations,
@@ -978,35 +978,23 @@ class MetadataRepository:
 
         return True
 
-    def metadata_update(
+    def _root_metadata_update(
         self,
-        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
+        new_root: Metadata[Root],
         update_state: Optional[
             Task.update_state
         ] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
         """
-        Rotate TUF metadata.
-
-        Adds support for metadata update signed by offline root keys.
+        Update Root metadata.
+        It checks if the new root metadata is trusted and runs a specific
+        process for updating the Root Metadata.
 
         Args:
-            payload: contains new metadata
+            new_root: contains new metadata
                 example: {"metadata": {"root": Any}}
             update_state: not used, but required argument by `app.py`
         """
-        metadata = payload.get("metadata")
-        if metadata is None:
-            raise KeyError("No 'metadata' in the payload")
-
-        root_dict = metadata.get(Root.type)
-        if root_dict is None:
-            raise KeyError("No 'root' in the 'metadata' payload.")
-
-        if self._settings.get_fresh("BOOTSTRAP") is None:
-            raise RuntimeError("metadata update requires RSTUF with bootstrap")
-
-        new_root: Metadata[Root] = Metadata.from_dict(root_dict)
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
         if current_root.signed.version + 1 != new_root.signed.version:
@@ -1062,6 +1050,40 @@ class MetadataRepository:
         )
 
         return asdict(result)
+
+    def metadata_update(
+        self,
+        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> Dict[str, Any]:
+        """
+        Update TUF metadata.
+
+        Args:
+            payload: contains new metadata
+                Supported metadata types: Root
+                example: {"metadata": {"root": Any}}
+            update_state: not used, but required argument by `app.py`
+        """
+
+        # there is also a verification in the RSTUF API calls
+        bootstrap = self._settings.get_fresh("BOOTSTRAP")
+        if bootstrap is None or "pre-" in bootstrap:
+            raise RepositoryError(
+                "Metadata Update requires a complete bootstrap"
+            )
+
+        metadata = payload.get("metadata")
+        if metadata is None:
+            raise KeyError("No 'metadata' in the payload")
+
+        if Root.type in metadata:
+            new_root = Metadata.from_dict(metadata[Root.type])
+            return self._root_metadata_update(new_root)
+        else:
+            raise ValueError("Unsupported Metadata type")
 
     def metadata_rotation(
         self,
