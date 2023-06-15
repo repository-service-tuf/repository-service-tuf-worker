@@ -978,6 +978,29 @@ class MetadataRepository:
 
         return True
 
+    def _trusted_root_update(
+        self, current_root: Metadata[Root], new_root: Metadata[Root]
+    ):
+        """Verify if the new metadata is a trusted Root metadata"""
+        # Verify that new root is signed by trusted root
+        current_root.verify_delegate(Root.type, new_root)
+
+        # Verify that new root is signed by itself
+        new_root.verify_delegate(Root.type, new_root)
+
+        # Verify the new root version
+        if new_root.signed.version != current_root.signed.version + 1:
+            raise BadVersionNumberError(
+                f"Expected root version {current_root.signed.version + 1}"
+                f" instead got version {new_root.signed.version}"
+            )
+
+        # Verify the Type
+        if new_root.signed.type != Root.type:
+            raise RepositoryError(
+                f"Expected 'root', got '{new_root.signed.type}'"
+            )
+
     def _root_metadata_update(
         self,
         new_root: Metadata[Root],
@@ -997,10 +1020,7 @@ class MetadataRepository:
         """
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
-        if current_root.signed.version + 1 != new_root.signed.version:
-            raise BadVersionNumberError(
-                f"New root version not expected {new_root.signed.version}"
-            )
+        self._trusted_root_update(current_root, new_root)
 
         # We always persist the new root metadata, but we cannot persist
         # without verifying if the online key is rotated to avoid a mismatch
