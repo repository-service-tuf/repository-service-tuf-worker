@@ -1985,32 +1985,24 @@ class TestMetadataRepository:
             pretend.call(repository.Root.type, fake_new_root_md)
         ]
 
-    def test__trusted_root_update_bady_type(self, test_repo):
+    def test__trusted_root_update_bad_type(self, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
                 version=2,
                 type=repository.Snapshot.type,
             ),
-            verify_delegate=pretend.call_recorder(lambda *a: None),
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"root": pretend.stub(keyids={"k1": "v1"})},
                 version=1,
             ),
-            verify_delegate=pretend.call_recorder(lambda *a: None),
         )
 
         with pytest.raises(repository.RepositoryError) as err:
             test_repo._trusted_root_update(fake_old_root_md, fake_new_root_md)
         assert "Expected 'root', got 'snapshot'" in str(err)
-        assert fake_new_root_md.verify_delegate.calls == [
-            pretend.call(repository.Root.type, fake_new_root_md)
-        ]
-        assert fake_old_root_md.verify_delegate.calls == [
-            pretend.call(repository.Root.type, fake_new_root_md)
-        ]
 
     def test__root_metadata_update(self, monkeypatch, test_repo):
         fake_new_root_md = pretend.stub(
@@ -2266,8 +2258,8 @@ class TestMetadataRepository:
                 "root",
                 30,
                 (
-                    "Function `metadata_rotation` will be deprecated on "
-                    "version 1.0.0. Use `metadata_update`."
+                    "`metadata_rotation` is deprecated, use `metadata_update` "
+                    "instead. It will be removed in version 1.0.0."
                 ),
             )
         ]

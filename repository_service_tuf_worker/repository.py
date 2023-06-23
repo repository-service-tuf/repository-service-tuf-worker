@@ -982,6 +982,13 @@ class MetadataRepository:
         self, current_root: Metadata[Root], new_root: Metadata[Root]
     ):
         """Verify if the new metadata is a trusted Root metadata"""
+
+        # Verify the Type
+        if new_root.signed.type != Root.type:
+            raise RepositoryError(
+                f"Expected 'root', got '{new_root.signed.type}'"
+            )
+
         # Verify that new root is signed by trusted root
         current_root.verify_delegate(Root.type, new_root)
 
@@ -993,12 +1000,6 @@ class MetadataRepository:
             raise BadVersionNumberError(
                 f"Expected root version {current_root.signed.version + 1}"
                 f" instead got version {new_root.signed.version}"
-            )
-
-        # Verify the Type
-        if new_root.signed.type != Root.type:
-            raise RepositoryError(
-                f"Expected 'root', got '{new_root.signed.type}'"
             )
 
     def _root_metadata_update(
@@ -1113,8 +1114,8 @@ class MetadataRepository:
         ] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
         deprecation_message = (
-            "Function `metadata_rotation` will be deprecated on version "
-            "1.0.0. Use `metadata_update`."
+            "`metadata_rotation` is deprecated, use `metadata_update` instead."
+            " It will be removed in version 1.0.0."
         )
         warnings.warn(deprecation_message, DeprecationWarning)
         logging.warn(deprecation_message)
