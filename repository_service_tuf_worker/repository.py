@@ -6,6 +6,7 @@ import enum
 import importlib
 import logging
 import time
+import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from math import log
@@ -17,7 +18,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError  # type: ignore
-from tuf.api.exceptions import BadVersionNumberError
+from tuf.api.exceptions import BadVersionNumberError, RepositoryError
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
     Delegations,
@@ -977,43 +978,50 @@ class MetadataRepository:
 
         return True
 
-    def metadata_rotation(
+    def _trusted_root_update(
+        self, current_root: Metadata[Root], new_root: Metadata[Root]
+    ):
+        """Verify if the new metadata is a trusted Root metadata"""
+
+        # Verify the Type
+        if new_root.signed.type != Root.type:
+            raise RepositoryError(
+                f"Expected 'root', got '{new_root.signed.type}'"
+            )
+
+        # Verify that new root is signed by trusted root
+        current_root.verify_delegate(Root.type, new_root)
+
+        # Verify that new root is signed by itself
+        new_root.verify_delegate(Root.type, new_root)
+
+        # Verify the new root version
+        if new_root.signed.version != current_root.signed.version + 1:
+            raise BadVersionNumberError(
+                f"Expected root version {current_root.signed.version + 1}"
+                f" instead got version {new_root.signed.version}"
+            )
+
+    def _root_metadata_update(
         self,
-        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
+        new_root: Metadata[Root],
         update_state: Optional[
             Task.update_state
         ] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
         """
-        Rotate TUF metadata.
-
-        Adds support for metadata rotation signed by offline root keys.
+        Update Root metadata.
+        It checks if the new root metadata is trusted and runs a specific
+        process for updating the Root Metadata.
 
         Args:
-            payload: contains new metadata
+            new_root: contains new metadata
                 example: {"metadata": {"root": Any}}
             update_state: not used, but required argument by `app.py`
         """
-        metadata = payload.get("metadata")
-        if metadata is None:
-            raise KeyError("No 'metadata' in the payload")
-
-        root_dict = metadata.get(Root.type)
-        if root_dict is None:
-            raise KeyError("No 'root' in the 'metadata' payload.")
-
-        if self._settings.get_fresh("BOOTSTRAP") is None:
-            raise RuntimeError(
-                "metadata rotation requires RSTUF with bootstrap"
-            )
-
-        new_root: Metadata[Root] = Metadata.from_dict(root_dict)
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
-        if current_root.signed.version + 1 != new_root.signed.version:
-            raise BadVersionNumberError(
-                f"New root version not expected {new_root.signed.version}"
-            )
+        self._trusted_root_update(current_root, new_root)
 
         # We always persist the new root metadata, but we cannot persist
         # without verifying if the online key is rotated to avoid a mismatch
@@ -1047,7 +1055,7 @@ class MetadataRepository:
             except redis.exceptions.LockNotOwnedError:
                 if status_lock_targets is False:
                     logging.error(
-                        "The task of metadata rotation exceeded the timeout"
+                        "The task of metadata update exceeded the timeout"
                     )
                     raise redis.exceptions.LockError(
                         "RSTUF: Task exceed `LOCK_TIMEOUT` "
@@ -1057,9 +1065,59 @@ class MetadataRepository:
         result = ResultDetails(
             status="Task finished.",
             details={
-                "message": "metadata rotation finished",
+                "message": "metadata update finished",
             },
             last_update=datetime.now(),
         )
 
         return asdict(result)
+
+    def metadata_update(
+        self,
+        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> Dict[str, Any]:
+        """
+        Update TUF metadata.
+
+        Args:
+            payload: contains new metadata
+                Supported metadata types: Root
+                example: {"metadata": {"root": Any}}
+            update_state: not used, but required argument by `app.py`
+        """
+
+        # there is also a verification in the RSTUF API calls
+        bootstrap = self._settings.get_fresh("BOOTSTRAP")
+        if bootstrap is None or "pre-" in bootstrap:
+            raise RepositoryError(
+                "Metadata Update requires a complete bootstrap"
+            )
+
+        metadata = payload.get("metadata")
+        if metadata is None:
+            raise KeyError("No 'metadata' in the payload")
+
+        if Root.type in metadata:
+            new_root = Metadata.from_dict(metadata[Root.type])
+            return self._root_metadata_update(new_root)
+        else:
+            raise ValueError("Unsupported Metadata type")
+
+    def metadata_rotation(
+        self,
+        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> Dict[str, Any]:
+        deprecation_message = (
+            "`metadata_rotation` is deprecated, use `metadata_update` instead."
+            " It will be removed in version 1.0.0."
+        )
+        warnings.warn(deprecation_message, DeprecationWarning)
+        logging.warn(deprecation_message)
+
+        return self.metadata_update(payload, update_state)
