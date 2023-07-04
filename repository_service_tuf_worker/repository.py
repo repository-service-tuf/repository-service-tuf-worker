@@ -18,11 +18,11 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError  # type: ignore
+from securesystemslib.signer import Key
 from tuf.api.exceptions import BadVersionNumberError, RepositoryError
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
     Delegations,
-    Key,
     Metadata,
     MetaFile,
     Root,
