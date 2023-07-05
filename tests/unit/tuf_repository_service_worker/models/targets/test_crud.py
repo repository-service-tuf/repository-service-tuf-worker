@@ -44,11 +44,13 @@ class TestCrud:
             commit=pretend.call_recorder(lambda: None),
             refresh=pretend.call_recorder(lambda *a: None),
         )
+        last_updated = datetime.datetime.now()
         test_target_file = crud.schemas.RSTUFTargetFileCreate(
             path="file1.tar.gz",
             info={"info": {"k": "v"}},
             published=False,
             action=crud.schemas.TargetAction.ADD,
+            last_update=last_updated,
         )
         test_target_role = pretend.stub(id=256)
 
@@ -62,7 +64,7 @@ class TestCrud:
                 info=test_target_file.info,
                 published=False,
                 action=crud.schemas.TargetAction.ADD,
-                last_update=None,
+                last_update=last_updated,
                 targets_role=256,
             )
         ]
