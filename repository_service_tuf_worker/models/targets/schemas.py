@@ -26,7 +26,7 @@ class RSTUFTargetFileCreate(BaseModel):
     info: Dict[str, Any]
     published: bool
     action: TargetAction
-    last_update: Optional[datetime]
+    last_update: Optional[datetime] = datetime.now()
 
     class Config:
         orm_mode = True
