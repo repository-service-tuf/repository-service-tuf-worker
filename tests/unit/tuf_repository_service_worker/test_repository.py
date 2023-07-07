@@ -613,7 +613,7 @@ class TestMetadataRepository:
             lambda *a: fake_root_md
         )
         repository.Targets.add_key = pretend.call_recorder(lambda *a: None)
-        repository.Key.from_securesystemslib_key = pretend.call_recorder(
+        repository.SSlibKey.from_securesystemslib_key = pretend.call_recorder(
             lambda *a: "key"
         )
         monkeypatch.setattr(
@@ -652,7 +652,7 @@ class TestMetadataRepository:
         assert repository.Metadata.from_dict.calls == [
             pretend.call(payload["metadata"]["root"])
         ]
-        assert repository.Key.from_securesystemslib_key.calls == [
+        assert repository.SSlibKey.from_securesystemslib_key.calls == [
             pretend.call({"k": "v"}),
             pretend.call({"k": "v"}),
         ]
