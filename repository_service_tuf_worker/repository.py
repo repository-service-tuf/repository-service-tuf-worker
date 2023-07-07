@@ -18,7 +18,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError  # type: ignore
-from securesystemslib.signer import Key
+from securesystemslib.signer import SSlibKey
 from tuf.api.exceptions import BadVersionNumberError, RepositoryError
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
@@ -560,7 +560,7 @@ class MetadataRepository:
         # service.
         for delegated_name in succinct_roles.get_roles():
             targets.signed.add_key(
-                Key.from_securesystemslib_key(
+                SSlibKey.from_securesystemslib_key(
                     self._key_storage_backend.get(public_key).key_dict
                 ),
                 delegated_name,
