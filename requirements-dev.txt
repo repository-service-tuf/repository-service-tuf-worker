@@ -2,13 +2,13 @@
 alabaster==0.7.13; python_version >= '3.6'
 babel==2.12.1; python_version >= '3.7'
 bandit==1.7.5
-black==23.3.0
+black==23.7.0
 cachetools==5.3.1; python_version >= '3.7'
 certifi==2023.5.7; python_version >= '3.6'
 cfgv==3.3.1; python_full_version >= '3.6.1'
 chardet==5.1.0; python_version >= '3.7'
-charset-normalizer==3.1.0; python_full_version >= '3.7.0'
-click==8.1.3; python_version >= '3.7'
+charset-normalizer==3.2.0; python_full_version >= '3.7.0'
+click==8.1.4; python_version >= '3.7'
 colorama==0.4.6; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6'
 coverage==7.2.7
 distlib==0.3.6
@@ -17,7 +17,7 @@ exceptiongroup==1.1.2; python_version < '3.11'
 filelock==3.12.2; python_version >= '3.7'
 flake8==6.0.0
 gitdb==4.0.10; python_version >= '3.7'
-gitpython==3.1.31; python_version >= '3.7'
+gitpython==3.1.32; python_version >= '3.7'
 identify==2.5.24; python_version >= '3.7'
 idna==3.4; python_version >= '3.5'
 imagesize==1.4.1; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'
@@ -34,14 +34,14 @@ nodeenv==1.8.0; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2
 packaging==23.1; python_version >= '3.7'
 pathspec==0.11.1; python_version >= '3.7'
 pbr==5.11.1; python_version >= '2.6'
-platformdirs==3.8.0; python_version >= '3.7'
+platformdirs==3.8.1; python_version >= '3.7'
 pluggy==1.2.0; python_version >= '3.7'
 pre-commit==3.3.3
 pretend==1.0.9
 pycodestyle==2.10.0; python_version >= '3.6'
 pyflakes==3.0.1; python_version >= '3.6'
 pygments==2.15.1; python_version >= '3.7'
-pyproject-api==1.5.2; python_version >= '3.7'
+pyproject-api==1.5.3; python_version >= '3.7'
 pytest==7.4.0
 pyyaml==6.0; python_version >= '3.6'
 requests==2.31.0; python_version >= '3.7'
@@ -61,7 +61,7 @@ sphinxcontrib-qthelp==1.0.3
 sphinxcontrib-serializinghtml==1.1.5
 stevedore==5.1.0; python_version >= '3.8'
 tomli==2.0.1; python_version < '3.11'
-tox==4.6.3
+tox==4.6.4
 typing-extensions==4.7.1; python_version >= '3.7'
 urllib3==2.0.3; python_version >= '3.7'
 virtualenv==20.23.1
@@ -76,22 +76,22 @@ click-didyoumean==0.3.0; python_full_version >= '3.6.2' and python_full_version 
 click-plugins==1.1.1
 click-repl==0.3.0; python_version >= '3.6'
 configobj==5.0.8
-cryptography==41.0.1
-dynaconf==3.1.12
+cryptography==41.0.2
+dynaconf[ini]==3.1.12
 greenlet==2.0.2; platform_machine == 'aarch64' or (platform_machine == 'ppc64le' or (platform_machine == 'x86_64' or (platform_machine == 'amd64' or (platform_machine == 'AMD64' or (platform_machine == 'win32' or platform_machine == 'WIN32')))))
 kombu==5.3.1; python_version >= '3.8'
 mako==1.2.4; python_version >= '3.7'
 prompt-toolkit==3.0.39; python_full_version >= '3.7.0'
 psycopg2==2.9.6
 pycparser==2.21
-pydantic==2.0.1
-pydantic-core==2.0.2; python_version >= '3.7'
+pydantic==2.0.2
+pydantic-core==2.1.2; python_version >= '3.7'
 pynacl==1.5.0
 python-dateutil==2.8.2; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'
 redis==4.6.0
-securesystemslib==0.28.0
+securesystemslib[crypto,pynacl]==0.28.0
 six==1.16.0; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'
-sqlalchemy==2.0.17
+sqlalchemy==2.0.18
 supervisor==4.2.5
 tuf==3.0.0
 tzdata==2023.3; python_version >= '2'
