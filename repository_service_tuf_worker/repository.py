@@ -18,7 +18,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError  # type: ignore
-from securesystemslib.signer import SSlibKey, Signature
+from securesystemslib.signer import Signature, SSlibKey
 from tuf.api.exceptions import BadVersionNumberError, RepositoryError
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
@@ -519,7 +519,7 @@ class MetadataRepository:
 
         # Calculate the bit length (Number of bits between 1 and 32)
         bit_length = int(
-            log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"))
+            log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"), 2)
         )
         # Succinct delegated roles (`bins`)
         succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
@@ -565,34 +565,34 @@ class MetadataRepository:
             self._sign(role)
             self._persist(role, role.signed.type)
 
-        self.write_repository_settings("ROOT", None)
+        self.write_repository_settings("ROOT_SIGNING", None)
         self.write_repository_settings("BOOTSTRAP", task_id)
         logging.info(f"Bootstrap finished with id {task_id}")
 
     def _validate_signatures(self, metadata: Metadata, rolename: str) -> bool:
         """
         Validates metadata signatures for a role name and returns if it
-        is complete signed (threshold signatures).
+        is completely signed (has at least threshold signatures).
         """
         if len(metadata.signatures) == 0:
             raise RepositoryError("At least one initial signature is required")
 
-        valid_singing_keys = set()
-        for signature in metadata.signatures:
-            if signature not in metadata.signed.roles[rolename].keyids:
-                raise RepositoryError(f"Signature {signature} not authorized")
+        valid_signing_keys = set()
+        for keyid in metadata.signatures:
+            if keyid not in metadata.signed.roles[rolename].keyids:
+                raise RepositoryError(f"Signature {keyid} not authorized")
 
-            if signature not in metadata.signed.keys:
+            if keyid not in metadata.signed.keys:
                 raise RepositoryError(
-                    f"Signature {signature} no key for signature"
+                    f"Signature {keyid} no key for signature"
                 )
 
-            public_key = metadata.signed.keys.get(signature)
+            public_key = metadata.signed.keys.get(keyid)
             public_key.verify_signature(metadata)
 
-            valid_singing_keys.add(signature)
+            valid_signing_keys.add(keyid)
 
-        if len(valid_singing_keys) < metadata.signed.roles[rolename].threshold:
+        if len(valid_signing_keys) < metadata.signed.roles[rolename].threshold:
             return False
 
         return True
@@ -1169,7 +1169,7 @@ class MetadataRepository:
         """
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
-        # Do not update the Root if still not full signed
+        # Do not update the Root if still not fully signed
         signed = self._validate_signatures(new_root, Root.type)
         if signed is False:
             self.write_repository_settings(
@@ -1265,12 +1265,12 @@ class MetadataRepository:
             raise KeyError("No 'metadata' in the payload")
 
         if Root.type in metadata:
-            sigining = self._settings.get_fresh(f"{Root.type.upper()}_SIGNING")
-            if sigining:
-                root_signing = Metadata.from_dict(sigining.to_dict())
+            signing = self._settings.get_fresh(f"{Root.type.upper()}_SIGNING")
+            if signing:
+                root_signing = Metadata.from_dict(signing)
                 raise RepositoryError(
                     "Root update process to version "
-                    f"{root_signing.signed.version} is waiting signatures"
+                    f"{root_signing.signed.version} is waiting signature(s)"
                 )
 
             new_root = Metadata.from_dict(metadata[Root.type])
@@ -1350,7 +1350,10 @@ class MetadataRepository:
             filter(lambda var: "SIGNING" in var, dir(self._settings))
         )
 
-        if f"{rolename.upper()}_SIGNING" not in available_signing:
+        if (
+            f"{rolename.upper()}_SIGNING" not in available_signing
+            or self._settings.get_fresh(f"{rolename.upper()}_SIGNING") is None
+        ):
             result = ResultDetails(
                 status="Task finished.",
                 details={
@@ -1364,11 +1367,11 @@ class MetadataRepository:
 
         dict_metadata = self._settings.get_fresh(f"{rolename.upper()}_SIGNING")
 
-        metadata = Metadata.from_dict(dict_metadata.to_dict())
+        metadata = Metadata.from_dict(dict_metadata)
         signature = Signature.from_dict(sig_dict)
         metadata.signatures[signature.keyid] = signature
 
-        # singing root
+        # signing root
         if rolename == Root.type:
             signed, message = self._sign_root(metadata)
 

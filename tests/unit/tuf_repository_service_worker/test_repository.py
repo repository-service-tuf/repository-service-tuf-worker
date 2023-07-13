@@ -654,7 +654,7 @@ class TestMetadataRepository:
             ),
         )
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: 4)
+            get_fresh=pretend.call_recorder(lambda *a: 2)
         )
         monkeypatch.setattr(
             repository,
@@ -706,7 +706,7 @@ class TestMetadataRepository:
             pretend.call("online_public_key"),
         ]
         assert test_repo.write_repository_settings.calls == [
-            pretend.call("ROOT", None),
+            pretend.call("ROOT_SIGNING", None),
             pretend.call("BOOTSTRAP", "task_id"),
         ]
         # Special checks as calls use metadata object instances
@@ -779,7 +779,7 @@ class TestMetadataRepository:
             pretend.call(fake_metadata),
         ]
 
-    def test__validate_signatures_without_signatures(self, test_repo):
+    def test__validate_signatures_without_keyid(self, test_repo):
         fake_public_key = pretend.stub(
             verify_signature=pretend.call_recorder(lambda *a: True)
         )
@@ -800,7 +800,7 @@ class TestMetadataRepository:
             test_repo._validate_signatures(fake_metadata, "root")
         assert "At least one initial signature is required" in str(err)
 
-    def test__validate_signatures_incomplete_signatures(self, test_repo):
+    def test__validate_signatures_incomplete_keyid(self, test_repo):
         fake_public_key = pretend.stub(
             verify_signature=pretend.call_recorder(lambda *a: True)
         )
@@ -965,7 +965,7 @@ class TestMetadataRepository:
             pretend.call(fake_metadata),
         ]
 
-    def test__validate_signatures_no_key_for_signature(self, test_repo):
+    def test__validate_signatures_no_key_for_keyid(self, test_repo):
         fake_public_key = pretend.stub(
             verify_signature=pretend.call_recorder(lambda *a: True)
         )
@@ -2775,11 +2775,7 @@ class TestMetadataRepository:
             if key == "BOOTSTRAP":
                 return "fake_bootstrap_id"
             elif key == "ROOT_SIGNING":
-                return pretend.stub(
-                    to_dict=pretend.call_recorder(
-                        lambda: {"root": "fake_signing_md"}
-                    )
-                )
+                return {"root": "fake_signing_md"}
 
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(get_fresh_settings)
@@ -2936,9 +2932,7 @@ class TestMetadataRepository:
             if var_name == "BOOTSTRAP":
                 return "signing-fake_id"
             else:
-                return pretend.stub(
-                    to_dict=pretend.call_recorder(lambda: {"metadata": "fake"})
-                )
+                return {"metadata": "fake"}
 
         fake_settings = pretend.stub(
             ROOT_SIGNING=pretend.stub(to_dict={"metadata": "fake_root"}),
@@ -2973,6 +2967,7 @@ class TestMetadataRepository:
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP"),
+            pretend.call("ROOT_SIGNING"),
             pretend.call("ROOT_SIGNING"),
         ]
         assert repository.Metadata.from_dict.calls == [
@@ -3086,9 +3081,7 @@ class TestMetadataRepository:
             if var_name == "BOOTSTRAP":
                 return "signing-fake_id"
             else:
-                return pretend.stub(
-                    to_dict=pretend.call_recorder(lambda: {"metadata": "fake"})
-                )
+                return {"metadata": "fake"}
 
         fake_settings = pretend.stub(
             TIMESTAMP_SIGNING=pretend.stub(to_dict={"metadata": "fake_md"}),
@@ -3121,6 +3114,7 @@ class TestMetadataRepository:
         assert "Unsupported Metadata role" in str(err)
         assert fake_settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP"),
+            pretend.call("TIMESTAMP_SIGNING"),
             pretend.call("TIMESTAMP_SIGNING"),
         ]
         assert repository.Metadata.from_dict.calls == [
