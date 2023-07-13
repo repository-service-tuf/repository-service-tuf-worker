@@ -296,6 +296,20 @@ class MetadataRepository:
         """Bumps metadata version by 1."""
         role.signed.version += 1
 
+    def _bump_and_persist(
+        self, role: Metadata, role_name: str, persist: Optional[bool] = True
+    ):
+        """
+        Bump expiry and version, sign and persist 'role' metadata into a new
+        file named VERSION.rolename.json where VERSION is the new role version.
+        Optionally, if persist is false, then don't persist in a file.
+        """
+        self._bump_expiry(role, role_name)
+        self._bump_version(role)
+        self._sign(role)
+        if persist:
+            self._persist(role, role_name)
+
     def _update_timestamp(
         self,
         snapshot_version: int,
@@ -314,10 +328,7 @@ class MetadataRepository:
         )
         timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
 
-        self._bump_version(timestamp)
-        self._bump_expiry(timestamp, Timestamp.type)
-        self._sign(timestamp)
-        self._persist(timestamp, Timestamp.type)
+        self._bump_and_persist(timestamp, Timestamp.type)
 
         return timestamp
 
@@ -355,9 +366,7 @@ class MetadataRepository:
                 }
 
                 # update expiry, bump version and persist to the storage
-                self._bump_expiry(bins_md, BINS)
-                self._bump_version(bins_md)
-                self._sign(bins_md)
+                self._bump_and_persist(bins_md, BINS, persist=False)
                 self._persist(bins_md, db_role.rolename)
                 # update targetfile in db
                 # note: It update only if is not published see the CRUD.
@@ -374,10 +383,7 @@ class MetadataRepository:
             )
 
         # update expiry, bump version and persist to the storage
-        self._bump_expiry(snapshot, Snapshot.type)
-        self._bump_version(snapshot)
-        self._sign(snapshot)
-        self._persist(snapshot, Snapshot.type)
+        self._bump_and_persist(snapshot, Snapshot.type)
 
         return snapshot.signed.version
 
@@ -850,10 +856,7 @@ class MetadataRepository:
             if (targets.signed.expires - datetime.now()) < timedelta(
                 hours=self._hours_before_expire
             ):
-                self._bump_expiry(targets)
-                self._bump_version(targets)
-                self._sign(targets)
-                self._persist(targets, Targets.type)
+                self._bump_and_persist(targets, Targets.type)
                 targets_roles.append(Targets.type)
 
         targets_succinct_roles = targets.signed.delegations.succinct_roles
@@ -863,9 +866,7 @@ class MetadataRepository:
             if (bins_role.signed.expires - datetime.now()) < timedelta(
                 hours=self._hours_before_expire or force is True
             ):
-                self._bump_expiry(bins_role, BINS)
-                self._bump_version(bins_role)
-                self._sign(bins_role)
+                self._bump_and_persist(bins_role, BINS, persist=False)
                 self._persist(bins_role, bins_name)
                 targets_roles.append(bins_name)
 
