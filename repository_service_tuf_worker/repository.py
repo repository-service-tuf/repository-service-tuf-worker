@@ -311,8 +311,7 @@ class MetadataRepository:
             self._persist(role, role_name)
 
     def _update_timestamp(
-        self,
-        snapshot_version: int,
+        self, snapshot_version: Optional[int] = None
     ) -> Metadata[Timestamp]:
         """
         Loads 'timestamp', updates meta info about passed 'snapshot'
@@ -326,57 +325,76 @@ class MetadataRepository:
         timestamp: Metadata[Timestamp] = self._storage_backend.get(
             Timestamp.type, None
         )
-        timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
+        if snapshot_version:
+            timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
 
         self._bump_and_persist(timestamp, Timestamp.type)
 
         return timestamp
 
     def _update_snapshot(
-        self, target_roles: Optional[List[str]] = None
+        self,
+        target_roles: Optional[List[str]] = None,
+        bump_all: Optional[bool] = False,
     ) -> int:
         """
         Loads 'snapshot', updates meta info when 'target_roles' role names are
         given, bumps version and expiration, signs and persists.
         Returns the new snapshot version.
+
+        Args:
+            bump_all: Wheter to bump all bin target roles.
         """
         snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
 
-        if target_roles is not None:
-            db_target_roles = targets_crud.read_roles_joint_files(
-                self._db, target_roles
-            )
+        if target_roles:
+            db_target_roles: List[targets_models.RSTUFTargetRoles] = []
+            if bump_all:
+                db_target_roles = targets_crud.read_all_roles(self._db)
+                for db_role in db_target_roles:
+                    bins_md: Metadata[Targets] = self._storage_backend.get(
+                        db_role.rolename
+                    )
+                    # update expiry, bump version and persist to the storage
+                    self._bump_and_persist(bins_md, BINS, persist=False)
+                    self._persist(bins_md, db_role.rolename)
 
-            for db_role in db_target_roles:
-                bins_md: Metadata[Targets] = self._storage_backend.get(
-                    db_role.rolename
-                )
-                bins_md.signed.targets.clear()
-                bins_md.signed.targets = {
-                    file.path: TargetFile.from_dict(file.info, file.path)
-                    for file in db_role.target_files
-                    if file.action == targets_schema.TargetAction.ADD
-                    # Filtering the files with action 'ADD' cannot be done in
-                    # CRUD. If a target role doesn't have any target files with
-                    # an action 'ADD' (only 'REMOVE') then using CRUD will not
-                    # return the target role and it won't be updated.
-                    # An example can be when there is a role with one target
-                    # file with action "REMOVE" and the CRUD will return None
-                    # for this specific role.
-                }
-
-                # update expiry, bump version and persist to the storage
-                self._bump_and_persist(bins_md, BINS, persist=False)
-                self._persist(bins_md, db_role.rolename)
-                # update targetfile in db
-                # note: It update only if is not published see the CRUD.
-                targets_crud.update_files_to_published(
-                    self._db, [file.path for file in db_role.target_files]
+            else:
+                db_target_roles = targets_crud.read_roles_joint_files(
+                    self._db, target_roles
                 )
 
-                snapshot.signed.meta[f"{db_role.rolename}.json"] = MetaFile(
-                    version=bins_md.signed.version
-                )
+                for db_role in db_target_roles:
+                    rolename = db_role.rolename
+                    bins_md: Metadata[Targets] = self._storage_backend.get(
+                        rolename
+                    )
+                    bins_md.signed.targets.clear()
+                    bins_md.signed.targets = {
+                        file.path: TargetFile.from_dict(file.info, file.path)
+                        for file in db_role.target_files
+                        if file.action == targets_schema.TargetAction.ADD
+                        # Filtering the files with action 'ADD' cannot be done
+                        # in CRUD. If a target role doesn't have any target
+                        # files with an action 'ADD' (only 'REMOVE') then using
+                        # CRUD will not return the target role and it won't be
+                        # updated. An example can be when there is a role with
+                        # one target file with action "REMOVE" and the CRUD
+                        # will return None for this specific role.
+                    }
+
+                    # update expiry, bump version and persist to the storage
+                    self._bump_and_persist(bins_md, BINS, persist=False)
+                    self._persist(bins_md, rolename)
+                    # update targetfile in db
+                    # note: It update only if is not published see the CRUD.
+                    targets_crud.update_files_to_published(
+                        self._db, [file.path for file in db_role.target_files]
+                    )
+
+                    snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
+                        version=bins_md.signed.version
+                    )
 
             targets_crud.update_roles_version(
                 self._db, [int(db_role.id) for db_role in db_target_roles]
@@ -866,8 +884,6 @@ class MetadataRepository:
             if (bins_role.signed.expires - datetime.now()) < timedelta(
                 hours=self._hours_before_expire or force is True
             ):
-                self._bump_and_persist(bins_role, BINS, persist=False)
-                self._persist(bins_role, bins_name)
                 targets_roles.append(bins_name)
 
         if len(targets_roles) > 0:
@@ -876,7 +892,7 @@ class MetadataRepository:
                 "version bumped: {targets_meta}"
             )
             timestamp = self._update_timestamp(
-                self._update_snapshot(targets_roles)
+                self._update_snapshot(targets_roles, bump_all=True)
             )
             logging.info(
                 "[scheduled targets bump] Snapshot version bumped: "

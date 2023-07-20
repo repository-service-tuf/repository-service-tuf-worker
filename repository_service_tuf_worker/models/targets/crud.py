@@ -88,6 +88,13 @@ def read_role_by_rolename(
     )
 
 
+def read_all_roles(db: Session) -> List[models.RSTUFTargetRoles]:
+    """
+    Read a all Target bin roles.
+    """
+    return db.query(models.RSTUFTargetRoles).all()
+
+
 def read_roles_joint_files(
     db: Session, rolenames: List[str]
 ) -> List[models.RSTUFTargetRoles]:

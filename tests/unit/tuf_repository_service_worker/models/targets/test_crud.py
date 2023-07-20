@@ -158,6 +158,20 @@ class TestCrud:
         assert mocked_filter.filter.calls == [pretend.call(True)]
         assert mocked_first.first.calls == [pretend.call()]
 
+    def test_read_all_roles(self):
+        mocked_all = pretend.stub(
+            all=pretend.call_recorder(lambda: [crud.models.RSTUFTargetRoles])
+        )
+        mocked_db = pretend.stub(
+            query=pretend.call_recorder(lambda *a: mocked_all)
+        )
+        test_result = crud.read_all_roles(mocked_db)
+        assert test_result == [crud.models.RSTUFTargetRoles]
+        assert mocked_db.query.calls == [
+            pretend.call(crud.models.RSTUFTargetRoles)
+        ]
+        assert mocked_all.all.calls == [pretend.call()]
+
     def test_read_roles_joint_files(self):
         crud.models.RSTUFTargetRoles = pretend.stub(
             rolename=pretend.stub(in_=pretend.call_recorder(lambda *a: True))
