@@ -310,9 +310,7 @@ class MetadataRepository:
         if persist:
             self._persist(role, role_name)
 
-    def _update_timestamp(
-        self, snapshot_version: Optional[int] = None
-    ) -> Metadata[Timestamp]:
+    def _update_timestamp(self, snapshot_version: int) -> Metadata[Timestamp]:
         """
         Loads 'timestamp', updates meta info about passed 'snapshot'
         metadata, bumps version and expiration, signs and persists.
@@ -325,8 +323,7 @@ class MetadataRepository:
         timestamp: Metadata[Timestamp] = self._storage_backend.get(
             Timestamp.type, None
         )
-        if snapshot_version:
-            timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
+        timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
 
         self._bump_and_persist(timestamp, Timestamp.type)
 
