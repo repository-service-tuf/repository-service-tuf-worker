@@ -1249,8 +1249,9 @@ class MetadataRepository:
         Args:
             payload: contains new metadata
                 Supported metadata types: Root
-                example: {"metadata": {"root": Any}}
-            update_state: not used, but required argument by `app.py`
+                example: ``{"metadata": {"root": Any}}``
+
+            update_state: not used, but required argument by ``app.py``
         """
 
         # there is also a verification in the RSTUF API calls
