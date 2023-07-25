@@ -1,8 +1,8 @@
 Worker design
-=============
+#############
 
 Context level
--------------
+=============
 
 The ``repository-service-tuf-worker``, in the context perspective, is a Consumer and
 Publisher from the Broker that receives tasks to perform in the
@@ -15,7 +15,7 @@ Service* to access the online keys.
 
 
 Container level
----------------
+===============
 
 The ``repository-service-tuf-worker``, in the container perspective, is a Metadata
 Repository worker that performs actions to the TUF Metadata.

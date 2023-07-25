@@ -8,15 +8,155 @@ Development
 
 
 Component level
----------------
+===============
+
 .. image:: /_static/repository-service-tuf-worker-C3.png
 
 
 Component Specific
-------------------
+==================
+
+Distributed Asynchronous Signing
+--------------------------------
+
+This describes the Distributed Asynchronous Signing with other specific TUF
+Metadata processes.
+
+Sign
+....
+
+* if there is no half-signed metadata in cache (RSTUF Settings:
+  ``SIGNING_<ROLENAME>``), task returns
+* if included metadata has enough signatures:
+
+  - and bootstrap is in pending state, bootstrap task is finalized
+  - otherwise, metadata update task is finalized
+
+* otherwise, half-signed metadata in cache is updated (RSTUF Settings:
+  ``SIGNING_<ROLENAME>``)
+
+.. uml::
+
+   @startuml
+      partition "sign" {
+         start
+      }
+
+      partition "Signing state" {
+         if ("ROLENAME_SIGNING" is None) then (True)
+            end
+         else (False)
+         endif
+      }
+
+      partition "Metadata Type" {
+         if (Metadata is "Root") then (False)
+            end
+         else (True)
+         endif
+      }
+
+      partition "Threshold" {
+         if (Threshold is complete) then (True)
+            : "<ROLE_NAME>_SIGNING" set to None;
+            if (Bootstrap is "signing-<task-id>") then (True)
+               : Finish Bootstrap;
+               : "BOOTSTRAP" set to "<task-id>";
+            else (False)
+               : Update Metadata;
+            endif
+         else (False)
+            : "<ROLE_NAME>_SIGNING" set to new Metadata;
+         endif
+      }
+      stop
+
+    @enduml
+
+
+Bootstrap
+.........
+
+* if the included root has enough signatures, task is finalized right away
+* otherwise, task is put in pending state and half-signed root is cached
+  (RSTUF Setting: ``SIGNING_ROOT``)
+
+.. uml::
+
+   @startuml
+      partition "Bootstrap"{
+         start
+         if (Bootstrap is "<task-id>") then (True)
+            end
+         elseif (Bootstrap is "pre-<task-id>") then (True)
+            end
+         elseif (Bootstrap is "signing-<task-id>") then (True)
+            end
+         else
+            : Bootstrap is "None";
+         endif
+      }
+
+      partition "Threshold" {
+         if (Threshold is complete) then (True)
+            : Finish Bootstrap;
+            : "BOOTSTRAP" set to "<task-id>";
+
+         else (False)
+            : "ROOT_SIGNING" set to Root Metadata;
+            : "BOOTSTRAP" set to "signin-<task-id>";
+         endif
+      }
+      stop
+
+    @enduml
+
+Metadata Update
+...............
+
+* if bootstrap is not finalized, task returns
+* if included metadata has enough signatures, task is finalized right away
+* otherwise, half-signed metadata is cached (RSTUF Settings:
+  ``SIGNING_<ROLENAME>``)
+
+.. uml::
+
+   @startuml
+      partition "Metadata Update" {
+         start
+      }
+
+      partition "Bootstrap"{
+         if (Bootstrap is None) then (True)
+            end
+         elseif (Bootstrap is "pre-<task-id>") then (True)
+            end
+         elseif (Bootstrap is "signing-<task-id>") then (True)
+            end
+         else
+            : Bootstrap is "<task-id>";
+         endif
+      }
+
+      partition "Metadata Type" {
+         if (Metadata is "Root") then (False)
+            end
+         else (True)
+         endif
+      }
+
+      partition "Threshold" {
+         if (Threshold is complete) then (False)
+            : "<ROLE_NAME>_SIGNING" set to new Metadata;
+         else (False)
+         endif
+      }
+      stop
+
+    @enduml
 
 Adding/Removing targets
-.......................
+-----------------------
 
 As mentioned at the container level, the domain of ``repository-service-tuf-worker``
 (Repository Worker) is managing the TUF Repository Metadata.
@@ -150,7 +290,7 @@ locks [#f1]_ . It will  will do:
    . I avoid that two tasks write the same metadata, causing a race condition.
 
 Important issues/problems
-.........................
+#########################
 
 .. toctree::
    :maxdepth: 1
@@ -158,10 +298,10 @@ Important issues/problems
    known_issues
 
 Implementation
-..............
+##############
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
 
    repository_service_tuf_worker
    repository_service_tuf_worker.models
