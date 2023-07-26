@@ -9,7 +9,7 @@ import pretend
 import pytest
 from celery.exceptions import ChordError
 from celery.result import states
-from tuf.api.metadata import Metadata, Targets, Timestamp
+from tuf.api.metadata import Metadata, Snapshot, Targets, Timestamp
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
@@ -819,6 +819,61 @@ class TestMetadataRepository:
             test_repo.bootstrap(payload)
 
         assert "No 'metadata' in the payload" in str(err)
+
+    def test_update_settings(self, test_repo):
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        TARGETS_EXP = 100
+        SNAPSHOT_EXP = 50
+        TIMESTAMP_EXP = 20
+        BINS_EXP = 5
+        payload = {
+            "settings": {
+                "expiration": {
+                    Targets.type: TARGETS_EXP,
+                    Snapshot.type: SNAPSHOT_EXP,
+                    Timestamp.type: TIMESTAMP_EXP,
+                    repository.Roles.BINS.value: BINS_EXP,
+                }
+            }
+        }
+        test_repo.update_settings(payload)
+        BINS_CONFIG_NAME = f"{repository.Roles.BINS.value.upper()}_EXPIRATION"
+        TIMESTAMP_CONFIG_NAME = f"{Timestamp.type.upper()}_EXPIRATION"
+
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call(f"{Targets.type.upper()}_EXPIRATION", TARGETS_EXP),
+            pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
+            pretend.call(TIMESTAMP_CONFIG_NAME, TIMESTAMP_EXP),
+            pretend.call(BINS_CONFIG_NAME, BINS_EXP),
+        ]
+
+    def test_update_settings_no_settings(self, test_repo):
+        with pytest.raises(KeyError) as err:
+            test_repo.update_settings(payload={})
+
+        assert "No 'settings' in the payload" in str(err)
+
+    def test_update_settings_no_expiration(self, test_repo):
+        with pytest.raises(KeyError) as err:
+            test_repo.update_settings(payload={"settings": {}})
+
+        assert "No 'expiration' in the payload" in str(err)
+
+    def test_update_settings_no_role_in_expiration(self, test_repo):
+        with pytest.raises(KeyError) as err:
+            test_repo.update_settings(payload={"settings": {"expiration": {}}})
+
+        assert "No role provided for expiration policy change" in str(err)
+
+    def test_update_settings_no_valid_role_in_expiration(self, test_repo):
+        with pytest.raises(KeyError) as err:
+            test_repo.update_settings(
+                payload={"settings": {"expiration": {"foo": 1}}}
+            )
+
+        assert "Role foo is not a valid dictionary key" in str(err)
 
     def test_publish_targets(self, test_repo, monkeypatch):
         @contextmanager

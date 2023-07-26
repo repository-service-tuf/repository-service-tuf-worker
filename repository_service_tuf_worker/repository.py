@@ -57,6 +57,10 @@ class Roles(enum.Enum):
     TIMESTAMP = Timestamp.type
     BINS = "bins"
 
+    @staticmethod
+    def online_roles() -> List[str]:
+        return [Targets.type, Snapshot.type, Timestamp.type, "bins"]
+
 
 ALL_REPOSITORY_ROLES_NAMES = [rolename.value for rolename in Roles]
 OFFLINE_KEYS = {
@@ -242,6 +246,7 @@ class MetadataRepository:
             key: key name
             value: value for the key
         """
+        logging.info(f"Saving {key} with value: {value}")
         settings_data = self._settings.as_dict(env=self._settings.current_env)
         settings_data[key] = value
         redis_loader.write(self._settings, settings_data)
@@ -627,6 +632,34 @@ class MetadataRepository:
         logging.info(f"Bootstrap locked with id {payload['task_id']}")
 
         return asdict(result)
+
+    def update_settings(
+        self,
+        payload: Dict[str, Any],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ):
+        """Update repository settings with the new settings."""
+        tuf_settings: Dict[str, Any] = payload.get("settings")
+        if tuf_settings is None:
+            raise KeyError("No 'settings' in the payload")
+
+        if tuf_settings.get("expiration") is None:
+            raise KeyError("No 'expiration' in the payload")
+
+        if len(tuf_settings["expiration"]) < 1:
+            raise KeyError("No role provided for expiration policy change")
+
+        logging.info("Updating settings")
+        online_roles = Roles.online_roles()
+        for role in tuf_settings["expiration"]:
+            if role not in online_roles:
+                raise KeyError(f"Role {role} is not a valid dictionary key")
+
+            self.write_repository_settings(
+                f"{role.upper()}_EXPIRATION", tuf_settings["expiration"][role]
+            )
 
     def publish_targets(
         self,
