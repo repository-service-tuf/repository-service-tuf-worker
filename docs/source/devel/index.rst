@@ -114,6 +114,11 @@ Bootstrap
 Metadata Update
 ...............
 
+.. note::
+   Not implemented yet
+
+   https://github.com/repository-service-tuf/repository-service-tuf-worker/issues/336
+
 * if bootstrap is not finalized, task returns
 * if included metadata has enough signatures, task is finalized right away
 * otherwise, half-signed metadata is cached (RSTUF Settings:
