@@ -1064,7 +1064,9 @@ class TestMetadataRepository:
             "status": "Task finished.",
         }
         assert fake_datetime.now.calls == [pretend.call()]
-        assert test_repo._settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
         assert repository.Metadata.from_dict.calls == [
             pretend.call(payload["metadata"]["root"])
         ]
@@ -1149,7 +1151,9 @@ class TestMetadataRepository:
             "status": "Task finished.",
         }
         assert fake_datetime.now.calls == [pretend.call()]
-        assert test_repo._settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
         assert repository.Metadata.from_dict.calls == [
             pretend.call(payload["metadata"]["root"])
         ]
@@ -1199,7 +1203,9 @@ class TestMetadataRepository:
             "status": "Task finished.",
         }
         assert fake_datetime.now.calls == [pretend.call()]
-        assert test_repo._settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
 
     def test_bootstrap_missing_settings(self, test_repo):
         payload = {

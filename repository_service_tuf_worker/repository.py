@@ -246,8 +246,11 @@ class MetadataRepository:
         Additionally, repository settings are persisted in the Redis server
         so that they can be reused by multiple RSTUF Worker instances.
 
+        https://repository-service-tuf.readthedocs.io/en/latest/devel/design.html#rstuf-repository-settings-configuration  # noqa
+
         Args:
             key: key name
+
             value: value for the key
         """
         logging.info(f"Saving {key} with value: {value}")
@@ -655,7 +658,7 @@ class MetadataRepository:
                 status="Task finished.",
                 details={
                     "bootstrap": False,
-                    "message": f"Bootstrap is LOCKED.",
+                    "message": "Bootstrap is LOCKED.",
                 },
                 last_update=datetime.now(),
             )
@@ -1318,21 +1321,24 @@ class MetadataRepository:
         signed = self._validate_signatures(root, Root.type)
         bootstrap = self._settings.get_fresh("BOOTSTRAP")
 
-        if signed:
-            bootstrap_task_id = bootstrap.split("signing-")[1]
-            self._persist(root, Root.type)
-            self.write_repository_settings("ROOT_SIGNING", None)
-            self._bootstrap_online_roles(root)
-            self.write_repository_settings("BOOTSTRAP", bootstrap_task_id)
-            message = "Bootstrap finished"
-            logging.info(message)
+        if "signing-" in bootstrap:
+            if signed:
+                self._persist(root, Root.type)
+                self.write_repository_settings("ROOT_SIGNING", None)
+                bootstrap_task_id = bootstrap.split("signing-")[1]
+                self._bootstrap_online_roles(root)
+                self.write_repository_settings("BOOTSTRAP", bootstrap_task_id)
+                message = "Bootstrap finished"
+                logging.info(message)
+            else:
+                self.write_repository_settings(
+                    f"{Root.type.upper()}_SIGNING", root.to_dict()
+                )
+                message = f"Root version {root.signed.version} pending sign."
+                logging.info(message)
 
         else:
-            self.write_repository_settings(
-                f"{Root.type.upper()}_SIGNING", root.to_dict()
-            )
-            message = f"Root version {root.signed.version} pending sign."
-            logging.info(message)
+            message = "Signing Metadata Update not implemented (issue #336)"
 
         return signed, message
 

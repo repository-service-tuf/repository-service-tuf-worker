@@ -53,20 +53,25 @@ Sign
          if (Metadata is "Root") then (False)
             end
          else (True)
-         endif
-      }
+            partition "Sign Root" {
+               if (Bootstrap is "signing-<task-id>") then (True)
+                  if (Signed? (Threshold)) then (True)
+                     : Finish Bootstrap;
+                     : "<ROLE_NAME>_SIGNING" set to None;
+                     : "BOOTSTRAP" set to "<task-id>";
+                  else (False)
+                     : "<ROLE_NAME>_SIGNING" set to new Metadata;
+                  endif
 
-      partition "Threshold" {
-         if (Threshold is complete) then (True)
-            : "<ROLE_NAME>_SIGNING" set to None;
-            if (Bootstrap is "signing-<task-id>") then (True)
-               : Finish Bootstrap;
-               : "BOOTSTRAP" set to "<task-id>";
-            else (False)
-               : Update Metadata;
-            endif
-         else (False)
-            : "<ROLE_NAME>_SIGNING" set to new Metadata;
+               else (False)
+                  : Metadata Update;
+                  note right
+                     Not Implemented ([[https://github.com/repository-service-tuf/repository-service-tuf-worker/issues/336 Issue #336]])
+                  end note
+                  end
+               endif
+
+            }
          endif
       }
       stop
@@ -105,55 +110,6 @@ Bootstrap
          else (False)
             : "ROOT_SIGNING" set to Root Metadata;
             : "BOOTSTRAP" set to "signin-<task-id>";
-         endif
-      }
-      stop
-
-    @enduml
-
-Metadata Update
-...............
-
-.. note::
-   Not implemented yet
-
-   https://github.com/repository-service-tuf/repository-service-tuf-worker/issues/336
-
-* if bootstrap is not finalized, task returns
-* if included metadata has enough signatures, task is finalized right away
-* otherwise, half-signed metadata is cached (RSTUF Settings:
-  ``SIGNING_<ROLENAME>``)
-
-.. uml::
-
-   @startuml
-      partition "Metadata Update" {
-         start
-      }
-
-      partition "Bootstrap"{
-         if (Bootstrap is None) then (True)
-            end
-         elseif (Bootstrap is "pre-<task-id>") then (True)
-            end
-         elseif (Bootstrap is "signing-<task-id>") then (True)
-            end
-         else
-            : Bootstrap is "<task-id>";
-         endif
-      }
-
-      partition "Metadata Type" {
-         if (Metadata is "Root") then (False)
-            end
-         else (True)
-         endif
-      }
-
-      partition "Threshold" {
-         if (Threshold is complete) then (False)
-            : "<ROLE_NAME>_SIGNING" set to new Metadata;
-         else (False)
          endif
       }
       stop
