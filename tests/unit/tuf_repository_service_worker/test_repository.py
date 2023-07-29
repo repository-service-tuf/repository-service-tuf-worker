@@ -2897,6 +2897,38 @@ class TestMetadataRepository:
             pretend.call(fake_root_md)
         ]
 
+    def test__sign_root_bootstrap_not_signing(self, monkeypatch, test_repo):
+        repository.Signature.from_dict = pretend.call_recorder(
+            lambda *a: pretend.stub(keyid="fake_sig")
+        )
+        test_repo._validate_signatures = pretend.call_recorder(lambda *a: True)
+        fake_settings = pretend.stub(
+            ROOT_SIGNING=pretend.stub(to_dict={"metadata": "fake_root"}),
+            get_fresh=pretend.call_recorder(lambda *a: "fake_id"),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_root_md = pretend.stub(
+            signatures={},
+            signed=pretend.stub(version=3),
+            to_dict=pretend.call_recorder(lambda: None),
+        )
+
+        sign_payload = {"keyid": "keyid_hash", "sig": "sig_hash"}
+        result, message = test_repo._sign_root(fake_root_md, sign_payload)
+
+        assert result is True
+        assert (
+            message == "Signing Metadata Update not implemented (issue #336)"
+        )
+        assert test_repo._validate_signatures.calls == [
+            pretend.call(fake_root_md, "root")
+        ]
+        assert fake_settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+
     def test__sign_root_pending_sign_bootstrap(self, monkeypatch, test_repo):
         repository.Signature.from_dict = pretend.call_recorder(
             lambda *a: pretend.stub(keyid="fake_sig")
