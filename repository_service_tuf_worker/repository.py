@@ -649,6 +649,18 @@ class MetadataRepository:
         if root_metadata is None:
             raise KeyError("No 'metadata' in the payload")
 
+        bootstrap_status = self._settings.get_fresh("BOOTSTRAP")
+        if bootstrap_status is not None:
+            result = ResultDetails(
+                status="Task finished.",
+                details={
+                    "bootstrap": False,
+                    "message": f"Bootstrap is LOCKED.",
+                },
+                last_update=datetime.now(),
+            )
+            return asdict(result)
+
         root: Metadata[Root] = Metadata.from_dict(root_metadata[Root.type])
 
         signed = self._validate_signatures(root, Root.type)

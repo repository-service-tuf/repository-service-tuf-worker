@@ -1009,6 +1009,14 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: None)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         fake_root_md = pretend.stub(
             type="root",
             signed=pretend.stub(
@@ -1056,6 +1064,7 @@ class TestMetadataRepository:
             "status": "Task finished.",
         }
         assert fake_datetime.now.calls == [pretend.call()]
+        assert test_repo._settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
         assert repository.Metadata.from_dict.calls == [
             pretend.call(payload["metadata"]["root"])
         ]
@@ -1080,6 +1089,14 @@ class TestMetadataRepository:
         )
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: None)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         fake_root_md = pretend.stub(
             type="root",
@@ -1132,6 +1149,7 @@ class TestMetadataRepository:
             "status": "Task finished.",
         }
         assert fake_datetime.now.calls == [pretend.call()]
+        assert test_repo._settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
         assert repository.Metadata.from_dict.calls == [
             pretend.call(payload["metadata"]["root"])
         ]
@@ -1145,6 +1163,43 @@ class TestMetadataRepository:
         assert fake_root_md.to_dict.calls == [pretend.call()]
         assert test_repo._persist.calls == []
         assert test_repo._bootstrap_online_roles.calls == []
+
+    def test_bootstrap_when_bootstrap_started(self, monkeypatch, test_repo):
+        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_datetime = pretend.stub(
+            now=pretend.call_recorder(lambda: fake_time)
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.datetime", fake_datetime
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "signing-task_id")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        payload = {
+            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "metadata": {
+                "root": {"md_k1": "md_v1"},
+            },
+            "task_id": "fake_task_id",
+        }
+
+        result = test_repo.bootstrap(payload)
+        assert result == {
+            "details": {
+                "bootstrap": False,
+                "message": "Bootstrap is LOCKED.",
+            },
+            "last_update": fake_time,
+            "status": "Task finished.",
+        }
+        assert fake_datetime.now.calls == [pretend.call()]
+        assert test_repo._settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
 
     def test_bootstrap_missing_settings(self, test_repo):
         payload = {
