@@ -8,7 +8,31 @@ from alembic import context
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", os.environ["RSTUF_SQL_SERVER"])
+
+# Support RSTUF Worker Container multiple environment variables for SQL
+sql_server = os.getenv("RSTUF_SQL_SERVER")
+sql_user = os.getenv("RSTUF_SQL_USER")
+sql_password = os.getenv("RSTUF_SQL_PASSWORD")
+
+if sql_server is None:
+    raise ValueError("RSTUF_SQL_SERVER is required")
+
+sql_server = sql_server.replace("postgresql://", "")  # remove protocol
+
+if sql_user and sql_password is None:
+    raise ValueError(
+        "RSTUF_SQL_PASSWORD is required when using RSTUF_SQL_USER"
+    )
+elif sql_user and sql_password:
+    if sql_password.startswith("/run/secrets"):
+        with open(sql_password) as f:
+            sql_password = f.read().rstrip("\n")
+    sql_server_uri = f"postgresql://{sql_user}:{sql_password}@{sql_server}"
+else:
+    sql_server_uri = f"postgresql://{sql_server}"
+
+
+config.set_main_option("sqlalchemy.url", sql_server_uri)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
