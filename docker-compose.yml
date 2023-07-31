@@ -73,7 +73,9 @@ services:
       - RSTUF_LOCAL_KEYVAULT_PATH=/opt/repository-service-tuf-worker/tests/files/key_storage
       - RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass:online-rsa.key,strongPass,rsa
       - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
-      - RSTUF_SQL_SERVER=postgresql://postgres:secret@postgres:5432
+      - RSTUF_SQL_SERVER=postgres:5432
+      - RSTUF_SQL_USER=postgres
+      - RSTUF_SQL_PASSWORD=secret
       - RSTUF_REDIS_SERVER=redis://redis
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
