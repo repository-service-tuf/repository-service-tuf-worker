@@ -838,7 +838,12 @@ class TestMetadataRepository:
                 }
             }
         }
-        test_repo.update_settings(payload)
+        result = test_repo.update_settings(payload)
+
+        assert "update settings succeded" in result.status
+        assert result.details["update_settings"] is True
+        assert "Update settings succeded." in result.details["message"]
+
         BINS_CONFIG_NAME = f"{repository.Roles.BINS.value.upper()}_EXPIRATION"
         TIMESTAMP_CONFIG_NAME = f"{Timestamp.type.upper()}_EXPIRATION"
 
@@ -850,30 +855,38 @@ class TestMetadataRepository:
         ]
 
     def test_update_settings_no_settings(self, test_repo):
-        with pytest.raises(KeyError) as err:
-            test_repo.update_settings(payload={})
+        result = test_repo.update_settings(payload={})
 
-        assert "No 'settings' in the payload" in str(err)
+        assert "update settings failed" in result.status
+        assert result.details["update_settings"] is False
+        assert "No 'settings' in the payload" in result.details["message"]
 
     def test_update_settings_no_expiration(self, test_repo):
-        with pytest.raises(KeyError) as err:
-            test_repo.update_settings(payload={"settings": {}})
+        result = test_repo.update_settings(payload={"settings": {}})
 
-        assert "No 'expiration' in the payload" in str(err)
+        assert "update settings failed" in result.status
+        assert result.details["update_settings"] is False
+        assert "No 'expiration' in the payload" in result.details["message"]
 
     def test_update_settings_no_role_in_expiration(self, test_repo):
-        with pytest.raises(KeyError) as err:
-            test_repo.update_settings(payload={"settings": {"expiration": {}}})
+        result = test_repo.update_settings(
+            payload={"settings": {"expiration": {}}}
+        )
 
-        assert "No role provided for expiration policy change" in str(err)
+        assert "update settings failed" in result.status
+        assert result.details["update_settings"] is False
+        err_msg = "No role provided for expiration policy change"
+        assert err_msg in result.details["message"]
 
     def test_update_settings_no_valid_role_in_expiration(self, test_repo):
-        with pytest.raises(KeyError) as err:
-            test_repo.update_settings(
+        result = test_repo.update_settings(
                 payload={"settings": {"expiration": {"foo": 1}}}
             )
 
-        assert "Role foo is not a valid dictionary key" in str(err)
+        assert "update settings failed" in result.status
+        assert result.details["update_settings"] is False
+        err_msg = "Role foo is not a valid dictionary key"
+        assert err_msg in result.details["message"]
 
     def test_publish_targets(self, test_repo, monkeypatch):
         @contextmanager

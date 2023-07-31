@@ -639,27 +639,65 @@ class MetadataRepository:
         update_state: Optional[
             Task.update_state
         ] = None,  # It is required (see: app.py)
-    ):
+    ) -> ResultDetails:
         """Update repository settings with the new settings."""
         tuf_settings: Dict[str, Any] = payload.get("settings")
         if tuf_settings is None:
-            raise KeyError("No 'settings' in the payload")
+            return ResultDetails(
+                status="update settings failed",
+                details={
+                    "update_settings": False,
+                    "message": "No 'settings' in the payload",
+                },
+                last_update=datetime.now()
+            )
 
         if tuf_settings.get("expiration") is None:
-            raise KeyError("No 'expiration' in the payload")
+            return ResultDetails(
+                status="update settings failed",
+                details={
+                    "update_settings": False,
+                    "message": "No 'expiration' in the payload",
+                },
+                last_update=datetime.now()
+            )
 
         if len(tuf_settings["expiration"]) < 1:
-            raise KeyError("No role provided for expiration policy change")
+            return ResultDetails(
+                status="update settings failed",
+                details={
+                    "update_settings": False,
+                    "message": "No role provided for expiration policy change",
+                },
+                last_update=datetime.now()
+            )
 
         logging.info("Updating settings")
         online_roles = Roles.online_roles()
         for role in tuf_settings["expiration"]:
             if role not in online_roles:
-                raise KeyError(f"Role {role} is not a valid dictionary key")
+                error_msg = f"Role {role} is not a valid dictionary key",
+                return ResultDetails(
+                    status="update settings failed",
+                    details={
+                        "update_settings": False,
+                        "message": error_msg,
+                    },
+                    last_update=datetime.now()
+                )
 
             self.write_repository_settings(
                 f"{role.upper()}_EXPIRATION", tuf_settings["expiration"][role]
             )
+
+        return ResultDetails(
+            status="update settings succeded",
+            details={
+                "update_settings": True,
+                "message": "Update settings succeded.",
+            },
+            last_update=datetime.now()
+        )
 
     def publish_targets(
         self,
