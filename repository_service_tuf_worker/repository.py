@@ -648,8 +648,10 @@ class MetadataRepository:
                 details={
                     "update_settings": False,
                     "message": "No 'settings' in the payload",
+                    "updated_roles": [],
+                    "non_valid_roles": [],
                 },
-                last_update=datetime.now()
+                last_update=datetime.now(),
             )
 
         if tuf_settings.get("expiration") is None:
@@ -658,8 +660,10 @@ class MetadataRepository:
                 details={
                     "update_settings": False,
                     "message": "No 'expiration' in the payload",
+                    "updated_roles": [],
+                    "non_valid_roles": [],
                 },
-                last_update=datetime.now()
+                last_update=datetime.now(),
             )
 
         if len(tuf_settings["expiration"]) < 1:
@@ -668,35 +672,35 @@ class MetadataRepository:
                 details={
                     "update_settings": False,
                     "message": "No role provided for expiration policy change",
+                    "updated_roles": [],
+                    "non_valid_roles": [],
                 },
-                last_update=datetime.now()
+                last_update=datetime.now(),
             )
 
         logging.info("Updating settings")
         online_roles = Roles.online_roles()
+        updated_roles: List[str] = []
+        non_valid_roles: List[str] = []
         for role in tuf_settings["expiration"]:
             if role not in online_roles:
-                error_msg = f"Role {role} is not a valid dictionary key",
-                return ResultDetails(
-                    status="update settings failed",
-                    details={
-                        "update_settings": False,
-                        "message": error_msg,
-                    },
-                    last_update=datetime.now()
-                )
+                non_valid_roles.append(role)
+                continue
 
             self.write_repository_settings(
                 f"{role.upper()}_EXPIRATION", tuf_settings["expiration"][role]
             )
+            updated_roles.append(role)
 
         return ResultDetails(
             status="update settings succeded",
             details={
                 "update_settings": True,
                 "message": "Update settings succeded.",
+                "updated_roles": updated_roles,
+                "non_valid_roles": non_valid_roles,
             },
-            last_update=datetime.now()
+            last_update=datetime.now(),
         )
 
     def publish_targets(
