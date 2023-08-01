@@ -57,6 +57,10 @@ class Roles(enum.Enum):
     TIMESTAMP = Timestamp.type
     BINS = "bins"
 
+    @staticmethod
+    def online_roles() -> List[str]:
+        return [Targets.type, Snapshot.type, Timestamp.type, "bins"]
+
 
 ALL_REPOSITORY_ROLES_NAMES = [rolename.value for rolename in Roles]
 OFFLINE_KEYS = {
@@ -242,6 +246,7 @@ class MetadataRepository:
             key: key name
             value: value for the key
         """
+        logging.info(f"Saving {key} with value: {value}")
         settings_data = self._settings.as_dict(env=self._settings.current_env)
         settings_data[key] = value
         redis_loader.write(self._settings, settings_data)
@@ -625,6 +630,78 @@ class MetadataRepository:
 
         self.write_repository_settings("BOOTSTRAP", payload["task_id"])
         logging.info(f"Bootstrap locked with id {payload['task_id']}")
+
+        return asdict(result)
+
+    def update_settings(
+        self,
+        payload: Dict[str, Any],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> ResultDetails:
+        """
+        Update repository settings with the new settings.
+
+        Supports only updating the expiration policy settings for online roles.
+        Expiration parameters reference:
+        https://repository-service-tuf.readthedocs.io/en/stable/devel/design.html#tuf-repository-settings  # noqa
+        """
+        tuf_settings: Dict[str, Any] = payload.get("settings")
+        result: ResultDetails
+        if tuf_settings is None:
+            result = ResultDetails(
+                status="update settings failed",
+                details={
+                    "update_settings": False,
+                    "message": "No 'settings' in the payload",
+                },
+                last_update=datetime.now(),
+            )
+        elif tuf_settings.get("expiration") is None:
+            result = ResultDetails(
+                status="update settings failed",
+                details={
+                    "update_settings": False,
+                    "message": "No 'expiration' in the payload",
+                },
+                last_update=datetime.now(),
+            )
+        elif len(tuf_settings["expiration"]) < 1:
+            result = ResultDetails(
+                status="update settings failed",
+                details={
+                    "update_settings": False,
+                    "message": "No role provided for expiration policy change",
+                },
+                last_update=datetime.now(),
+            )
+        else:
+            logging.info("Updating settings")
+            online_roles = Roles.online_roles()
+            updated_roles: List[str] = []
+            invalid_roles: List[str] = []
+            for role in tuf_settings["expiration"]:
+                if role not in online_roles:
+                    invalid_roles.append(role)
+                    continue
+
+                self.write_repository_settings(
+                    f"{role.upper()}_EXPIRATION",
+                    tuf_settings["expiration"][role],
+                )
+                updated_roles.append(role)
+
+            result = ResultDetails(
+                status="update settings succeded",
+                details={
+                    "update_settings": True,
+                    "message": "Update settings succeded.",
+                    "updated_roles": updated_roles,
+                    "invalid_roles": invalid_roles,
+                },
+                last_update=datetime.now(),
+            )
 
         return asdict(result)
 

@@ -9,7 +9,7 @@ import pretend
 import pytest
 from celery.exceptions import ChordError
 from celery.result import states
-from tuf.api.metadata import Metadata, Targets, Timestamp
+from tuf.api.metadata import Metadata, Snapshot, Targets, Timestamp
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
@@ -819,6 +819,120 @@ class TestMetadataRepository:
             test_repo.bootstrap(payload)
 
         assert "No 'metadata' in the payload" in str(err)
+
+    def test_update_settings(self, test_repo):
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        TARGETS_EXP = 100
+        SNAPSHOT_EXP = 50
+        TIMESTAMP_EXP = 20
+        BINS_EXP = 5
+        BINS = repository.Roles.BINS.value
+        payload = {
+            "settings": {
+                "expiration": {
+                    Targets.type: TARGETS_EXP,
+                    Snapshot.type: SNAPSHOT_EXP,
+                    Timestamp.type: TIMESTAMP_EXP,
+                    BINS: BINS_EXP,
+                }
+            }
+        }
+        result = test_repo.update_settings(payload)
+
+        assert "update settings succeded" in result["status"]
+        assert result["details"]["update_settings"] is True
+        assert result["details"]["updated_roles"] == [
+            Targets.type,
+            Snapshot.type,
+            Timestamp.type,
+            BINS,
+        ]
+        assert "Update settings succeded." in result["details"]["message"]
+
+        BINS_CONFIG_NAME = f"{BINS.upper()}_EXPIRATION"
+        TIMESTAMP_CONFIG_NAME = f"{Timestamp.type.upper()}_EXPIRATION"
+
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call(f"{Targets.type.upper()}_EXPIRATION", TARGETS_EXP),
+            pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
+            pretend.call(TIMESTAMP_CONFIG_NAME, TIMESTAMP_EXP),
+            pretend.call(BINS_CONFIG_NAME, BINS_EXP),
+        ]
+
+    def test_update_settings_no_settings(self, test_repo):
+        result = test_repo.update_settings(payload={})
+
+        assert "update settings failed" in result["status"]
+        assert result["details"]["update_settings"] is False
+        assert "No 'settings' in the payload" in result["details"]["message"]
+        assert result["details"].get("updated_roles") is None
+        assert result["details"].get("invalid_roles") is None
+
+    def test_update_settings_no_expiration(self, test_repo):
+        result = test_repo.update_settings(payload={"settings": {}})
+
+        assert "update settings failed" in result["status"]
+        assert result["details"]["update_settings"] is False
+        assert "No 'expiration' in the payload" in result["details"]["message"]
+        assert result["details"].get("updated_roles") is None
+        assert result["details"].get("invalid_roles") is None
+
+    def test_update_settings_no_role_in_expiration(self, test_repo):
+        result = test_repo.update_settings(
+            payload={"settings": {"expiration": {}}}
+        )
+
+        assert "update settings failed" in result["status"]
+        assert result["details"]["update_settings"] is False
+        err_msg = "No role provided for expiration policy change"
+        assert err_msg in result["details"]["message"]
+        assert result["details"].get("updated_roles") is None
+        assert result["details"].get("invalid_roles") is None
+
+    def test_update_settings_no_valid_role_in_expiration(self, test_repo):
+        result = test_repo.update_settings(
+            payload={"settings": {"expiration": {"foo": 1}}}
+        )
+
+        assert "update settings succeded" in result["status"]
+        assert result["details"]["update_settings"] is True
+        assert "Update settings succeded." in result["details"]["message"]
+        assert result["details"]["updated_roles"] == []
+        assert result["details"]["invalid_roles"] == ["foo"]
+
+    def test_update_settings_valid_and_invalid_roles(self, test_repo):
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        TARGETS_EXP = 100
+        SNAPSHOT_EXP = 50
+        payload = {
+            "settings": {
+                "expiration": {
+                    Targets.type: TARGETS_EXP,
+                    Snapshot.type: SNAPSHOT_EXP,
+                    "foo": 1,
+                    "bar": 2,
+                }
+            }
+        }
+        result = test_repo.update_settings(payload)
+
+        assert "update settings succeded" in result["status"]
+        assert result["details"]["update_settings"] is True
+        assert "Update settings succeded." in result["details"]["message"]
+        assert result["details"]["updated_roles"] == [
+            Targets.type,
+            Snapshot.type,
+        ]
+        assert result["details"]["invalid_roles"] == ["foo", "bar"]
+
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call(f"{Targets.type.upper()}_EXPIRATION", TARGETS_EXP),
+            pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
+        ]
 
     def test_publish_targets(self, test_repo, monkeypatch):
         @contextmanager
