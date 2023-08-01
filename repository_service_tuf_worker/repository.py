@@ -640,7 +640,13 @@ class MetadataRepository:
             Task.update_state
         ] = None,  # It is required (see: app.py)
     ) -> ResultDetails:
-        """Update repository settings with the new settings."""
+        """
+        Update repository settings with the new settings.
+
+        Supports only updating the expiration policy settings for online roles.
+        Expiration parameters reference:
+        https://repository-service-tuf.readthedocs.io/en/stable/devel/design.html#tuf-repository-settings  # noqa
+        """
         tuf_settings: Dict[str, Any] = payload.get("settings")
         result: ResultDetails
         if tuf_settings is None:
