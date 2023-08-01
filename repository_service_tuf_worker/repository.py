@@ -642,8 +642,9 @@ class MetadataRepository:
     ) -> ResultDetails:
         """Update repository settings with the new settings."""
         tuf_settings: Dict[str, Any] = payload.get("settings")
+        result: ResultDetails
         if tuf_settings is None:
-            return ResultDetails(
+            result = ResultDetails(
                 status="update settings failed",
                 details={
                     "update_settings": False,
@@ -653,9 +654,8 @@ class MetadataRepository:
                 },
                 last_update=datetime.now(),
             )
-
-        if tuf_settings.get("expiration") is None:
-            return ResultDetails(
+        elif tuf_settings.get("expiration") is None:
+            result = ResultDetails(
                 status="update settings failed",
                 details={
                     "update_settings": False,
@@ -665,9 +665,8 @@ class MetadataRepository:
                 },
                 last_update=datetime.now(),
             )
-
-        if len(tuf_settings["expiration"]) < 1:
-            return ResultDetails(
+        elif len(tuf_settings["expiration"]) < 1:
+            result = ResultDetails(
                 status="update settings failed",
                 details={
                     "update_settings": False,
@@ -677,31 +676,34 @@ class MetadataRepository:
                 },
                 last_update=datetime.now(),
             )
+        else:
+            logging.info("Updating settings")
+            online_roles = Roles.online_roles()
+            updated_roles: List[str] = []
+            non_valid_roles: List[str] = []
+            for role in tuf_settings["expiration"]:
+                if role not in online_roles:
+                    non_valid_roles.append(role)
+                    continue
 
-        logging.info("Updating settings")
-        online_roles = Roles.online_roles()
-        updated_roles: List[str] = []
-        non_valid_roles: List[str] = []
-        for role in tuf_settings["expiration"]:
-            if role not in online_roles:
-                non_valid_roles.append(role)
-                continue
+                self.write_repository_settings(
+                    f"{role.upper()}_EXPIRATION",
+                    tuf_settings["expiration"][role]
+                )
+                updated_roles.append(role)
 
-            self.write_repository_settings(
-                f"{role.upper()}_EXPIRATION", tuf_settings["expiration"][role]
+            result = ResultDetails(
+                status="update settings succeded",
+                details={
+                    "update_settings": True,
+                    "message": "Update settings succeded.",
+                    "updated_roles": updated_roles,
+                    "non_valid_roles": non_valid_roles,
+                },
+                last_update=datetime.now(),
             )
-            updated_roles.append(role)
 
-        return ResultDetails(
-            status="update settings succeded",
-            details={
-                "update_settings": True,
-                "message": "Update settings succeded.",
-                "updated_roles": updated_roles,
-                "non_valid_roles": non_valid_roles,
-            },
-            last_update=datetime.now(),
-        )
+        return asdict(result)
 
     def publish_targets(
         self,
