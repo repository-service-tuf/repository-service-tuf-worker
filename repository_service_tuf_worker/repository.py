@@ -649,8 +649,6 @@ class MetadataRepository:
                 details={
                     "update_settings": False,
                     "message": "No 'settings' in the payload",
-                    "updated_roles": [],
-                    "non_valid_roles": [],
                 },
                 last_update=datetime.now(),
             )
@@ -660,8 +658,6 @@ class MetadataRepository:
                 details={
                     "update_settings": False,
                     "message": "No 'expiration' in the payload",
-                    "updated_roles": [],
-                    "non_valid_roles": [],
                 },
                 last_update=datetime.now(),
             )
@@ -671,8 +667,6 @@ class MetadataRepository:
                 details={
                     "update_settings": False,
                     "message": "No role provided for expiration policy change",
-                    "updated_roles": [],
-                    "non_valid_roles": [],
                 },
                 last_update=datetime.now(),
             )
@@ -680,15 +674,15 @@ class MetadataRepository:
             logging.info("Updating settings")
             online_roles = Roles.online_roles()
             updated_roles: List[str] = []
-            non_valid_roles: List[str] = []
+            invalid_roles: List[str] = []
             for role in tuf_settings["expiration"]:
                 if role not in online_roles:
-                    non_valid_roles.append(role)
+                    invalid_roles.append(role)
                     continue
 
                 self.write_repository_settings(
                     f"{role.upper()}_EXPIRATION",
-                    tuf_settings["expiration"][role]
+                    tuf_settings["expiration"][role],
                 )
                 updated_roles.append(role)
 
@@ -698,7 +692,7 @@ class MetadataRepository:
                     "update_settings": True,
                     "message": "Update settings succeded.",
                     "updated_roles": updated_roles,
-                    "non_valid_roles": non_valid_roles,
+                    "invalid_roles": invalid_roles,
                 },
                 last_update=datetime.now(),
             )

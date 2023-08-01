@@ -828,23 +828,30 @@ class TestMetadataRepository:
         SNAPSHOT_EXP = 50
         TIMESTAMP_EXP = 20
         BINS_EXP = 5
+        BINS = repository.Roles.BINS.value
         payload = {
             "settings": {
                 "expiration": {
                     Targets.type: TARGETS_EXP,
                     Snapshot.type: SNAPSHOT_EXP,
                     Timestamp.type: TIMESTAMP_EXP,
-                    repository.Roles.BINS.value: BINS_EXP,
+                    BINS: BINS_EXP,
                 }
             }
         }
         result = test_repo.update_settings(payload)
 
-        assert "update settings succeded" in result.status
-        assert result.details["update_settings"] is True
-        assert "Update settings succeded." in result.details["message"]
+        assert "update settings succeded" in result["status"]
+        assert result["details"]["update_settings"] is True
+        assert result["details"]["updated_roles"] == [
+            Targets.type,
+            Snapshot.type,
+            Timestamp.type,
+            BINS,
+        ]
+        assert "Update settings succeded." in result["details"]["message"]
 
-        BINS_CONFIG_NAME = f"{repository.Roles.BINS.value.upper()}_EXPIRATION"
+        BINS_CONFIG_NAME = f"{BINS.upper()}_EXPIRATION"
         TIMESTAMP_CONFIG_NAME = f"{Timestamp.type.upper()}_EXPIRATION"
 
         assert test_repo.write_repository_settings.calls == [
@@ -857,43 +864,43 @@ class TestMetadataRepository:
     def test_update_settings_no_settings(self, test_repo):
         result = test_repo.update_settings(payload={})
 
-        assert "update settings failed" in result.status
-        assert result.details["update_settings"] is False
-        assert "No 'settings' in the payload" in result.details["message"]
-        assert result.details["updated_roles"] == []
-        assert result.details["non_valid_roles"] == []
+        assert "update settings failed" in result["status"]
+        assert result["details"]["update_settings"] is False
+        assert "No 'settings' in the payload" in result["details"]["message"]
+        assert result["details"].get("updated_roles") is None
+        assert result["details"].get("invalid_roles") is None
 
     def test_update_settings_no_expiration(self, test_repo):
         result = test_repo.update_settings(payload={"settings": {}})
 
-        assert "update settings failed" in result.status
-        assert result.details["update_settings"] is False
-        assert "No 'expiration' in the payload" in result.details["message"]
-        assert result.details["updated_roles"] == []
-        assert result.details["non_valid_roles"] == []
+        assert "update settings failed" in result["status"]
+        assert result["details"]["update_settings"] is False
+        assert "No 'expiration' in the payload" in result["details"]["message"]
+        assert result["details"].get("updated_roles") is None
+        assert result["details"].get("invalid_roles") is None
 
     def test_update_settings_no_role_in_expiration(self, test_repo):
         result = test_repo.update_settings(
             payload={"settings": {"expiration": {}}}
         )
 
-        assert "update settings failed" in result.status
-        assert result.details["update_settings"] is False
+        assert "update settings failed" in result["status"]
+        assert result["details"]["update_settings"] is False
         err_msg = "No role provided for expiration policy change"
-        assert err_msg in result.details["message"]
-        assert result.details["updated_roles"] == []
-        assert result.details["non_valid_roles"] == []
+        assert err_msg in result["details"]["message"]
+        assert result["details"].get("updated_roles") is None
+        assert result["details"].get("invalid_roles") is None
 
     def test_update_settings_no_valid_role_in_expiration(self, test_repo):
         result = test_repo.update_settings(
             payload={"settings": {"expiration": {"foo": 1}}}
         )
 
-        assert "update settings succeded" in result.status
-        assert result.details["update_settings"] is True
-        assert "Update settings succeded." in result.details["message"]
-        assert result.details["updated_roles"] == []
-        assert result.details["non_valid_roles"] == ["foo"]
+        assert "update settings succeded" in result["status"]
+        assert result["details"]["update_settings"] is True
+        assert "Update settings succeded." in result["details"]["message"]
+        assert result["details"]["updated_roles"] == []
+        assert result["details"]["invalid_roles"] == ["foo"]
 
     def test_update_settings_valid_and_invalid_roles(self, test_repo):
         test_repo.write_repository_settings = pretend.call_recorder(
@@ -913,11 +920,14 @@ class TestMetadataRepository:
         }
         result = test_repo.update_settings(payload)
 
-        assert "update settings succeded" in result.status
-        assert result.details["update_settings"] is True
-        assert "Update settings succeded." in result.details["message"]
-        assert result.details["updated_roles"] == [Targets.type, Snapshot.type]
-        assert result.details["non_valid_roles"] == ["foo", "bar"]
+        assert "update settings succeded" in result["status"]
+        assert result["details"]["update_settings"] is True
+        assert "Update settings succeded." in result["details"]["message"]
+        assert result["details"]["updated_roles"] == [
+            Targets.type,
+            Snapshot.type,
+        ]
+        assert result["details"]["invalid_roles"] == ["foo", "bar"]
 
         assert test_repo.write_repository_settings.calls == [
             pretend.call(f"{Targets.type.upper()}_EXPIRATION", TARGETS_EXP),
