@@ -9,8 +9,8 @@ import pretend
 import pytest
 from celery.exceptions import ChordError
 from celery.result import states
-from tuf.api.metadata import Metadata, Snapshot, Targets, Timestamp
 from securesystemslib.exceptions import UnverifiedSignatureError
+from tuf.api.metadata import Metadata, Snapshot, Targets, Timestamp
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
@@ -904,10 +904,6 @@ class TestMetadataRepository:
             pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
         ]
 
-    def test_publish_targets(self, test_repo, monkeypatch):
-        @contextmanager
-        def mocked_lock(lock, timeout):
-            yield lock, timeout
     def test__validate_signatures_not_authorized(self, test_repo):
         fake_metadata = pretend.stub(
             signatures={"keyid3": "sig3"},
