@@ -36,7 +36,7 @@ from tuf.api.metadata import (  # noqa
     Targets,
     Timestamp,
 )
-from tuf.api.serialization.json import JSONSerializer
+from tuf.api.serialization.json import CanonicalJSONSerializer, JSONSerializer
 
 # the 'service import is used to retrieve sublcasses (Implemented Services)
 from repository_service_tuf_worker import (  # noqa
@@ -587,7 +587,8 @@ class MetadataRepository:
                 )
 
             public_key = metadata.signed.keys.get(keyid)
-            public_key.verify_signature(metadata)
+            data = CanonicalJSONSerializer().serialize(metadata.signed)
+            public_key.verify_signature(metadata.signatures[keyid], data)
 
             valid_signing_keys.add(keyid)
 
@@ -653,7 +654,7 @@ class MetadataRepository:
             raise KeyError("No 'metadata' in the payload")
 
         bootstrap_status = self._settings.get_fresh("BOOTSTRAP")
-        if bootstrap_status is not None:
+        if bootstrap_status is not None and "signing" in bootstrap_status:
             result = ResultDetails(
                 status="Task finished.",
                 details={

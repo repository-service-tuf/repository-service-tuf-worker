@@ -10,6 +10,7 @@ import pytest
 from celery.exceptions import ChordError
 from celery.result import states
 from tuf.api.metadata import Metadata, Snapshot, Targets, Timestamp
+from securesystemslib.exceptions import UnverifiedSignatureError
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
@@ -716,12 +717,12 @@ class TestMetadataRepository:
         # Assert the number of calls test_repos._sign
         assert len(test_repo._sign.calls) == len(test_repo._persist.calls)
 
-    def test__validate_signatures(self, test_repo):
+    def test__validate_signatures(self, test_repo, monkeypatch):
         fake_public_key = pretend.stub(
             verify_signature=pretend.call_recorder(lambda *a: True)
         )
         fake_metadata = pretend.stub(
-            signatures=["keyid1", "keyid2"],
+            signatures={"keyid1": "sig1", "keyid2": "sig2"},
             signed=pretend.stub(
                 keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
                 roles={
@@ -732,12 +733,17 @@ class TestMetadataRepository:
                 },
             ),
         )
+        repository.CanonicalJSONSerializer = pretend.call_recorder(
+            lambda: pretend.stub(
+                serialize=pretend.call_recorder(lambda *a: b"data")
+            )
+        )
 
         result = test_repo._validate_signatures(fake_metadata, "root")
         assert result is True
         assert fake_public_key.verify_signature.calls == [
-            pretend.call(fake_metadata),
-            pretend.call(fake_metadata),
+            pretend.call("sig1", b"data"),
+            pretend.call("sig2", b"data"),
         ]
 
     def test__validate_signatures_without_keyid(self, test_repo):
@@ -745,7 +751,7 @@ class TestMetadataRepository:
             verify_signature=pretend.call_recorder(lambda *a: True)
         )
         fake_metadata = pretend.stub(
-            signatures=[],
+            signatures={},
             signed=pretend.stub(
                 keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
                 roles={
@@ -766,7 +772,7 @@ class TestMetadataRepository:
             verify_signature=pretend.call_recorder(lambda *a: True)
         )
         fake_metadata = pretend.stub(
-            signatures=["keyid1"],
+            signatures={"keyid1": "sig1"},
             signed=pretend.stub(
                 keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
                 roles={
@@ -781,7 +787,7 @@ class TestMetadataRepository:
         result = test_repo._validate_signatures(fake_metadata, "root")
         assert result is False
         assert fake_public_key.verify_signature.calls == [
-            pretend.call(fake_metadata),
+            pretend.call("sig1", b"data"),
         ]
 
     def test_update_settings(self, test_repo):
@@ -903,13 +909,10 @@ class TestMetadataRepository:
         def mocked_lock(lock, timeout):
             yield lock, timeout
     def test__validate_signatures_not_authorized(self, test_repo):
-        fake_public_key = pretend.stub(
-            verify_signature=pretend.call_recorder(lambda *a: True)
-        )
         fake_metadata = pretend.stub(
-            signatures=["keyid1", "keyid3"],
+            signatures={"keyid3": "sig3"},
             signed=pretend.stub(
-                keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
+                keys={"keyid1": "pub1", "keyid2": "pub2"},
                 roles={
                     "root": pretend.stub(
                         keyids={"keyid1": "key", "keyid2": "key"},
@@ -922,18 +925,12 @@ class TestMetadataRepository:
         with pytest.raises(repository.RepositoryError) as err:
             test_repo._validate_signatures(fake_metadata, "root")
         assert "not authorized" in str(err)
-        assert fake_public_key.verify_signature.calls == [
-            pretend.call(fake_metadata),
-        ]
 
     def test__validate_signatures_no_key_for_keyid(self, test_repo):
-        fake_public_key = pretend.stub(
-            verify_signature=pretend.call_recorder(lambda *a: True)
-        )
         fake_metadata = pretend.stub(
-            signatures=["keyid1", "keyid3"],
+            signatures={"keyid3": "sig3", "keyid1": "sig1"},
             signed=pretend.stub(
-                keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
+                keys={"keyid1": "pub1", "keyid2": "pub2"},
                 roles={
                     "root": pretend.stub(
                         keyids={"keyid1": "key", "keyid3": "key"},
@@ -946,9 +943,34 @@ class TestMetadataRepository:
         with pytest.raises(repository.RepositoryError) as err:
             test_repo._validate_signatures(fake_metadata, "root")
         assert "no key for signature" in str(err)
-        assert fake_public_key.verify_signature.calls == [
-            pretend.call(fake_metadata),
-        ]
+
+    def test__validate_signatures_verify_signature_raise(self, test_repo):
+        fake_public_key = pretend.stub(
+            verify_signature=pretend.raiser(
+                UnverifiedSignatureError("signature error")
+            )
+        )
+        fake_metadata = pretend.stub(
+            signatures={"keyid1": "sig1", "keyid2": "sig2"},
+            signed=pretend.stub(
+                keys={"keyid1": fake_public_key, "keyid2": fake_public_key},
+                roles={
+                    "root": pretend.stub(
+                        keyids={"keyid1": "key", "keyid2": "key"},
+                        threshold=2,
+                    )
+                },
+            ),
+        )
+        repository.CanonicalJSONSerializer = pretend.call_recorder(
+            lambda: pretend.stub(
+                serialize=pretend.call_recorder(lambda *a: b"data")
+            )
+        )
+
+        with pytest.raises(UnverifiedSignatureError) as err:
+            test_repo._validate_signatures(fake_metadata, "root")
+        assert "signature error" in str(err)
 
     def test_save_settings(self, test_repo):
         fake_root_md = pretend.stub(
