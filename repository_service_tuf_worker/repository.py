@@ -686,7 +686,7 @@ class MetadataRepository:
         else:
             signature = "pending"
             self.write_repository_settings(
-                f"{Root.type.upper()}_SIGNING", root.to_dict()
+                f"ROOT_SIGNING", root.to_dict()
             )
             self.write_repository_settings("BOOTSTRAP", f"signing-{task_id}")
             message = f"Root version {root.signed.version} is pending sign"
@@ -1263,7 +1263,7 @@ class MetadataRepository:
             raise KeyError("No 'metadata' in the payload")
 
         if Root.type in metadata:
-            signing = self._settings.get_fresh(f"{Root.type.upper()}_SIGNING")
+            signing = self._settings.get_fresh(f"ROOT_SIGNING")
             if signing:
                 root_signing = Metadata.from_dict(signing)
                 raise RepositoryError(
@@ -1333,7 +1333,7 @@ class MetadataRepository:
                 logging.info(message)
             else:
                 self.write_repository_settings(
-                    f"{Root.type.upper()}_SIGNING", root.to_dict()
+                    f"ROOT_SIGNING", root.to_dict()
                 )
                 message = f"Root version {root.signed.version} pending sign."
                 logging.info(message)
