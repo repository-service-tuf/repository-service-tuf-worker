@@ -10,7 +10,7 @@ import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from math import log
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 
 import redis
 from celery.app.task import Task
@@ -36,7 +36,7 @@ from tuf.api.metadata import (  # noqa
     Targets,
     Timestamp,
 )
-from tuf.api.serialization.json import CanonicalJSONSerializer, JSONSerializer
+from tuf.api.serialization.json import JSONSerializer
 
 # the 'service import is used to retrieve sublcasses (Implemented Services)
 from repository_service_tuf_worker import (  # noqa
@@ -568,34 +568,14 @@ class MetadataRepository:
             self._sign(role)
             self._persist(role, role.signed.type)
 
-    def _validate_signatures(self, metadata: Metadata, rolename: str) -> bool:
+    def _bootstrap_complete(self, root: Metadata[Root], task_id: str):
         """
-        Validates metadata signatures for a role name and returns if it
-        is completely signed (has at least threshold signatures).
+        Register the bootstrap finished.
         """
-        if len(metadata.signatures) == 0:
-            raise RepositoryError("At least one initial signature is required")
-
-        valid_signing_keys = set()
-        for keyid in metadata.signatures:
-            if keyid not in metadata.signed.roles[rolename].keyids:
-                raise RepositoryError(f"Signature {keyid} not authorized")
-
-            if keyid not in metadata.signed.keys:
-                raise RepositoryError(
-                    f"Signature {keyid} no key for signature"
-                )
-
-            public_key = metadata.signed.keys.get(keyid)
-            data = CanonicalJSONSerializer().serialize(metadata.signed)
-            public_key.verify_signature(metadata.signatures[keyid], data)
-
-            valid_signing_keys.add(keyid)
-
-        if len(valid_signing_keys) < metadata.signed.roles[rolename].threshold:
-            return False
-
-        return True
+        self._persist(root, Root.type)
+        self.write_repository_settings("ROOT_SIGNING", None)
+        self._bootstrap_online_roles(root)
+        self.write_repository_settings("BOOTSTRAP", task_id)
 
     def save_settings(self, root: Metadata[Root], settings: Dict[str, Any]):
         """
@@ -637,7 +617,7 @@ class MetadataRepository:
 
     def bootstrap(
         self,
-        payload: Dict[str, Dict[str, Any]],
+        payload: Dict[str, Any],
         update_state: Optional[
             Task.update_state
         ] = None,  # It is required (see: app.py)
@@ -647,56 +627,78 @@ class MetadataRepository:
         """
         tuf_settings = payload.get("settings")
         if tuf_settings is None:
-            raise KeyError("No 'settings' in the payload")
+            result = ResultDetails(
+                status="Bootstrap Failed",
+                details={
+                    "bootstrap": False,
+                    "message": "No 'settings' in the payload",
+                },
+                last_update=datetime.now(),
+            )
+            self.write_repository_settings("BOOTSTRAP", None)
+            return asdict(result)
 
         root_metadata = payload.get("metadata")
         if root_metadata is None:
-            raise KeyError("No 'metadata' in the payload")
-
-        bootstrap_status = self._settings.get_fresh("BOOTSTRAP")
-        if bootstrap_status is not None and "signing" in bootstrap_status:
             result = ResultDetails(
-                status="Task finished.",
+                status="Bootstrap Failed",
                 details={
                     "bootstrap": False,
-                    "message": "Bootstrap is LOCKED.",
+                    "message": "No 'metadata' in the payload",
+                },
+                last_update=datetime.now(),
+            )
+            self.write_repository_settings("BOOTSTRAP", None)
+            return asdict(result)
+
+        bootstrap_status = self._settings.get_fresh("BOOTSTRAP")
+        if bootstrap_status is not None and "pre-" not in bootstrap_status:
+            result = ResultDetails(
+                status="Bootstrap Failed",
+                details={
+                    "bootstrap": False,
+                    "message": f"Bootstrap is {bootstrap_status}",
                 },
                 last_update=datetime.now(),
             )
             return asdict(result)
 
         root: Metadata[Root] = Metadata.from_dict(root_metadata[Root.type])
+        if len(root.signatures) == 0:
+            result = ResultDetails(
+                status="Bootstrap Failed",
+                details={
+                    "bootstrap": False,
+                    "message": "Metadata requires at least one signature",
+                },
+                last_update=datetime.now(),
+            )
+            return asdict(result)
 
-        signed = self._validate_signatures(root, Root.type)
+        try:
+            root.verify_delegate(Root.type, root)
+            signed = True
+        except UnsignedMetadataError:
+            signed = False
 
         # save settings
         self.save_settings(root, tuf_settings)
-
         task_id: str = payload["task_id"]
 
         if signed:
-            self._persist(root, Root.type)
-            self.write_repository_settings("ROOT_SIGNING", None)
-            self._bootstrap_online_roles(root)
-            self.write_repository_settings("BOOTSTRAP", task_id)
-            signature = "complete"
+            self._bootstrap_complete(root, task_id)
             message = f"Bootstrap finished {task_id}"
             logging.info(message)
-
         else:
-            signature = "pending"
-            self.write_repository_settings(
-                f"ROOT_SIGNING", root.to_dict()
-            )
+            self.write_repository_settings("ROOT_SIGNING", root.to_dict())
             self.write_repository_settings("BOOTSTRAP", f"signing-{task_id}")
             message = f"Root version {root.signed.version} is pending sign"
             logging.info(message)
 
         result = ResultDetails(
-            status="Task finished.",
+            status="Bootstrap processed.",
             details={
                 "bootstrap": signed,
-                "signature": signature,
                 "message": message,
             },
             last_update=datetime.now(),
@@ -1183,6 +1185,7 @@ class MetadataRepository:
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
         self._trusted_root_update(current_root, new_root)
+
         # We always persist the new root metadata, but we cannot persist
         # without verifying if the online key is rotated to avoid a mismatch
         # with the rest of the roles using the online key.
@@ -1225,7 +1228,6 @@ class MetadataRepository:
         result = ResultDetails(
             status="Task finished.",
             details={
-                "state": True,
                 "message": "metadata update finished",
             },
             last_update=datetime.now(),
@@ -1246,14 +1248,14 @@ class MetadataRepository:
         Args:
             payload: contains new metadata
                 Supported metadata types: Root
-                example: ``{"metadata": {"root": Any}}``
+                example: {"metadata": {"root": Any}}
 
-            update_state: not used, but required argument by ``app.py``
+            update_state: not used, but required argument by `app.py`
         """
 
         # there is also a verification in the RSTUF API calls
         bootstrap = self._settings.get_fresh("BOOTSTRAP")
-        if bootstrap is None or "-" in bootstrap:
+        if bootstrap is None or "pre-" in bootstrap:
             raise RepositoryError(
                 "Metadata Update requires a complete bootstrap"
             )
@@ -1263,33 +1265,8 @@ class MetadataRepository:
             raise KeyError("No 'metadata' in the payload")
 
         if Root.type in metadata:
-            signing = self._settings.get_fresh(f"ROOT_SIGNING")
-            if signing:
-                root_signing = Metadata.from_dict(signing)
-                raise RepositoryError(
-                    "Root update process to version "
-                    f"{root_signing.signed.version} is waiting signature(s)"
-                )
-
             new_root = Metadata.from_dict(metadata[Root.type])
-            try:
-                return self._root_metadata_update(new_root)
-            except UnsignedMetadataError:
-                message = (
-                    "Metadata Update doesn't support Distributed Asynchronous "
-                    "Signing. Issue https://github.com/repository-service-tuf/"
-                    "repository-service-tuf-worker/issues/336"
-                )
-                result = ResultDetails(
-                    status="Task finished.",
-                    details={
-                        "state": False,
-                        "message": message,
-                    },
-                    last_update=datetime.now(),
-                )
-            return asdict(result)
-
+            return self._root_metadata_update(new_root)
         else:
             raise ValueError("Unsupported Metadata type")
 
@@ -1311,7 +1288,7 @@ class MetadataRepository:
 
     def _sign_root(
         self, root: Metadata[Root], sig_payload: Dict
-    ) -> Tuple[bool, str]:
+    ) -> ResultDetails:
         """
         Sign the root metadata and call actions depending on the bootstrap
         state, and if it matches the threshold
@@ -1319,33 +1296,49 @@ class MetadataRepository:
         signature: Signature = Signature.from_dict(sig_payload)
         root.signatures[signature.keyid] = signature
 
-        signed = self._validate_signatures(root, Root.type)
         bootstrap = self._settings.get_fresh("BOOTSTRAP")
-
         if "signing-" in bootstrap:
+            try:
+                root.verify_delegate(Root.type, root)
+                signed = True
+            except UnsignedMetadataError as err:
+                # The `verify_delegate` only raises an exception that the Root
+                # is not signed with the required threshold of keys. It doesn't
+                # handle an invalid signature or key. It will process invalid
+                # key or signature anyway.
+                signed = False
+                logging.info(str(err))
+
+            sign_medatata = True
+
             if signed:
-                self._persist(root, Root.type)
-                self.write_repository_settings("ROOT_SIGNING", None)
                 bootstrap_task_id = bootstrap.split("signing-")[1]
-                self._bootstrap_online_roles(root)
-                self.write_repository_settings("BOOTSTRAP", bootstrap_task_id)
+                self._bootstrap_complete(root, bootstrap_task_id)
                 message = "Bootstrap finished"
                 logging.info(message)
             else:
-                self.write_repository_settings(
-                    f"ROOT_SIGNING", root.to_dict()
-                )
+                self.write_repository_settings("ROOT_SIGNING", root.to_dict())
                 message = f"Root version {root.signed.version} pending sign."
                 logging.info(message)
 
         else:
-            message = "Signing Metadata Update not implemented (issue #336)"
+            signed = False
+            sign_medatata = False
+            message = "No bootstrap available for signing."
 
-        return signed, message
+        return ResultDetails(
+            status="Signature processed.",
+            details={
+                "sign_metadata": sign_medatata,
+                "signed": signed,
+                "message": message,
+            },
+            last_update=datetime.now(),
+        )
 
     def sign_metadata(
         self,
-        payload: Dict[str, Dict[str, str]],
+        payload: Dict[str, Any],
         update_state: Optional[
             Task.update_state
         ] = None,  # It is required (see: app.py)
@@ -1356,18 +1349,12 @@ class MetadataRepository:
         rolename = payload["role"]
         sig_payload = payload["signature"]
 
-        available_signing = list(
-            filter(lambda var: "SIGNING" in var, dir(self._settings))
-        )
-
-        if (
-            f"{rolename.upper()}_SIGNING" not in available_signing
-            or self._settings.get_fresh(f"{rolename.upper()}_SIGNING") is None
-        ):
+        role = self._settings.get_fresh(f"{rolename.upper()}_SIGNING")
+        if role is None:
             result = ResultDetails(
-                status="Task finished.",
+                status="Signature Failed",
                 details={
-                    "signed": False,
+                    "sign_metadata": False,
                     "message": f"No signatures pending for {rolename}.",
                 },
                 last_update=datetime.now(),
@@ -1375,24 +1362,21 @@ class MetadataRepository:
 
             return asdict(result)
 
-        dict_metadata = self._settings.get_fresh(f"{rolename.upper()}_SIGNING")
-        metadata = Metadata.from_dict(dict_metadata)
+        metadata = Metadata.from_dict(role)
 
         # signing root
         if rolename == Root.type:
-            signed, message = self._sign_root(metadata, sig_payload)
+            result = self._sign_root(metadata, sig_payload)
 
         # Note: It will never raise as will not have available siging
         else:
-            raise RepositoryError("Unsupported Metadata role")
-
-        result = ResultDetails(
-            status="Task finished.",
-            details={
-                "signed": signed,
-                "message": message,
-            },
-            last_update=datetime.now(),
-        )
+            result = ResultDetails(
+                status="Signature Failed",
+                details={
+                    "sign_metadata": False,
+                    "message": f"Unsupported Role {rolename}.",
+                },
+                last_update=datetime.now(),
+            )
 
         return asdict(result)
