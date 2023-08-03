@@ -43,7 +43,7 @@ Sign
       }
 
       partition "Signing state" {
-         if ("ROLENAME_SIGNING" is None) then (True)
+         if ("<ROLE_NAME>_SIGNING" is None) then (True)
             end
          else (False)
          endif
@@ -109,7 +109,7 @@ Bootstrap
 
          else (False)
             : "ROOT_SIGNING" set to Root Metadata;
-            : "BOOTSTRAP" set to "signin-<task-id>";
+            : "BOOTSTRAP" set to "signing-<task-id>";
          endif
       }
       stop
