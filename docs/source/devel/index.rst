@@ -35,6 +35,12 @@ Sign
 * otherwise, half-signed metadata in cache is updated (RSTUF Settings:
   ``SIGNING_<ROLENAME>``)
 
+.. note::
+
+   See ``BOOTSTRAP`` state references in `Architecture Design: TUF
+   Repository Settings
+   <https://repository-service-tuf.readthedocs.io/en/stable/devel/design.html#tuf-repository-settings>`_.
+
 .. uml::
 
    @startuml
@@ -85,6 +91,12 @@ Bootstrap
 * if the included root has enough signatures, task is finalized right away
 * otherwise, task is put in pending state and half-signed root is cached
   (RSTUF Setting: ``SIGNING_ROOT``)
+
+.. note::
+
+   See ``BOOTSTRAP`` state references in `Architecture Design: TUF
+   Repository Settings
+   <https://repository-service-tuf.readthedocs.io/en/stable/devel/design.html#tuf-repository-settings>`_.
 
 .. uml::
 
