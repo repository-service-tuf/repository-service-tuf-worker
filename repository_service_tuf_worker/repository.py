@@ -1308,7 +1308,7 @@ class MetadataRepository:
 
         """
         keyid = signature.keyid
-        if keyid not in metadata.signed.roles[Root.type]:
+        if keyid not in metadata.signed.roles[Root.type].keyids:
             logging.info(f"signature '{keyid}' not authorized")
             return False
 
@@ -1409,9 +1409,9 @@ class MetadataRepository:
 
         # Assert metadata type is allowed for signing event
         root = Metadata.from_dict(metadata_dict)
-        if not isinstance(root, Root):
+        if not isinstance(root.signed, Root):
             return self._task_result(
-                "Signature processed",
+                "Signature Failed",
                 {
                     "sign_metadata": False,
                     "message": f"Role {rolename} has wrong type",

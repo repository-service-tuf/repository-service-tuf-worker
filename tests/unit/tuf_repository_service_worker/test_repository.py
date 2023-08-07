@@ -2763,7 +2763,7 @@ class TestMetadataRepository:
             signatures=[{"keyid": "k1", "sig": "s1"}],
             type="root",
             signed=pretend.stub(
-                roles={"root": ["k1", "k2"]},
+                roles={"root": pretend.stub(keyids={"k1": "s1", "k2": "s2"})},
                 keys={
                     "k1": pretend.stub(
                         verify_signature=pretend.call_recorder(lambda *a: None)
@@ -2791,7 +2791,7 @@ class TestMetadataRepository:
             signatures=[{"keyid": "k1", "sig": "s1"}],
             type="root",
             signed=pretend.stub(
-                roles={"root": ["k1", "k2"]},
+                roles={"root": pretend.stub(keyids={"k1": "s1", "k2": "s2"})},
                 keys={
                     "k1": pretend.stub(
                         verify_signature=pretend.call_recorder(lambda *a: None)
@@ -2819,7 +2819,7 @@ class TestMetadataRepository:
             signatures=[{"keyid": "k1", "sig": "s1"}],
             type="root",
             signed=pretend.stub(
-                roles={"root": ["k1", "k2"]},
+                roles={"root": pretend.stub(keyids={"k1": "s1", "k2": "s2"})},
                 keys={
                     "k3": pretend.stub(
                         verify_signature=pretend.call_recorder(lambda *a: None)
@@ -2847,7 +2847,7 @@ class TestMetadataRepository:
             signatures=[{"keyid": "k1", "sig": "s1"}],
             type="root",
             signed=pretend.stub(
-                roles={"root": ["k1", "k2"]},
+                roles={"root": pretend.stub(keyids={"k1": "s1", "k2": "s2"})},
                 keys={
                     "k1": pretend.stub(
                         verify_signature=pretend.raiser(
@@ -2919,6 +2919,7 @@ class TestMetadataRepository:
         )
         fake_root_md = repository.Root(version=1)
         fake_root_md.signatures = {}
+        fake_root_md.signed = repository.Root()
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
         )
@@ -3068,6 +3069,7 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         fake_root_md = repository.Targets(version=2)
+        fake_root_md.signed = repository.Targets()
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
         )
@@ -3079,7 +3081,7 @@ class TestMetadataRepository:
         result = test_repo.sign_metadata(payload)
 
         assert result == {
-            "status": "Signature processed",
+            "status": "Signature Failed",
             "details": {
                 "sign_metadata": False,
                 "message": f"Role {payload['role']} has wrong type",
@@ -3116,6 +3118,7 @@ class TestMetadataRepository:
         )
         fake_root_md = repository.Root(version=1)
         fake_root_md.signatures = {}
+        fake_root_md.signed = repository.Root()
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
         )
@@ -3175,7 +3178,7 @@ class TestMetadataRepository:
         )
         fake_root_md = repository.Root()
         fake_root_md.signatures = {}
-        fake_root_md.signed = pretend.stub(version=1)
+        fake_root_md.signed = repository.Root()
         fake_root_md.to_dict = pretend.call_recorder(lambda: "fake_metadata")
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
