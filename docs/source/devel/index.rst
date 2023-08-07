@@ -22,68 +22,6 @@ Distributed Asynchronous Signing
 This describes the Distributed Asynchronous Signing with other specific TUF
 Metadata processes.
 
-Sign
-....
-
-* if there is no half-signed metadata in cache (RSTUF Settings:
-  ``SIGNING_<ROLENAME>``), task returns
-* if included metadata has enough signatures:
-
-  - and bootstrap is in pending state, bootstrap task is finalized
-  - otherwise, metadata update task is finalized
-
-* otherwise, half-signed metadata in cache is updated (RSTUF Settings:
-  ``SIGNING_<ROLENAME>``)
-
-.. note::
-
-   See ``BOOTSTRAP`` state references in `Architecture Design: TUF
-   Repository Settings
-   <https://repository-service-tuf.readthedocs.io/en/stable/devel/design.html#tuf-repository-settings>`_.
-
-.. uml::
-
-   @startuml
-      partition "sign" {
-         start
-      }
-
-      partition "Signing state" {
-         if ("<ROLE_NAME>_SIGNING" is None) then (True)
-            end
-         else (False)
-         endif
-      }
-
-      partition "Metadata Type" {
-         if (Metadata is "Root") then (False)
-            end
-         else (True)
-            partition "Sign Root" {
-               if (Bootstrap is "signing-<task-id>") then (True)
-                  if (Signed? (Threshold)) then (True)
-                     : Finish Bootstrap;
-                     : "<ROLE_NAME>_SIGNING" set to None;
-                     : "BOOTSTRAP" set to "<task-id>";
-                  else (False)
-                     : "<ROLE_NAME>_SIGNING" set to new Metadata;
-                  endif
-
-               else (False)
-                  : Metadata Update;
-                  note right
-                     Not Implemented ([[https://github.com/repository-service-tuf/repository-service-tuf-worker/issues/336 Issue #336]])
-                  end note
-                  end
-               endif
-
-            }
-         endif
-      }
-      stop
-
-    @enduml
-
 
 Bootstrap
 .........
