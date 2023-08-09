@@ -37,6 +37,7 @@ sphinxcontrib-qthelp = "*"
 sphinxcontrib-serializinghtml = "*"
 pre-commit = "*"
 bandit = "*"
+myst-parser = "*"
 
 [requires]
 python_version = "3.10"

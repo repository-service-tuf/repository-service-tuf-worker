@@ -8,15 +8,66 @@ Development
 
 
 Component level
----------------
+===============
+
 .. image:: /_static/repository-service-tuf-worker-C3.png
 
 
 Component Specific
-------------------
+==================
+
+Distributed Asynchronous Signing
+--------------------------------
+
+This describes the Distributed Asynchronous Signing with other specific TUF
+Metadata processes.
+
+
+Bootstrap
+.........
+
+* if the included root has enough signatures, task is finalized right away
+* otherwise, task is put in pending state and half-signed root is cached
+  (RSTUF Setting: ``ROOT_SIGNING``)
+
+.. note::
+
+   See ``BOOTSTRAP`` and ``ROOT_SIGNING`` states reference in
+   `Architecture Design: TUF Repository Settings
+   <https://repository-service-tuf.readthedocs.io/en/stable/devel/design.html#tuf-repository-settings>`_.
+
+.. uml::
+
+   @startuml
+      partition "Bootstrap"{
+         start
+         if (Bootstrap is "<task-id>") then (True)
+            end
+         elseif (Bootstrap is "pre-<task-id>") then (True)
+            end
+         elseif (Bootstrap is "signing-<task-id>") then (True)
+            end
+         else
+            : Bootstrap is "None";
+         endif
+      }
+
+      partition "Threshold" {
+         if (Threshold is complete) then (True)
+            : Finish Bootstrap;
+            : "BOOTSTRAP" set to "<task-id>";
+
+         else (False)
+            : "ROOT_SIGNING" set to Root Metadata;
+            : "BOOTSTRAP" set to "signing-<task-id>";
+         endif
+      }
+      stop
+
+    @enduml
 
 Adding/Removing targets
-.......................
+-----------------------
 
 As mentioned at the container level, the domain of ``repository-service-tuf-worker``
 (Repository Worker) is managing the TUF Repository Metadata.
@@ -150,7 +201,7 @@ locks [#f1]_ . It will  will do:
    . I avoid that two tasks write the same metadata, causing a race condition.
 
 Important issues/problems
-.........................
+#########################
 
 .. toctree::
    :maxdepth: 1
@@ -158,10 +209,10 @@ Important issues/problems
    known_issues
 
 Implementation
-..............
+##############
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
 
    repository_service_tuf_worker
    repository_service_tuf_worker.models

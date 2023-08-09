@@ -7,6 +7,7 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   repository_service_tuf_worker.models
    repository_service_tuf_worker.services
 
 Submodules
