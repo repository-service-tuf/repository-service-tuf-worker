@@ -83,13 +83,6 @@ LOCK_TARGETS = "LOCK_TARGETS"
 
 
 @dataclass
-class BootstrapState:
-    bootstrap: bool
-    state: Optional[str] = None
-    task_id: Optional[str] = None
-
-
-@dataclass
 class ResultDetails:
     status: str
     details: Optional[Dict[str, Any]]
