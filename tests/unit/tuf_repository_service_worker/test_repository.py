@@ -767,7 +767,8 @@ class TestMetadataRepository:
         # Assert the number of calls test_repos._sign
         assert len(test_repo._sign.calls) == len(test_repo._persist.calls)
 
-    def test_update_settings(self, test_repo):
+    def test_update_settings(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -776,6 +777,7 @@ class TestMetadataRepository:
         TIMESTAMP_EXP = 20
         BINS_EXP = 5
         BINS = repository.Roles.BINS.value
+
         payload = {
             "settings": {
                 "expiration": {
@@ -787,16 +789,16 @@ class TestMetadataRepository:
             }
         }
         result = test_repo.update_settings(payload)
-
-        assert "update settings succeded" in result["status"]
-        assert result["details"]["update_settings"] is True
-        assert result["details"]["updated_roles"] == [
-            Targets.type,
-            Snapshot.type,
-            Timestamp.type,
-            BINS,
-        ]
-        assert "Update settings succeded." in result["details"]["message"]
+        assert result == {
+            "task": "update_settings",
+            "status": True,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Update Settings Succeded",
+                "invalid_roles": [],
+                "updated_roles": ["targets", "snapshot", "timestamp", "bins"],
+            },
+        }
 
         BINS_CONFIG_NAME = f"{BINS.upper()}_EXPIRATION"
         TIMESTAMP_CONFIG_NAME = f"{Timestamp.type.upper()}_EXPIRATION"
@@ -808,48 +810,78 @@ class TestMetadataRepository:
             pretend.call(BINS_CONFIG_NAME, BINS_EXP),
         ]
 
-    def test_update_settings_no_settings(self, test_repo):
+    def test_update_settings_no_settings(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
         result = test_repo.update_settings(payload={})
+        assert result == {
+            "task": "update_settings",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Update Settings Failed",
+                "error": "No 'settings' in the payload",
+            },
+        }
 
-        assert "update settings failed" in result["status"]
-        assert result["details"]["update_settings"] is False
-        assert "No 'settings' in the payload" in result["details"]["message"]
-        assert result["details"].get("updated_roles") is None
-        assert result["details"].get("invalid_roles") is None
+    def test_update_settings_no_expiration(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
 
-    def test_update_settings_no_expiration(self, test_repo):
         result = test_repo.update_settings(payload={"settings": {}})
+        assert result == {
+            "task": "update_settings",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Update Settings Failed",
+                "error": "No 'expiration' in the payload",
+            },
+        }
 
-        assert "update settings failed" in result["status"]
-        assert result["details"]["update_settings"] is False
-        assert "No 'expiration' in the payload" in result["details"]["message"]
-        assert result["details"].get("updated_roles") is None
-        assert result["details"].get("invalid_roles") is None
+    def test_update_settings_no_role_in_expiration(
+        self, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
 
-    def test_update_settings_no_role_in_expiration(self, test_repo):
         result = test_repo.update_settings(
             payload={"settings": {"expiration": {}}}
         )
+        assert result == {
+            "task": "update_settings",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Update Settings Failed",
+                "error": "No role provided for expiration policy change",
+            },
+        }
 
-        assert "update settings failed" in result["status"]
-        assert result["details"]["update_settings"] is False
-        err_msg = "No role provided for expiration policy change"
-        assert err_msg in result["details"]["message"]
-        assert result["details"].get("updated_roles") is None
-        assert result["details"].get("invalid_roles") is None
+    def test_update_settings_no_valid_role_in_expiration(
+        self, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
 
-    def test_update_settings_no_valid_role_in_expiration(self, test_repo):
         result = test_repo.update_settings(
             payload={"settings": {"expiration": {"foo": 1}}}
         )
+        assert result == {
+            "task": "update_settings",
+            "status": True,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Update Settings Succeded",
+                "invalid_roles": ["foo"],
+                "updated_roles": [],
+            },
+        }
 
-        assert "update settings succeded" in result["status"]
-        assert result["details"]["update_settings"] is True
-        assert "Update settings succeded." in result["details"]["message"]
-        assert result["details"]["updated_roles"] == []
-        assert result["details"]["invalid_roles"] == ["foo"]
-
-    def test_update_settings_valid_and_invalid_roles(self, test_repo):
+    def test_update_settings_valid_and_invalid_roles(
+        self, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -865,17 +897,18 @@ class TestMetadataRepository:
                 }
             }
         }
+
         result = test_repo.update_settings(payload)
-
-        assert "update settings succeded" in result["status"]
-        assert result["details"]["update_settings"] is True
-        assert "Update settings succeded." in result["details"]["message"]
-        assert result["details"]["updated_roles"] == [
-            Targets.type,
-            Snapshot.type,
-        ]
-        assert result["details"]["invalid_roles"] == ["foo", "bar"]
-
+        assert result == {
+            "task": "update_settings",
+            "status": True,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Update Settings Succeded",
+                "invalid_roles": ["foo", "bar"],
+                "updated_roles": ["targets", "snapshot"],
+            },
+        }
         assert test_repo.write_repository_settings.calls == [
             pretend.call(f"{Targets.type.upper()}_EXPIRATION", TARGETS_EXP),
             pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
@@ -904,14 +937,8 @@ class TestMetadataRepository:
             pretend.call("fake_root")
         ]
 
-    def test_bootstrap(self, monkeypatch, test_repo):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_bootstrap(self, monkeypatch, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
         )
@@ -953,14 +980,14 @@ class TestMetadataRepository:
 
         result = test_repo.bootstrap(payload)
         assert result == {
+            "status": True,
+            "task": "bootstrap",
             "details": {
-                "bootstrap": True,
-                "message": "Bootstrap finished fake_task_id",
+                "message": "Bootstrap Processed",
+                "bootstrap": "Bootstrap finished fake_task_id",
             },
-            "last_update": fake_time,
-            "status": "Bootstrap processed",
+            "last_update": fake_datetime.now(),
         }
-        assert fake_datetime.now.calls == [pretend.call()]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -981,14 +1008,10 @@ class TestMetadataRepository:
             pretend.call(fake_root_md, payload["task_id"])
         ]
 
-    def test_bootstrap_no_signatures(self, monkeypatch, test_repo):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_bootstrap_no_signatures(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
         )
@@ -1016,6 +1039,9 @@ class TestMetadataRepository:
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
         )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
 
         payload = {
             "settings": {"services": {"number_of_delegated_bins": 2}},
@@ -1027,14 +1053,14 @@ class TestMetadataRepository:
 
         result = test_repo.bootstrap(payload)
         assert result == {
+            "task": "bootstrap",
+            "status": False,
+            "last_update": fake_datetime.now(),
             "details": {
-                "bootstrap": False,
-                "message": "Metadata requires at least one signature",
+                "message": "Bootstrap Failed",
+                "error": "Metadata requires at least one valid signature",
             },
-            "last_update": fake_time,
-            "status": "Bootstrap Failed",
         }
-        assert fake_datetime.now.calls == [pretend.call()]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -1042,15 +1068,14 @@ class TestMetadataRepository:
         assert repository.Metadata.from_dict.calls == [
             pretend.call(payload["metadata"]["root"])
         ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("BOOTSTRAP", None),
+        ]
 
-    def test_bootstrap_invalid_signatures(self, monkeypatch, test_repo):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_bootstrap_invalid_signatures(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
         )
@@ -1077,6 +1102,9 @@ class TestMetadataRepository:
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
         )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
         test_repo._validate_signature = pretend.call_recorder(lambda *a: False)
 
         payload = {
@@ -1089,14 +1117,14 @@ class TestMetadataRepository:
 
         result = test_repo.bootstrap(payload)
         assert result == {
+            "task": "bootstrap",
+            "status": False,
+            "last_update": fake_datetime.now(),
             "details": {
-                "bootstrap": False,
-                "message": "Bootstrap has invalid signature(s)",
+                "message": "Bootstrap Failed",
+                "error": "Bootstrap has invalid signature(s)",
             },
-            "last_update": fake_time,
-            "status": "Bootstrap Failed",
         }
-        assert fake_datetime.now.calls == [pretend.call()]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -1106,15 +1134,14 @@ class TestMetadataRepository:
         assert test_repo._validate_signature.calls == [
             pretend.call(fake_root_md, "sig1"),
         ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("BOOTSTRAP", None),
+        ]
 
-    def test_bootstrap_distributed_async_sign(self, monkeypatch, test_repo):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_bootstrap_distributed_async_sign(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
         )
@@ -1161,14 +1188,14 @@ class TestMetadataRepository:
 
         result = test_repo.bootstrap(payload)
         assert result == {
-            "status": "Bootstrap processed",
+            "task": "bootstrap",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
-                "bootstrap": False,
-                "message": "Root v1 is pending signature",
+                "message": "Bootstrap Processed",
+                "bootstrap": "Root v1 is pending signature",
             },
-            "last_update": fake_time,
         }
-        assert fake_datetime.now.calls == [pretend.call()]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -1191,14 +1218,10 @@ class TestMetadataRepository:
             pretend.call("BOOTSTRAP", "signing-fake_task_id"),
         ]
 
-    def test_bootstrap_when_bootstrap_started(self, monkeypatch, test_repo):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_bootstrap_when_bootstrap_started(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "signing-task_id")
         )
@@ -1206,6 +1229,9 @@ class TestMetadataRepository:
             repository,
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
         )
 
         payload = {
@@ -1218,26 +1244,25 @@ class TestMetadataRepository:
 
         result = test_repo.bootstrap(payload)
         assert result == {
+            "task": "bootstrap",
+            "status": False,
+            "last_update": fake_datetime.now(),
             "details": {
-                "bootstrap": False,
-                "message": "Bootstrap is signing-task_id",
+                "message": "Bootstrap Failed",
+                "error": "Bootstrap state is signing-task_id",
             },
-            "last_update": fake_time,
-            "status": "Bootstrap Failed",
         }
-        assert fake_datetime.now.calls == [pretend.call()]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
+        assert test_repo.write_repository_settings.calls == []
 
-    def test_bootstrap_missing_settings(self, test_repo, monkeypatch):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
+    def test_bootstrap_missing_settings(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
         )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+
         payload = {
             "metadata": {
                 "root": {"md_k1": "md_v1"},
@@ -1245,36 +1270,44 @@ class TestMetadataRepository:
         }
         result = test_repo.bootstrap(payload)
         assert result == {
-            "status": "Bootstrap Failed",
+            "task": "bootstrap",
+            "status": False,
+            "last_update": fake_datetime.now(),
             "details": {
-                "bootstrap": False,
-                "message": "No 'settings' in the payload",
+                "message": "Bootstrap Failed",
+                "error": "No 'settings' in the payload",
             },
-            "last_update": datetime.datetime(2019, 6, 16, 9, 5, 1),
         }
+        assert test_repo.write_repository_settings.calls == []
 
-    def test_bootstrap_missing_metadata(self, test_repo, monkeypatch):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
+    def test_bootstrap_missing_metadata(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
         )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+
         payload = {
             "settings": {"k": "v"},
         }
         result = test_repo.bootstrap(payload)
-        assert result == {
-            "status": "Bootstrap Failed",
-            "details": {
-                "bootstrap": False,
-                "message": "No 'metadata' in the payload",
-            },
-            "last_update": datetime.datetime(2019, 6, 16, 9, 5, 1),
-        }
 
-    def test_publish_targets(self, test_repo, monkeypatch):
+        assert result == {
+            "task": "bootstrap",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Bootstrap Failed",
+                "error": "No 'metadata' in the payload",
+            },
+        }
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        assert test_repo.write_repository_settings.calls == []
+
+    def test_publish_targets(self, test_repo, monkeypatch, mocked_datetime):
+        fake_datetime = mocked_datetime
+
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -1295,25 +1328,17 @@ class TestMetadataRepository:
         test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
-
         test_result = test_repo.publish_targets()
 
-        assert test_result == repository.asdict(
-            repository.ResultDetails(
-                states.SUCCESS,
-                details={
-                    "target_roles": ["bins-0", "bins-e"],
-                },
-                last_update=fake_time,
-            )
-        )
+        assert test_result == {
+            "task": "publish_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Publish Targets Processed",
+                "target_roles": ["bins-0", "bins-e"],
+            },
+        }
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=60.0),
         ]
@@ -1324,11 +1349,12 @@ class TestMetadataRepository:
             pretend.call(["bins-0", "bins-e"])
         ]
         assert test_repo._update_timestamp.calls == [pretend.call(3)]
-        assert fake_datetime.now.calls == [pretend.call()]
 
     def test_publish_targets_payload_bins_targets_empty(
-        self, test_repo, monkeypatch
+        self, test_repo, monkeypatch, mocked_datetime
     ):
+        fake_datetime = mocked_datetime
+
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -1348,27 +1374,19 @@ class TestMetadataRepository:
         )
         test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
-
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
 
         payload = {"bins_targets": None}
         test_result = test_repo.publish_targets(payload)
 
-        assert test_result == repository.asdict(
-            repository.ResultDetails(
-                states.SUCCESS,
-                details={
-                    "target_roles": ["bins-0", "bins-e"],
-                },
-                last_update=fake_time,
-            )
-        )
+        assert test_result == {
+            "task": "publish_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Publish Targets Processed",
+                "target_roles": ["bins-0", "bins-e"],
+            },
+        }
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=60.0),
         ]
@@ -1379,7 +1397,6 @@ class TestMetadataRepository:
             pretend.call(["bins-0", "bins-e"])
         ]
         assert test_repo._update_timestamp.calls == [pretend.call(3)]
-        assert fake_datetime.now.calls == [pretend.call()]
 
     def test_publish_targets_exception_LockNotOwnedError(self, test_repo):
         @contextmanager
@@ -1399,8 +1416,10 @@ class TestMetadataRepository:
         ]
 
     def test_publish_targets_without_targets_to_publish(
-        self, test_repo, monkeypatch
+        self, test_repo, monkeypatch, mocked_datetime
     ):
+        fake_datetime = mocked_datetime
+
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -1417,20 +1436,16 @@ class TestMetadataRepository:
             "read_roles_with_unpublished_files",
             fake_crud_read_roles_with_unpublished_files,
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
 
         test_result = test_repo.publish_targets()
-
         assert test_result == {
-            "details": {"target_roles": "Not new targets found."},
-            "last_update": fake_time,
-            "status": "SUCCESS",
+            "task": "publish_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Publish Targets Processed",
+                "target_roles": None,
+            },
         }
         assert test_repo._redis.lock.calls == [
             pretend.call("LOCK_TARGETS", timeout=60.0)
@@ -1440,7 +1455,8 @@ class TestMetadataRepository:
             == [pretend.call(test_repo._db)]
         )
 
-    def test_add_targets(self, test_repo, monkeypatch):
+    def test_add_targets(self, test_repo, monkeypatch, mocked_datetime):
+        fake_datetime = mocked_datetime
         test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
@@ -1469,13 +1485,6 @@ class TestMetadataRepository:
             "read_role_by_rolename",
             pretend.call_recorder(lambda *a: "bins-e"),
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
         test_repo._send_publish_targets_task = pretend.call_recorder(
             lambda *a: "fake_subtask"
         )
@@ -1501,12 +1510,14 @@ class TestMetadataRepository:
         result = test_repo.add_targets(payload, update_state=fake_update_state)
 
         assert result == {
+            "task": "add_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
-                "target_roles": ["bins-e"],
+                "message": "Target(s) Added",
                 "targets": ["file1.tar.gz"],
+                "target_roles": ["bins-e"],
             },
-            "last_update": fake_time,
-            "status": "Task finished.",
         }
         assert repository.targets_crud.read_file_by_path.calls == [
             pretend.call(test_repo._db, "file1.tar.gz")
@@ -1543,9 +1554,9 @@ class TestMetadataRepository:
                 {"bins-e": [fake_db_target]}, fake_update_state, "fake_subtask"
             )
         ]
-        assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_add_targets_exists(self, test_repo, monkeypatch):
+    def test_add_targets_exists(self, test_repo, monkeypatch, mocked_datetime):
+        fake_datetime = mocked_datetime
         test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
@@ -1567,14 +1578,6 @@ class TestMetadataRepository:
             repository.targets_crud,
             "update_file_path_and_info",
             pretend.call_recorder(lambda *a: fake_db_target),
-        )
-
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
         test_repo._send_publish_targets_task = pretend.call_recorder(
             lambda *a: "fake_subtask"
@@ -1601,12 +1604,14 @@ class TestMetadataRepository:
         result = test_repo.add_targets(payload, update_state=fake_update_state)
 
         assert result == {
+            "task": "add_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
-                "target_roles": ["bins-e"],
+                "message": "Target(s) Added",
                 "targets": ["file1.tar.gz"],
+                "target_roles": ["bins-e"],
             },
-            "last_update": fake_time,
-            "status": "Task finished.",
         }
         assert test_repo._get_path_succinct_role.calls == [
             pretend.call("file1.tar.gz")
@@ -1630,9 +1635,9 @@ class TestMetadataRepository:
                 payload["targets"][0].get("info"),
             )
         ]
-        assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_add_targets_without_targets(self, test_repo):
+    def test_add_targets_without_targets(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
         payload = {
             "artifacts": [
                 {
@@ -1648,12 +1653,21 @@ class TestMetadataRepository:
             ]
         }
 
-        with pytest.raises(ValueError) as err:
-            test_repo.add_targets(payload, update_state=pretend.stub())
+        result = test_repo.add_targets(payload, update_state=pretend.stub())
+        assert result == {
+            "task": "add_targets",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Adding target(s) Failed",
+                "error": "No 'targets' in the payload",
+            },
+        }
 
-        assert "No targets in the payload" in str(err)
-
-    def test_add_targets_skip_publishing(self, test_repo, monkeypatch):
+    def test_add_targets_skip_publishing(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
@@ -1682,13 +1696,6 @@ class TestMetadataRepository:
             "read_role_by_rolename",
             pretend.call_recorder(lambda *a: "bins-e"),
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
         test_repo._update_task = pretend.call_recorder(lambda *a: True)
 
         payload = {
@@ -1712,12 +1719,14 @@ class TestMetadataRepository:
         result = test_repo.add_targets(payload, update_state=fake_update_state)
 
         assert result == {
+            "task": "add_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
-                "target_roles": ["bins-e"],
+                "message": "Target(s) Added",
                 "targets": ["file1.tar.gz"],
+                "target_roles": ["bins-e"],
             },
-            "last_update": fake_time,
-            "status": "Task finished.",
         }
         assert repository.targets_crud.read_file_by_path.calls == [
             pretend.call(test_repo._db, "file1.tar.gz")
@@ -1749,9 +1758,9 @@ class TestMetadataRepository:
         assert test_repo._update_task.calls == [
             pretend.call({"bins-e": [fake_db_target]}, fake_update_state, None)
         ]
-        assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_remove_targets(self, test_repo, monkeypatch):
+    def test_remove_targets(self, test_repo, monkeypatch, mocked_datetime):
+        fake_datetime = mocked_datetime
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
         )
@@ -1766,13 +1775,6 @@ class TestMetadataRepository:
             repository.targets_crud,
             "update_file_action_to_remove",
             pretend.call_recorder(lambda *a: fake_db_target_removed),
-        )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
 
         payload = {
@@ -1790,9 +1792,11 @@ class TestMetadataRepository:
         )
 
         assert result == {
-            "status": "Task finished.",
-            "last_update": fake_time,
+            "task": "remove_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
+                "message": "Target(s) removed",
                 "deleted_targets": [
                     "file1.tar.gz",
                     "file2.tar.gz",
@@ -1832,9 +1836,11 @@ class TestMetadataRepository:
                 "fake_subtask",
             )
         ]
-        assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_remove_targets_skip_publishing(self, test_repo, monkeypatch):
+    def test_remove_targets_skip_publishing(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
         )
@@ -1850,13 +1856,6 @@ class TestMetadataRepository:
             "update_file_action_to_remove",
             pretend.call_recorder(lambda *a: fake_db_target_removed),
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
 
         payload = {
             "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"],
@@ -1871,9 +1870,11 @@ class TestMetadataRepository:
         )
 
         assert result == {
-            "status": "Task finished.",
-            "last_update": fake_time,
+            "task": "remove_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
+                "message": "Target(s) removed",
                 "deleted_targets": [
                     "file1.tar.gz",
                     "file2.tar.gz",
@@ -1910,9 +1911,11 @@ class TestMetadataRepository:
             pretend.call(test_repo._db, fake_db_target),
             pretend.call(test_repo._db, fake_db_target),
         ]
-        assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_remove_targets_all_none(self, test_repo, monkeypatch):
+    def test_remove_targets_all_none(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
@@ -1922,13 +1925,7 @@ class TestMetadataRepository:
             "read_file_by_path",
             pretend.call_recorder(lambda *a: None),
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+
         payload = {
             "targets": ["file2.tar.gz", "file3.tar.gz", "release-v0.1.0.yaml"]
         }
@@ -1936,9 +1933,11 @@ class TestMetadataRepository:
         result = test_repo.remove_targets(payload, update_state=pretend.stub())
 
         assert result == {
-            "status": "Task finished.",
-            "last_update": fake_time,
+            "task": "remove_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
+                "message": "Target(s) removed",
                 "deleted_targets": [],
                 "not_found_targets": [
                     "file2.tar.gz",
@@ -1957,11 +1956,11 @@ class TestMetadataRepository:
             pretend.call(test_repo._db, "file3.tar.gz"),
             pretend.call(test_repo._db, "release-v0.1.0.yaml"),
         ]
-        assert fake_datetime.now.calls == [pretend.call()]
 
     def test_remove_targets_action_remove_published_true(
-        self, test_repo, monkeypatch
+        self, test_repo, monkeypatch, mocked_datetime
     ):
+        fake_datetime = mocked_datetime
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
@@ -1974,13 +1973,6 @@ class TestMetadataRepository:
             "read_file_by_path",
             pretend.call_recorder(lambda *a: fake_db_target),
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
         payload = {
             "targets": ["file2.tar.gz", "file3.tar.gz", "release-v0.1.0.yaml"]
         }
@@ -1988,9 +1980,11 @@ class TestMetadataRepository:
         result = test_repo.remove_targets(payload, update_state=pretend.stub())
 
         assert result == {
-            "status": "Task finished.",
-            "last_update": fake_time,
+            "task": "remove_targets",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
+                "message": "Target(s) removed",
                 "deleted_targets": [],
                 "not_found_targets": [
                     "file2.tar.gz",
@@ -2009,23 +2003,38 @@ class TestMetadataRepository:
             pretend.call(test_repo._db, "file3.tar.gz"),
             pretend.call(test_repo._db, "release-v0.1.0.yaml"),
         ]
-        assert fake_datetime.now.calls == [pretend.call()]
 
-    def test_remove_targets_without_targets(self, test_repo):
+    def test_remove_targets_without_targets(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
         payload = {"paths": []}
 
-        with pytest.raises(ValueError) as err:
-            test_repo.remove_targets(payload, update_state=pretend.stub())
+        result = test_repo.remove_targets(payload, update_state=pretend.stub())
 
-        assert "No targets in the payload" in str(err)
+        assert result == {
+            "task": "remove_targets",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Removing target(s) Failed",
+                "error": "No 'targets' in the payload",
+            },
+        }
 
-    def test_remove_targets_empty_targets(self, test_repo):
+    def test_remove_targets_empty_targets(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
         payload = {"targets": []}
 
-        with pytest.raises(IndexError) as err:
-            test_repo.remove_targets(payload, update_state=pretend.stub())
+        result = test_repo.remove_targets(payload, update_state=pretend.stub())
 
-        assert "At list one target is required" in str(err)
+        assert result == {
+            "task": "remove_targets",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Removing target(s) Failed",
+                "error": "At list one target is required",
+            },
+        }
 
     def test__run_online_roles_bump(self, monkeypatch, test_repo):
         fake_targets = pretend.stub(
@@ -2498,7 +2507,8 @@ class TestMetadataRepository:
             test_repo._trusted_root_update(fake_old_root_md, fake_new_root_md)
         assert "Expected 'root', got 'snapshot'" in str(err)
 
-    def test__root_metadata_update(self, monkeypatch, test_repo):
+    def test__root_metadata_update(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -2516,21 +2526,17 @@ class TestMetadataRepository:
         )
         test_repo._trusted_root_update = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+
         result = test_repo._root_metadata_update(fake_new_root_md)
 
         assert result == {
-            "status": "Task finished.",
+            "task": "metadata_update",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
-                "message": "metadata update finished",
+                "message": "Metadata Update Processed",
+                "role": "root",
             },
-            "last_update": fake_time,
         }
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
@@ -2541,9 +2547,49 @@ class TestMetadataRepository:
         assert test_repo._persist.calls == [
             pretend.call(fake_new_root_md, repository.Root.type)
         ]
-        assert repository.datetime.now.calls == [pretend.call()]
 
-    def test__root_metadata_update_online_key(self, monkeypatch, test_repo):
+    def test__root_metadata_update_not_trusted(
+        self, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
+        fake_new_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                version=2,
+            )
+        )
+        fake_old_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                version=1,
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda *a: fake_old_root_md
+        )
+        test_repo._trusted_root_update = pretend.raiser(
+            repository.BadVersionNumberError("Version v3 instead v2")
+        )
+
+        result = test_repo._root_metadata_update(fake_new_root_md)
+
+        assert result == {
+            "task": "metadata_update",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Metadata Update Failed",
+                "error": "Failed to verify the trust: Version v3 instead v2",
+            },
+        }
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(repository.Root.type)
+        ]
+
+    def test__root_metadata_update_online_key(
+        self, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -2572,21 +2618,17 @@ class TestMetadataRepository:
         test_repo._run_online_roles_bump = pretend.call_recorder(
             lambda **kw: None
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+
         result = test_repo._root_metadata_update(fake_new_root_md)
 
         assert result == {
-            "status": "Task finished.",
+            "task": "metadata_update",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
-                "message": "metadata update finished",
+                "message": "Metadata Update Processed",
+                "role": "root",
             },
-            "last_update": fake_time,
         }
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
@@ -2603,7 +2645,6 @@ class TestMetadataRepository:
         assert test_repo._run_online_roles_bump.calls == [
             pretend.call(force=True)
         ]
-        assert repository.datetime.now.calls == [pretend.call()]
 
     def test__root_metadata_update_online_key_lock_timeout(
         self, monkeypatch, test_repo
@@ -2682,8 +2723,9 @@ class TestMetadataRepository:
         ]
 
     def test_metadata_update_invalid_metadata_type(
-        self, monkeypatch, test_repo
+        self, monkeypatch, test_repo, mocked_datetime
     ):
+        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
@@ -2694,15 +2736,24 @@ class TestMetadataRepository:
         )
 
         payload = {"metadata": {"bins": "bins_metadata"}}
-        with pytest.raises(ValueError) as err:
-            test_repo.metadata_update(payload)
-
-        assert "Unsupported Metadata type" in str(err)
+        result = test_repo.metadata_update(payload)
+        assert result == {
+            "task": "metadata_update",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Metadata Update Failed",
+                "error": "Unsupported Metadata type",
+            },
+        }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
 
-    def test_metadata_update_no_metadata(self, monkeypatch, test_repo):
+    def test_metadata_update_no_metadata(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
@@ -2711,16 +2762,27 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        payload = {}
-        with pytest.raises(KeyError) as e:
-            test_repo.metadata_update(payload)
 
-        assert "No 'metadata' in the payload" in str(e)
+        payload = {}
+        result = test_repo.metadata_update(payload)
+
+        assert result == {
+            "task": "metadata_update",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Metadata Update Failed",
+                "error": "No 'metadata' in the payload",
+            },
+        }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
 
-    def test_metadata_update_no_bootstrap(self, monkeypatch, test_repo):
+    def test_metadata_update_no_bootstrap(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         payload = {"metadata": {"root": {}}}
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: None)
@@ -2730,10 +2792,17 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        with pytest.raises(repository.RepositoryError) as e:
-            test_repo.metadata_update(payload)
 
-        assert "Metadata Update requires a complete bootstrap" in str(e)
+        result = test_repo.metadata_update(payload)
+        assert result == {
+            "task": "metadata_update",
+            "status": False,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Metadata Update Failed",
+                "error": "Metadata Update requires a complete bootstrap",
+            },
+        }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -2894,14 +2963,10 @@ class TestMetadataRepository:
         assert result is False
         assert caplog.record_tuples == [("root", 20, "signed 1/2")]
 
-    def test_sign_metadata_finalize_bootstrap(self, test_repo, monkeypatch):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_sign_metadata_finalize_bootstrap(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
 
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
@@ -2938,12 +3003,13 @@ class TestMetadataRepository:
         result = test_repo.sign_metadata(payload)
 
         assert result == {
-            "status": "Signature processed",
+            "task": "sign_metadata",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
-                "sign_metadata": True,
-                "message": "Bootstrap finished",
+                "message": "Signature Processed",
+                "bootstrap": "Bootstrap Finished",
             },
-            "last_update": datetime.datetime(2019, 6, 16, 9, 5, 1),
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -2962,14 +3028,10 @@ class TestMetadataRepository:
             pretend.call(fake_root_md, "<task-id>")
         ]
 
-    def test_sign_metadata_no_role_signing(self, test_repo, monkeypatch):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_sign_metadata_no_role_signing(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: None),
         )
@@ -2986,27 +3048,22 @@ class TestMetadataRepository:
         result = test_repo.sign_metadata(payload)
 
         assert result == {
-            "status": "Signature Failed",
+            "task": "sign_metadata",
+            "status": False,
+            "last_update": fake_datetime.now(),
             "details": {
-                "sign_metadata": False,
-                "message": f"No signatures pending for {payload['role']}",
+                "message": "Signature Failed",
+                "error": f"No signatures pending for {payload['role']}",
             },
-            "last_update": datetime.datetime(2019, 6, 16, 9, 5, 1),
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
         ]
 
     def test_sign_metadata_root_signing_no_bootstrap(
-        self, test_repo, monkeypatch
+        self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+        fake_datetime = mocked_datetime
 
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
@@ -3030,12 +3087,13 @@ class TestMetadataRepository:
         result = test_repo.sign_metadata(payload)
 
         assert result == {
-            "status": "Signature Failed",
+            "task": "sign_metadata",
+            "status": False,
+            "last_update": fake_datetime.now(),
             "details": {
-                "sign_metadata": False,
-                "message": "No bootstrap available for signing",
+                "message": "Signature Failed",
+                "error": "No bootstrap available for signing",
             },
-            "last_update": datetime.datetime(2019, 6, 16, 9, 5, 1),
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -3045,14 +3103,10 @@ class TestMetadataRepository:
             pretend.call({"metadata": "fake"})
         ]
 
-    def test_sign_metadata_invalid_role_type(self, test_repo, monkeypatch):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_sign_metadata_invalid_role_type(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
 
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
@@ -3081,26 +3135,23 @@ class TestMetadataRepository:
         result = test_repo.sign_metadata(payload)
 
         assert result == {
-            "status": "Signature Failed",
+            "task": "sign_metadata",
+            "status": False,
+            "last_update": fake_datetime.now(),
             "details": {
-                "sign_metadata": False,
-                "message": f"Role {payload['role']} has wrong type",
+                "message": "Signature Failed",
+                "error": f"Role {payload['role']} has wrong type",
             },
-            "last_update": datetime.datetime(2019, 6, 16, 9, 5, 1),
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
             pretend.call("BOOTSTRAP"),
         ]
 
-    def test_sign_metadata_invalid_signature(self, test_repo, monkeypatch):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_sign_metadata_invalid_signature(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
 
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
@@ -3135,12 +3186,13 @@ class TestMetadataRepository:
         result = test_repo.sign_metadata(payload)
 
         assert result == {
-            "status": "Signature Failed",
+            "task": "sign_metadata",
+            "status": False,
+            "last_update": fake_datetime.now(),
             "details": {
-                "sign_metadata": False,
-                "message": "Invalid signature",
+                "message": "Signature Failed",
+                "error": "Invalid signature",
             },
-            "last_update": datetime.datetime(2019, 6, 16, 9, 5, 1),
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -3153,14 +3205,10 @@ class TestMetadataRepository:
             pretend.call(fake_root_md, fake_signature)
         ]
 
-    def test_sign_metadata_bootstrap_unfinished(self, test_repo, monkeypatch):
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+    def test_sign_metadata_bootstrap_unfinished(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
 
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
@@ -3200,15 +3248,16 @@ class TestMetadataRepository:
         result = test_repo.sign_metadata(payload)
 
         assert result == {
-            "status": "Signature processed",
+            "task": "sign_metadata",
+            "status": True,
+            "last_update": fake_datetime.now(),
             "details": {
-                "sign_metadata": True,
-                "message": (
+                "message": "Signature Processed",
+                "bootstrap": (
                     f"Root v{fake_root_md.signed.version} is pending "
                     "signatures"
                 ),
             },
-            "last_update": datetime.datetime(2019, 6, 16, 9, 5, 1),
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),

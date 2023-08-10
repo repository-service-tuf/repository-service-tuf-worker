@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2022-2023 VMware Inc
 #
 # SPDX-License-Identifier: MIT
-
+import datetime
 from types import ModuleType
 
 import pretend
@@ -27,3 +27,14 @@ def app(test_repo: MetadataRepository) -> ModuleType:
 
     app.repository = test_repo
     return app
+
+
+@pytest.fixture()
+def mocked_datetime(monkeypatch):
+    fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+    fake_datetime = pretend.stub(now=pretend.call_recorder(lambda: fake_time))
+    monkeypatch.setattr(
+        "repository_service_tuf_worker.repository.datetime", fake_datetime
+    )
+
+    return fake_datetime
