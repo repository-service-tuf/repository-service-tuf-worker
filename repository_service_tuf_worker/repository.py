@@ -375,6 +375,7 @@ class MetadataRepository:
             if bump_all:
                 db_target_roles = targets_crud.read_all_roles(self._db)
                 for db_role in db_target_roles:
+                    rolename = db_role.rolename
                     bins_md: Metadata[Targets] = self._storage_backend.get(
                         db_role.rolename
                     )
@@ -382,6 +383,9 @@ class MetadataRepository:
                     self._bump_and_persist(bins_md, BINS, persist=False)
                     self._persist(bins_md, db_role.rolename)
 
+                    snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
+                        version=bins_md.signed.version
+                    )
             else:
                 db_target_roles = targets_crud.read_roles_joint_files(
                     self._db, target_roles
