@@ -341,8 +341,8 @@ class TestMetadataRepository:
 
         result = test_repo._update_snapshot()
 
-        assert result == 4
-        assert mocked_snapshot.signed.version == 4
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Roles.SNAPSHOT.value)
         ]
@@ -417,8 +417,8 @@ class TestMetadataRepository:
         targets = ["bins-e"]
         result = test_repo._update_snapshot(targets)
 
-        assert result == 4
-        assert mocked_snapshot.signed.version == 4
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
         assert mocked_snapshot.signed.meta == {"bins-e.json": 4}
         assert mocked_bins_md.signed.targets == {"k1": "f1"}
         assert repository.targets_crud.read_roles_joint_files.calls == [
@@ -502,8 +502,8 @@ class TestMetadataRepository:
         targets = ["bins-e", "bins-f"]
         result = test_repo._update_snapshot(targets, bump_all=True)
 
-        assert result == 4
-        assert mocked_snapshot.signed.version == 4
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
         assert mocked_snapshot.signed.meta == {
             "bins-e.json": 4,
             "bins-f.json": 4,
