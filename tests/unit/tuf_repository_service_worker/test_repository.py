@@ -332,8 +332,7 @@ class TestMetadataRepository:
         )
 
         def fake__bump_and_persist(md, role, **kw):
-            if role == Snapshot.type:
-                md.signed.version += 1
+            md.signed.version += 1
 
         test_repo._bump_and_persist = pretend.call_recorder(
             fake__bump_and_persist
@@ -406,8 +405,7 @@ class TestMetadataRepository:
         )
 
         def fake__bump_and_persist(md, role, **kw):
-            if role == Snapshot.type:
-                md.signed.version += 1
+            md.signed.version += 1
 
         test_repo._bump_and_persist = pretend.call_recorder(
             fake__bump_and_persist
@@ -419,7 +417,9 @@ class TestMetadataRepository:
 
         assert result == snapshot_version + 1
         assert mocked_snapshot.signed.version == snapshot_version + 1
-        assert mocked_snapshot.signed.meta == {"bins-e.json": 4}
+        assert mocked_snapshot.signed.meta == {
+            "bins-e.json": mocked_bins_md.signed.version
+        }
         assert mocked_bins_md.signed.targets == {"k1": "f1"}
         assert repository.targets_crud.read_roles_joint_files.calls == [
             pretend.call(test_repo._db, targets)
@@ -486,8 +486,7 @@ class TestMetadataRepository:
         )
 
         def fake__bump_and_persist(md, role, **kw):
-            if role == Snapshot.type:
-                md.signed.version += 1
+            md.signed.version += 1
 
         test_repo._bump_and_persist = pretend.call_recorder(
             fake__bump_and_persist
@@ -505,8 +504,8 @@ class TestMetadataRepository:
         assert result == snapshot_version + 1
         assert mocked_snapshot.signed.version == snapshot_version + 1
         assert mocked_snapshot.signed.meta == {
-            "bins-e.json": 4,
-            "bins-f.json": 4,
+            "bins-e.json": 5,  # we hardcoded the values due incremental calls
+            "bins-f.json": 6,
         }
         assert fake_read_all_roles.calls == [pretend.call(test_repo._db)]
         assert test_repo._bump_and_persist.calls == [
