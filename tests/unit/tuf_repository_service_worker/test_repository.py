@@ -357,7 +357,7 @@ class TestMetadataRepository:
         snapshot_version = 3
         mocked_snapshot = pretend.stub(
             signed=pretend.stub(
-                meta={"bins-e.json": 5},
+                meta={"bins-a.json": 3, "bins-e.json": 3},
                 version=snapshot_version,
             )
         )
@@ -418,7 +418,8 @@ class TestMetadataRepository:
         assert result == snapshot_version + 1
         assert mocked_snapshot.signed.version == snapshot_version + 1
         assert mocked_snapshot.signed.meta == {
-            "bins-e.json": mocked_bins_md.signed.version
+            "bins-a.json": mocked_snapshot.signed.meta["bins-a.json"],
+            "bins-e.json": mocked_bins_md.signed.version,
         }
         assert mocked_bins_md.signed.targets == {"k1": "f1"}
         assert repository.targets_crud.read_roles_joint_files.calls == [
@@ -458,17 +459,22 @@ class TestMetadataRepository:
         snapshot_version = 3
         mocked_snapshot = pretend.stub(
             signed=pretend.stub(
-                meta={"bins-e.json": 3, "bins-f.json": 3},
+                meta={"bins-e.json": 2, "bins-f.json": 6},
                 version=snapshot_version,
             )
         )
-        mocked_bins_md = pretend.stub(
-            signed=pretend.stub(targets={"k": "v"}, version=4)
-        )
+        mocked_bins = {
+            "bins-e": pretend.stub(
+                signed=pretend.stub(targets={"k": "v"}, version=2)
+            ),
+            "bins-f": pretend.stub(
+                signed=pretend.stub(targets={"k": "v"}, version=6)
+            ),
+        }
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda rolename: mocked_snapshot
             if rolename == "snapshot"
-            else mocked_bins_md
+            else mocked_bins[rolename]
         )
         fake_bins = [
             pretend.stub(rolename="bins-e", id=3),
@@ -504,18 +510,18 @@ class TestMetadataRepository:
         assert result == snapshot_version + 1
         assert mocked_snapshot.signed.version == snapshot_version + 1
         assert mocked_snapshot.signed.meta == {
-            "bins-e.json": 5,  # we hardcoded the values due incremental calls
-            "bins-f.json": 6,
+            "bins-e.json": mocked_bins["bins-e"].signed.version,
+            "bins-f.json": mocked_bins["bins-f"].signed.version,
         }
         assert fake_read_all_roles.calls == [pretend.call(test_repo._db)]
         assert test_repo._bump_and_persist.calls == [
-            pretend.call(mocked_bins_md, "bins", persist=False),
-            pretend.call(mocked_bins_md, "bins", persist=False),
+            pretend.call(mocked_bins["bins-e"], "bins", persist=False),
+            pretend.call(mocked_bins["bins-f"], "bins", persist=False),
             pretend.call(mocked_snapshot, "snapshot"),
         ]
         assert test_repo._persist.calls == [
-            pretend.call(mocked_bins_md, "bins-e"),
-            pretend.call(mocked_bins_md, "bins-f"),
+            pretend.call(mocked_bins["bins-e"], "bins-e"),
+            pretend.call(mocked_bins["bins-f"], "bins-f"),
         ]
         assert fake_update_roles_version.calls == [
             pretend.call(test_repo._db, [3, 4])
