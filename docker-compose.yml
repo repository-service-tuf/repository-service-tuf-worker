@@ -41,6 +41,9 @@ services:
     ports:
       - 80:80
     environment:
+      ##############################
+      ### INFRASTRUCURE SERVICES ###
+      ##############################
       - RSTUF_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
       - RSTUF_REDIS_SERVER="redis://redis"
     depends_on:
@@ -77,11 +80,31 @@ services:
     entrypoint: "bash entrypoint-dev.sh"
     environment:
       - DATA_DIR=./data
+      ###############################
+      ### STORAGE BACKEND SERVICE ###
+      ###############################
       - RSTUF_STORAGE_BACKEND=LocalStorage
-      - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
+      # LOCAL STORAGE
+      # =============
       - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
+      # AWS S3 STORAGE
+      # ==============
+      # - RSTUF_AWSS3_STORAGE_BUCKET=tuf-metadata
+      # - RSTUF_AWSS3_STORAGE_ACCESS_KEY=access_key
+      # - RSTUF_AWSS3_STORAGE_SECRET_KEY=secret_key
+      # - RSTUF_AWSS3_STORAGE_REGION=us-east-1
+      # - RSTUF_AWSS3_STORAGE_ENDPOINT_URL=http://localstack:4566
+      ################################
+      ### KEYVAULT BACKEND SERVICE ###
+      ################################
+      - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
+      # LOCAL KEYVAULT
+      # ==============
       - RSTUF_LOCAL_KEYVAULT_PATH=/opt/repository-service-tuf-worker/tests/files/key_storage
       - RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass:online-rsa.key,strongPass,rsa
+      ##############################
+      ### INFRASTRUCURE SERVICES ###
+      ##############################
       - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
       - RSTUF_SQL_SERVER=postgres:5432
       - RSTUF_SQL_USER=postgres

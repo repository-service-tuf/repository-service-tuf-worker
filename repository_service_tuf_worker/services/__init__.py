@@ -10,6 +10,7 @@ from repository_service_tuf_worker.interfaces import (  # noqa
 from repository_service_tuf_worker.services.keyvault.local import (  # noqa
     LocalKeyVault,
 )
-from repository_service_tuf_worker.services.storage.local import (  # noqa
+from repository_service_tuf_worker.services.storage import (  # noqa
+    AWSS3,
     LocalStorage,
 )
