@@ -355,14 +355,19 @@ class TestMetadataRepository:
             lambda *a: a[0]
         )
         snapshot_version = 3
+        bins_a_version = 4
+        bins_e_version = 4
         mocked_snapshot = pretend.stub(
             signed=pretend.stub(
-                meta={"bins-a.json": 3, "bins-e.json": 3},
+                meta={
+                    "bins-a.json": bins_a_version,
+                    "bins-e.json": bins_e_version,
+                },
                 version=snapshot_version,
             )
         )
         mocked_bins_md = pretend.stub(
-            signed=pretend.stub(targets={"k": "v"}, version=4)
+            signed=pretend.stub(targets={"k": "v"}, version=bins_e_version)
         )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda rolename: mocked_snapshot
@@ -418,8 +423,8 @@ class TestMetadataRepository:
         assert result == snapshot_version + 1
         assert mocked_snapshot.signed.version == snapshot_version + 1
         assert mocked_snapshot.signed.meta == {
-            "bins-a.json": mocked_snapshot.signed.meta["bins-a.json"],
-            "bins-e.json": mocked_bins_md.signed.version,
+            "bins-a.json": bins_a_version,
+            "bins-e.json": bins_a_version + 1,
         }
         assert mocked_bins_md.signed.targets == {"k1": "f1"}
         assert repository.targets_crud.read_roles_joint_files.calls == [
