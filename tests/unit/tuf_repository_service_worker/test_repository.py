@@ -330,11 +330,18 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: mocked_snapshot
         )
-        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            fake__bump_and_persist
+        )
 
         result = test_repo._update_snapshot()
 
-        assert result is snapshot_version
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Roles.SNAPSHOT.value)
         ]
@@ -348,14 +355,19 @@ class TestMetadataRepository:
             lambda *a: a[0]
         )
         snapshot_version = 3
+        bins_a_version = 4
+        bins_e_version = 4
         mocked_snapshot = pretend.stub(
             signed=pretend.stub(
-                meta={},
+                meta={
+                    "bins-a.json": bins_a_version,
+                    "bins-e.json": bins_e_version,
+                },
                 version=snapshot_version,
             )
         )
         mocked_bins_md = pretend.stub(
-            signed=pretend.stub(targets={"k": "v"}, version=4)
+            signed=pretend.stub(targets={"k": "v"}, version=bins_e_version)
         )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda rolename: mocked_snapshot
@@ -396,15 +408,25 @@ class TestMetadataRepository:
             "update_roles_version",
             pretend.call_recorder(lambda *a: None),
         )
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+
         test_repo._bump_and_persist = pretend.call_recorder(
-            lambda *a, **kw: None
+            fake__bump_and_persist
         )
         test_repo._persist = pretend.call_recorder(lambda *a: None)
 
         targets = ["bins-e"]
         result = test_repo._update_snapshot(targets)
 
-        assert result is snapshot_version
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
+        assert mocked_snapshot.signed.meta == {
+            "bins-a.json": bins_a_version,
+            "bins-e.json": bins_a_version + 1,
+        }
+        assert mocked_bins_md.signed.targets == {"k1": "f1"}
         assert repository.targets_crud.read_roles_joint_files.calls == [
             pretend.call(test_repo._db, targets)
         ]
@@ -438,21 +460,26 @@ class TestMetadataRepository:
             pretend.call(mocked_bins_md, "bins-e"),
         ]
 
-    def test_update_snapshot_bump_all(self, test_repo, monkeypatch):
+    def test__update_snapshot_bump_all(self, test_repo, monkeypatch):
         snapshot_version = 3
         mocked_snapshot = pretend.stub(
             signed=pretend.stub(
-                meta={},
+                meta={"bins-e.json": 2, "bins-f.json": 6},
                 version=snapshot_version,
             )
         )
-        mocked_bins_md = pretend.stub(
-            signed=pretend.stub(targets={"k": "v"}, version=4)
-        )
+        mocked_bins = {
+            "bins-e": pretend.stub(
+                signed=pretend.stub(targets={"k": "v"}, version=2)
+            ),
+            "bins-f": pretend.stub(
+                signed=pretend.stub(targets={"k": "v"}, version=6)
+            ),
+        }
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda rolename: mocked_snapshot
             if rolename == "snapshot"
-            else mocked_bins_md
+            else mocked_bins[rolename]
         )
         fake_bins = [
             pretend.stub(rolename="bins-e", id=3),
@@ -468,8 +495,12 @@ class TestMetadataRepository:
             "read_all_roles",
             fake_read_all_roles,
         )
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+
         test_repo._bump_and_persist = pretend.call_recorder(
-            lambda *a, **kw: None
+            fake__bump_and_persist
         )
         test_repo._persist = pretend.call_recorder(lambda *a: None)
         fake_update_roles_version = pretend.call_recorder(lambda *a: None)
@@ -481,16 +512,21 @@ class TestMetadataRepository:
         targets = ["bins-e", "bins-f"]
         result = test_repo._update_snapshot(targets, bump_all=True)
 
-        assert result == snapshot_version
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
+        assert mocked_snapshot.signed.meta == {
+            "bins-e.json": mocked_bins["bins-e"].signed.version,
+            "bins-f.json": mocked_bins["bins-f"].signed.version,
+        }
         assert fake_read_all_roles.calls == [pretend.call(test_repo._db)]
         assert test_repo._bump_and_persist.calls == [
-            pretend.call(mocked_bins_md, "bins", persist=False),
-            pretend.call(mocked_bins_md, "bins", persist=False),
+            pretend.call(mocked_bins["bins-e"], "bins", persist=False),
+            pretend.call(mocked_bins["bins-f"], "bins", persist=False),
             pretend.call(mocked_snapshot, "snapshot"),
         ]
         assert test_repo._persist.calls == [
-            pretend.call(mocked_bins_md, "bins-e"),
-            pretend.call(mocked_bins_md, "bins-f"),
+            pretend.call(mocked_bins["bins-e"], "bins-e"),
+            pretend.call(mocked_bins["bins-f"], "bins-f"),
         ]
         assert fake_update_roles_version.calls == [
             pretend.call(test_repo._db, [3, 4])
