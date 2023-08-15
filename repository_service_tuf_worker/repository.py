@@ -83,13 +83,13 @@ LOCK_TARGETS = "LOCK_TARGETS"
 
 
 class TaskName(str, enum.Enum):
-    add_targets = "add_targets"
-    remove_targets = "remove_targets"
-    bootstrap = "bootstrap"
-    update_settings = "update_settings"
-    publish_targets = "publish_targets"
-    metadata_update = "metadata_update"
-    sign_metadata = "sign_metadata"
+    ADD_TARGETS = "add_targets"
+    REMOVE_TARGETS = "remove_targets"
+    BOOTSTRAP = "bootstrap"
+    UPDATE_SETTINGS = "update_settings"
+    PUBLISH_TARGETS = "publish_targets"
+    METADATA_UPDATE = "metadata_update"
+    SIGN_METADATA = "sign_metadata"
 
 
 @dataclass
@@ -659,7 +659,7 @@ class MetadataRepository:
         tuf_settings = payload.get("settings")
         if tuf_settings is None:
             return self._task_result(
-                TaskName.bootstrap,
+                TaskName.BOOTSTRAP,
                 False,
                 {
                     "message": "Bootstrap Failed",
@@ -670,7 +670,7 @@ class MetadataRepository:
         root_metadata = payload.get("metadata")
         if root_metadata is None:
             return self._task_result(
-                TaskName.bootstrap,
+                TaskName.BOOTSTRAP,
                 False,
                 {
                     "message": "Bootstrap Failed",
@@ -681,7 +681,7 @@ class MetadataRepository:
         bootstrap_status = self._settings.get_fresh("BOOTSTRAP")
         if bootstrap_status is not None and "pre-" not in bootstrap_status:
             return self._task_result(
-                TaskName.bootstrap,
+                TaskName.BOOTSTRAP,
                 False,
                 {
                     "message": "Bootstrap Failed",
@@ -693,7 +693,7 @@ class MetadataRepository:
         if len(root.signatures) == 0:
             self.write_repository_settings("BOOTSTRAP", None)
             return self._task_result(
-                TaskName.bootstrap,
+                TaskName.BOOTSTRAP,
                 False,
                 {
                     "message": "Bootstrap Failed",
@@ -705,7 +705,7 @@ class MetadataRepository:
             if self._validate_signature(root, signature) is False:
                 self.write_repository_settings("BOOTSTRAP", None)
                 return self._task_result(
-                    TaskName.bootstrap,
+                    TaskName.BOOTSTRAP,
                     False,
                     {
                         "message": "Bootstrap Failed",
@@ -729,7 +729,7 @@ class MetadataRepository:
             logging.info(message)
 
         return self._task_result(
-            TaskName.bootstrap,
+            TaskName.BOOTSTRAP,
             True,
             {"message": "Bootstrap Processed", "bootstrap": message},
         )
@@ -792,7 +792,7 @@ class MetadataRepository:
                 "invalid_roles": invalid_roles,
             }
 
-        return self._task_result(TaskName.update_settings, status, details)
+        return self._task_result(TaskName.UPDATE_SETTINGS, status, details)
 
     def publish_targets(
         self,
@@ -826,7 +826,7 @@ class MetadataRepository:
                         "No new targets in delegated target roles. Finishing"
                     )
                     return self._task_result(
-                        TaskName.publish_targets,
+                        TaskName.PUBLISH_TARGETS,
                         True,
                         {
                             "message": "Publish Targets Processed",
@@ -856,7 +856,7 @@ class MetadataRepository:
 
         logging.debug("Targets published")
         return self._task_result(
-            TaskName.publish_targets,
+            TaskName.PUBLISH_TARGETS,
             True,
             {
                 "message": "Publish Targets Processed",
@@ -879,7 +879,7 @@ class MetadataRepository:
         targets = payload.get("targets")
         if targets is None:
             return self._task_result(
-                TaskName.add_targets,
+                TaskName.ADD_TARGETS,
                 False,
                 {
                     "message": "Adding target(s) Failed",
@@ -938,7 +938,7 @@ class MetadataRepository:
 
         logging.debug(f"Added targets: {add_targets} on Roles {update_roles}")
         return self._task_result(
-            TaskName.add_targets,
+            TaskName.ADD_TARGETS,
             True,
             {
                 "message": "Target(s) Added",
@@ -956,7 +956,7 @@ class MetadataRepository:
         targets = payload.get("targets")
         if targets is None:
             return self._task_result(
-                TaskName.remove_targets,
+                TaskName.REMOVE_TARGETS,
                 False,
                 {
                     "message": "Removing target(s) Failed",
@@ -967,7 +967,7 @@ class MetadataRepository:
 
         if len(targets) == 0:
             return self._task_result(
-                TaskName.remove_targets,
+                TaskName.REMOVE_TARGETS,
                 False,
                 {
                     "message": "Removing target(s) Failed",
@@ -1018,7 +1018,7 @@ class MetadataRepository:
         )
 
         return self._task_result(
-            TaskName.remove_targets,
+            TaskName.REMOVE_TARGETS,
             True,
             {
                 "message": "Target(s) removed",
@@ -1236,7 +1236,7 @@ class MetadataRepository:
             RepositoryError,
         ) as err:
             return self._task_result(
-                TaskName.metadata_update,
+                TaskName.METADATA_UPDATE,
                 False,
                 {
                     "message": "Metadata Update Failed",
@@ -1284,7 +1284,7 @@ class MetadataRepository:
                     )
 
         return self._task_result(
-            TaskName.metadata_update,
+            TaskName.METADATA_UPDATE,
             True,
             {"message": "Metadata Update Processed", "role": Root.type},
         )
@@ -1311,7 +1311,7 @@ class MetadataRepository:
         bootstrap = self._settings.get_fresh("BOOTSTRAP")
         if bootstrap is None or "pre-" in bootstrap:
             return self._task_result(
-                TaskName.metadata_update,
+                TaskName.METADATA_UPDATE,
                 False,
                 {
                     "message": "Metadata Update Failed",
@@ -1322,7 +1322,7 @@ class MetadataRepository:
         metadata = payload.get("metadata")
         if metadata is None:
             return self._task_result(
-                TaskName.metadata_update,
+                TaskName.METADATA_UPDATE,
                 False,
                 {
                     "message": "Metadata Update Failed",
@@ -1335,7 +1335,7 @@ class MetadataRepository:
             return self._root_metadata_update(new_root)
         else:
             return self._task_result(
-                TaskName.metadata_update,
+                TaskName.METADATA_UPDATE,
                 False,
                 {
                     "message": "Metadata Update Failed",
@@ -1449,7 +1449,7 @@ class MetadataRepository:
         metadata_dict = self._settings.get_fresh(f"{rolename.upper()}_SIGNING")
         if metadata_dict is None:
             return self._task_result(
-                TaskName.sign_metadata,
+                TaskName.SIGN_METADATA,
                 False,
                 {
                     "message": "Signature Failed",
@@ -1462,7 +1462,7 @@ class MetadataRepository:
         bootstrap_state = self._settings.get_fresh("BOOTSTRAP")
         if "signing" not in bootstrap_state:
             return self._task_result(
-                TaskName.sign_metadata,
+                TaskName.SIGN_METADATA,
                 False,
                 {
                     "message": "Signature Failed",
@@ -1474,7 +1474,7 @@ class MetadataRepository:
         root = Metadata.from_dict(metadata_dict)
         if not isinstance(root.signed, Root):
             return self._task_result(
-                TaskName.sign_metadata,
+                TaskName.SIGN_METADATA,
                 False,
                 {
                     "message": "Signature Failed",
@@ -1486,7 +1486,7 @@ class MetadataRepository:
         signature = Signature.from_dict(signature_dict)
         if not self._validate_signature(root, signature):
             return self._task_result(
-                TaskName.sign_metadata,
+                TaskName.SIGN_METADATA,
                 False,
                 {
                     "message": "Signature Failed",
@@ -1500,7 +1500,7 @@ class MetadataRepository:
             self.write_repository_settings("ROOT_SIGNING", root.to_dict())
             root_version = root.signed.version
             return self._task_result(
-                TaskName.sign_metadata,
+                TaskName.SIGN_METADATA,
                 True,
                 {
                     "message": "Signature Processed",
@@ -1512,7 +1512,7 @@ class MetadataRepository:
         bootstrap_task_id = bootstrap_state.split("signing-")[1]
         self._bootstrap_finalize(root, bootstrap_task_id)
         return self._task_result(
-            TaskName.sign_metadata,
+            TaskName.SIGN_METADATA,
             True,
             {
                 "message": "Signature Processed",
