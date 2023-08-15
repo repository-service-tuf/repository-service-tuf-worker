@@ -15,6 +15,9 @@ else
 endif
 
 
+localstack-init:
+	awslocal s3api create-bucket --bucket tuf-metadata --region us-east-1
+
 db-migration:
 	if [ -z "$(M)" ]; then echo "Use: make db-migration M=\'message here\'"; exit 1; fi
 	docker compose run --rm --entrypoint='alembic revision --autogenerate -m "$(M)"' repository-service-tuf-worker

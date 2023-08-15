@@ -47,6 +47,15 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  localstack:
+    image: localstack/localstack:2.2
+    environment:
+      HOSTNAME: "localstack"
+      LOCALSTACK_HOST: "localstack"
+      LS_LOG: "error"
+    ports:
+      - "4566:4566"
+
   web:
     image: python:3.10-slim-buster
     command: python -m http.server -d /var/opt/repository-service-tuf/storage 8080
