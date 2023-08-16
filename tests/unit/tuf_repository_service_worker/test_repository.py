@@ -3103,49 +3103,6 @@ class TestMetadataRepository:
             pretend.call("ROOT_SIGNING"),
         ]
 
-    def test_sign_metadata_root_signing_no_bootstrap(
-        self, test_repo, monkeypatch, mocked_datetime
-    ):
-        fake_datetime = mocked_datetime
-
-        def fake_get_fresh(key):
-            if key == "BOOTSTRAP":
-                return "<task-id>"
-            if key == "ROOT_SIGNING":
-                return {"metadata": "fake"}
-
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(fake_get_fresh),
-        )
-        monkeypatch.setattr(
-            repository,
-            "get_repository_settings",
-            lambda *a, **kw: fake_settings,
-        )
-
-        payload = {
-            "role": "root",
-            "signature": {"keyid": "keyid2", "sig": "sig2"},
-        }
-        result = test_repo.sign_metadata(payload)
-
-        assert result == {
-            "task": "sign_metadata",
-            "status": False,
-            "last_update": fake_datetime.now(),
-            "details": {
-                "message": "Signature Failed",
-                "error": "No bootstrap available for signing",
-            },
-        }
-        assert fake_settings.get_fresh.calls == [
-            pretend.call("ROOT_SIGNING"),
-            pretend.call("BOOTSTRAP"),
-        ]
-        assert repository.Metadata.from_dict.calls == [
-            pretend.call({"metadata": "fake"})
-        ]
-
     def test_sign_metadata_invalid_role_type(
         self, test_repo, monkeypatch, mocked_datetime
     ):
@@ -3183,12 +3140,11 @@ class TestMetadataRepository:
             "last_update": fake_datetime.now(),
             "details": {
                 "message": "Signature Failed",
-                "error": f"Role {payload['role']} has wrong type",
+                "error": "Expected 'root', got 'targets'",
             },
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
-            pretend.call("BOOTSTRAP"),
         ]
 
     def test_sign_metadata_invalid_signature(
