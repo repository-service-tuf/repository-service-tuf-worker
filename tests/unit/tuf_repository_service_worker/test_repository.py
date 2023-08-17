@@ -3018,9 +3018,7 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        fake_root_md = repository.Root(version=1)
-        fake_root_md.signatures = {}
-        fake_root_md.signed = repository.Root()
+        fake_root_md = repository.Metadata(repository.Root())
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
         )
@@ -3203,9 +3201,7 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        fake_root_md = repository.Root(version=1)
-        fake_root_md.signatures = {}
-        fake_root_md.signed = repository.Root()
+        fake_root_md = repository.Metadata(repository.Root())
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
         )
@@ -3260,9 +3256,7 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        fake_root_md = repository.Root()
-        fake_root_md.signatures = {}
-        fake_root_md.signed = repository.Root()
+        fake_root_md = repository.Metadata(repository.Root())
         fake_root_md.to_dict = pretend.call_recorder(lambda: "fake_metadata")
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_root_md
