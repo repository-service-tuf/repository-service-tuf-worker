@@ -162,7 +162,7 @@ class MetadataRepository:
             storage.__name__.upper() for storage in IStorage.__subclasses__()
         ]
 
-        if type(settings.STORAGE_BACKEND) != str and issubclass(
+        if type(settings.STORAGE_BACKEND) is not str and issubclass(
             settings.STORAGE_BACKEND, tuple(IStorage.__subclasses__())
         ):
             logging.debug(
@@ -207,7 +207,7 @@ class MetadataRepository:
             for keyvault in IKeyVault.__subclasses__()
         ]
 
-        if type(settings.KEYVAULT_BACKEND) != str and issubclass(
+        if type(settings.KEYVAULT_BACKEND) is not str and issubclass(
             settings.KEYVAULT_BACKEND, tuple(IKeyVault.__subclasses__())
         ):
             logging.debug(
