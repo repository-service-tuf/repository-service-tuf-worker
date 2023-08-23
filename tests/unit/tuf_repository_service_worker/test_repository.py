@@ -310,8 +310,8 @@ class TestMetadataRepository:
             lambda *a: mocked_timestamp
         )
 
-        def fake__bump_and_persist(*a, **kw):
-            mocked_timestamp.signed.version += 1
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
 
         test_repo._bump_and_persist = pretend.call_recorder(
             fake__bump_and_persist
