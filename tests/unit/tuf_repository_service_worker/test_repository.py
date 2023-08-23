@@ -295,6 +295,7 @@ class TestMetadataRepository:
 
     def test__update_timestamp(self, monkeypatch, test_repo):
         snapshot_version = 3
+        timestamp_version = 5
         fake_metafile = pretend.call_recorder(
             lambda *a, **kw: snapshot_version
         )
@@ -302,15 +303,23 @@ class TestMetadataRepository:
             "repository_service_tuf_worker.repository.MetaFile", fake_metafile
         )
 
-        mocked_timestamp = pretend.stub(signed=pretend.stub(snapshot_meta=2))
+        mocked_timestamp = pretend.stub(
+            signed=pretend.stub(snapshot_meta=2, version=timestamp_version)
+        )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: mocked_timestamp
         )
-        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
 
-        result = test_repo._update_timestamp(snapshot_version)
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
 
-        assert result == mocked_timestamp
+        test_repo._bump_and_persist = pretend.call_recorder(
+            fake__bump_and_persist
+        )
+
+        test_repo._update_timestamp(snapshot_version)
+
+        assert mocked_timestamp.signed.version == timestamp_version + 1
         assert mocked_timestamp.signed.snapshot_meta == snapshot_version
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Roles.TIMESTAMP.value, None)
