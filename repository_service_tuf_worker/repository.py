@@ -1270,7 +1270,6 @@ class MetadataRepository:
         """
         Validate signature over metadata using appropriate delegator.
         If no delegator is passed, the metadata itself is used as delegator.
-
         """
         if delegator is None:
             delegator = metadata
@@ -1303,7 +1302,6 @@ class MetadataRepository:
         """
         Validate signature threshold using appropriate delegator(s).
         If no delegator is passed, the metadata itself is used as delegator.
-
         """
         if delegator is None:
             delegator = metadata
@@ -1343,10 +1341,11 @@ class MetadataRepository:
                 details["message"] = "Signature Failed"
             if error:
                 details["error"] = error
-            if bootstrap:
+            elif bootstrap:
                 details["bootstrap"] = bootstrap
-            if update:
+            elif update:
                 details["update"] = update
+
             return self._task_result(TaskName.SIGN_METADATA, status, details)
 
         signature = Signature.from_dict(payload["signature"])
@@ -1382,9 +1381,11 @@ class MetadataRepository:
             return _result(True, bootstrap="Bootstrap Finished")
 
         else:
-            # Also consult with "trusted root" when updating a new root
-            # - Signature must validate with trusted OR new root
-            # - Threshold must validate with trusted AND new root
+            # We need the "trusted root" when updating to a new root:
+            # - signature could come from a key, which is only in the trusted
+            #   root, OR from a key, which is only in the new root
+            # - threshold must validate with the threshold of keys as defined
+            #   in the trusted root AND as defined in the new root
             trusted_root = self._storage_backend.get("root")
             trusted_signature = self._validate_signature(
                 root, signature, trusted_root
