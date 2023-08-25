@@ -3367,6 +3367,13 @@ class TestMetadataRepository:
             lambda *a: "fake"
         )
 
+        test_repo._root_metadata_update = pretend.call_recorder(
+            lambda a: {
+                "message": "Metadata Update Processed",
+                "role": "root",
+            }
+        )
+
         # Mock return values of `_validate_{signature, threshold}`
         # By using ``next`` on the fixture values, we can get different results
         # in subsequent calls, and test the correct usage of AND/OR operators.
