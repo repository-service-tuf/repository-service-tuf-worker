@@ -6,18 +6,18 @@ build-dev:
 run-dev:
 	$(MAKE) build-dev
 	docker pull ghcr.io/repository-service-tuf/repository-service-tuf-api:dev
-	docker-compose up --remove-orphans
+	docker compose up --remove-orphans
 
 db-migration:
 	if [ -z "$(M)" ]; then echo "Use: make db-migration M=\'message here\'"; exit 1; fi
-	docker-compose run --rm --entrypoint='alembic revision --autogenerate -m "$(M)"' repository-service-tuf-worker
+	docker compose run --rm --entrypoint='alembic revision --autogenerate -m "$(M)"' repository-service-tuf-worker
 
 stop:
-	docker-compose down -v
+	docker compose down -v
 
 clean:
 	$(MAKE) stop
-	docker-compose rm --force
+	docker compose rm --force
 	rm -rf ./data
 	rm -rf ./data_test
 
