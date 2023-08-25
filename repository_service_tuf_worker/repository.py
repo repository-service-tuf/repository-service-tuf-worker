@@ -1349,6 +1349,12 @@ class MetadataRepository:
             return self._task_result(TaskName.SIGN_METADATA, status, details)
 
         signature = Signature.from_dict(payload["signature"])
+        rolename = payload["role"]
+
+        # Assert requested metadata type is root
+        if rolename != Root.type:
+            msg = f"Expected '{Root.type}', got '{rolename}'"
+            return _result(False, error=msg)
 
         # Assert pending signing event exists
         metadata_dict = self._settings.get_fresh("ROOT_SIGNING")

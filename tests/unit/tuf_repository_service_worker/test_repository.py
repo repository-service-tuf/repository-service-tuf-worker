@@ -3272,14 +3272,25 @@ class TestMetadataRepository:
         ]
 
     @pytest.mark.parametrize(
-        "validation_results, details, status",
+        "payload_patch, validation_results, details, status",
         [
             (
+                {"role": "foo"},
+                {},
+                {
+                    "message": "Signature Failed",
+                    "error": "Expected 'root', got 'foo'",
+                },
+                False,
+            ),
+            (
+                {},
                 {"signature": iter((False, False))},
                 {"message": "Signature Failed", "error": "Invalid signature"},
                 False,
             ),
             (
+                {},
                 {
                     "signature": iter((True, False)),
                     "threshold": iter((False, False)),
@@ -3291,6 +3302,7 @@ class TestMetadataRepository:
                 True,
             ),
             (
+                {},
                 {
                     "signature": iter((False, True)),
                     "threshold": iter((False, True)),
@@ -3302,6 +3314,7 @@ class TestMetadataRepository:
                 True,
             ),
             (
+                {},
                 {
                     "signature": iter((True, False)),
                     "threshold": iter((True, False)),
@@ -3313,6 +3326,7 @@ class TestMetadataRepository:
                 True,
             ),
             (
+                {},
                 {
                     "signature": iter((True, True)),
                     "threshold": iter((True, True)),
@@ -3330,6 +3344,7 @@ class TestMetadataRepository:
         test_repo,
         monkeypatch,
         mocked_datetime,
+        payload_patch,
         validation_results,
         details,
         status,
@@ -3390,7 +3405,9 @@ class TestMetadataRepository:
 
         # Call sign_metadata with fake payload
         # All deserialization and validation is mocked
-        result = test_repo.sign_metadata({"signature": "fake"})
+        payload = {"signature": "fake", "role": "root"}
+        payload.update(payload_patch)
+        result = test_repo.sign_metadata(payload)
 
         assert result == {
             "task": "sign_metadata",
