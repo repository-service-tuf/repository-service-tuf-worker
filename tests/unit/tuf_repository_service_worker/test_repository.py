@@ -3314,3 +3314,172 @@ class TestMetadataRepository:
         assert test_repo.write_repository_settings.calls == [
             pretend.call("ROOT_SIGNING", "fake_metadata")
         ]
+
+    def test_delete_sign_metadata_bootstrap_signing_state(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        def fake_get_fresh(key: str):
+            if key == "BOOTSTRAP":
+                return "signing-<task-id>"
+            if key == "ROOT_SIGNING":
+                return {"metadata": "fake"}
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: fake_get_fresh(*a)),
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        result = test_repo.delete_sign_metadata({"role": "root"})
+        m = "Deletion of root metadata succesfull, signing process stopped"
+        assert result == {
+            "task": "delete_sign_metadata",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "details": {
+                "message": m,
+                "bootstrap": "Bootstrap process has been stopped",
+            },
+        }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ROOT_SIGNING"),
+            pretend.call("BOOTSTRAP"),
+        ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_SIGNING", None),
+            pretend.call("BOOTSTRAP", None),
+        ]
+
+    def test_delete_sign_metadata_bootstrap_finished_root_signing(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        def fake_get_fresh(key: str):
+            if key == "BOOTSTRAP":
+                # BOOTSTRAP has finished
+                return "<task-id>"
+            if key == "ROOT_SIGNING":
+                return {"metadata": "fake"}
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: fake_get_fresh(*a)),
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        result = test_repo.delete_sign_metadata({"role": "root"})
+        m = "Deletion of root metadata succesfull, signing process stopped"
+        assert result == {
+            "task": "delete_sign_metadata",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "details": {"message": m},
+        }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ROOT_SIGNING"),
+            pretend.call("BOOTSTRAP"),
+        ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_SIGNING", None),
+        ]
+
+    def test_delete_sign_metadata_non_root(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        def fake_get_fresh(key: str):
+            if key == "TARGETS_SIGNING":
+                return {"metadata": "fake"}
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: fake_get_fresh(*a)),
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        result = test_repo.delete_sign_metadata({"role": "targets"})
+        m = "Deletion of targets metadata succesfull, signing process stopped"
+        assert result == {
+            "task": "delete_sign_metadata",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "details": {"message": m},
+        }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_SIGNING"),
+        ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("TARGETS_SIGNING", None),
+        ]
+
+    def test_delete_sign_metadata_role_not_in_signing_status(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        def fake_get_fresh(key: str):
+            if key == "ROOT_SIGNING":
+                return None
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: fake_get_fresh(*a)),
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        result = test_repo.delete_sign_metadata({"role": "root"})
+        assert result == {
+            "task": "delete_sign_metadata",
+            "status": False,
+            "last_update": mocked_datetime.now(),
+            "details": {
+                "message": "Deletion of root metadata failed.",
+                "error": "The root role is not in a signing process.",
+            },
+        }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ROOT_SIGNING"),
+        ]
+
+    def test_delete_sign_metadata_no_role_is_given(
+        self, test_repo, mocked_datetime
+    ):
+        result = test_repo.delete_sign_metadata({})
+        assert result == {
+            "task": "delete_sign_metadata",
+            "status": False,
+            "last_update": mocked_datetime.now(),
+            "details": {
+                "message": "Deletion of metadata pending signatures failed",
+                "error": "No role provided for deletion.",
+            },
+        }

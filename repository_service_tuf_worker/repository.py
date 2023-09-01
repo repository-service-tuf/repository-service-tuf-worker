@@ -90,6 +90,7 @@ class TaskName(str, enum.Enum):
     PUBLISH_TARGETS = "publish_targets"
     METADATA_UPDATE = "metadata_update"
     SIGN_METADATA = "sign_metadata"
+    DELETE_SIGN_METADATA = "delete_sign_metadata"
 
 
 @dataclass
@@ -1518,4 +1519,53 @@ class MetadataRepository:
                 "message": "Signature Processed",
                 "bootstrap": "Bootstrap Finished",
             },
+        )
+
+    def delete_sign_metadata(
+        self,
+        payload: Dict[str, Any],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> Dict[str, Any]:
+        role: str = payload.get("role")
+        if role is None:
+            msg = "Deletion of metadata pending signatures failed"
+            return self._task_result(
+                TaskName.DELETE_SIGN_METADATA,
+                False,
+                {"message": msg, "error": "No role provided for deletion."},
+            )
+
+        signing_status = self._settings.get_fresh(f"{role.upper()}_SIGNING")
+        if signing_status is None:
+            return self._task_result(
+                TaskName.DELETE_SIGN_METADATA,
+                False,
+                {
+                    "message": f"Deletion of {role} metadata failed.",
+                    "error": f"The {role} role is not in a signing process.",
+                },
+            )
+
+        self.write_repository_settings(f"{role.upper()}_SIGNING", None)
+        m = f"Deletion of {role} metadata succesfull, signing process stopped"
+        if role == Root.type:
+            bootstrap: Optional[str] = self._settings.get_fresh("BOOTSTRAP")
+            # bootstrap is in a signing process pending signatures
+            if bootstrap is not None and bootstrap.startswith("signing-"):
+                self.write_repository_settings("BOOTSTRAP", None)
+                return self._task_result(
+                    TaskName.DELETE_SIGN_METADATA,
+                    True,
+                    {
+                        "message": m,
+                        "bootstrap": "Bootstrap process has been stopped",
+                    },
+                )
+
+        return self._task_result(
+            TaskName.DELETE_SIGN_METADATA,
+            True,
+            {"message": m},
         )
