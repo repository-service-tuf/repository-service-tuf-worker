@@ -1549,7 +1549,9 @@ class MetadataRepository:
             )
 
         self.write_repository_settings(f"{role.upper()}_SIGNING", None)
-        m = f"Deletion of {role} metadata succesfull, signing process stopped"
+        msg = (
+            f"Deletion of {role} metadata successful, signing process stopped"
+        )
         if role == Root.type:
             bootstrap: Optional[str] = self._settings.get_fresh("BOOTSTRAP")
             # bootstrap is in a signing process pending signatures
@@ -1559,7 +1561,7 @@ class MetadataRepository:
                     TaskName.DELETE_SIGN_METADATA,
                     True,
                     {
-                        "message": m,
+                        "message": msg,
                         "bootstrap": "Bootstrap process has been stopped",
                     },
                 )
@@ -1567,5 +1569,5 @@ class MetadataRepository:
         return self._task_result(
             TaskName.DELETE_SIGN_METADATA,
             True,
-            {"message": m},
+            {"message": msg},
         )

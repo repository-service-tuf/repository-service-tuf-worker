@@ -3340,13 +3340,13 @@ class TestMetadataRepository:
         )
 
         result = test_repo.delete_sign_metadata({"role": "root"})
-        m = "Deletion of root metadata succesfull, signing process stopped"
+        msg = "Deletion of root metadata successful, signing process stopped"
         assert result == {
             "task": "delete_sign_metadata",
             "status": True,
             "last_update": mocked_datetime.now(),
             "details": {
-                "message": m,
+                "message": msg,
                 "bootstrap": "Bootstrap process has been stopped",
             },
         }
@@ -3385,12 +3385,12 @@ class TestMetadataRepository:
         )
 
         result = test_repo.delete_sign_metadata({"role": "root"})
-        m = "Deletion of root metadata succesfull, signing process stopped"
+        msg = "Deletion of root metadata successful, signing process stopped"
         assert result == {
             "task": "delete_sign_metadata",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "details": {"message": m},
+            "details": {"message": msg},
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -3423,7 +3423,7 @@ class TestMetadataRepository:
         )
 
         result = test_repo.delete_sign_metadata({"role": "targets"})
-        m = "Deletion of targets metadata succesfull, signing process stopped"
+        m = "Deletion of targets metadata successful, signing process stopped"
         assert result == {
             "task": "delete_sign_metadata",
             "status": True,
