@@ -4,7 +4,7 @@ amqp==5.1.1; python_version >= '3.6'
 annotated-types==0.5.0; python_version >= '3.7'
 async-timeout==4.0.3; python_full_version <= '3.11.2'
 billiard==4.1.0; python_version >= '3.7'
-celery==5.3.3; python_version >= '3.8'
+celery==5.3.4; python_version >= '3.8'
 certifi==2023.7.22; python_version >= '3.6'
 cffi==1.15.1
 charset-normalizer==3.2.0; python_full_version >= '3.7.0'
