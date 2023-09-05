@@ -132,9 +132,6 @@ Available types:
 
 ##### `AWSS3` (AWS S3)
 
-* (Required) ``RSTUF_AWSS3_STORAGE_REGION``
-
-  The name of the region associated with the S3.
 
 * (Required) ``RSTUF_AWSS3_STORAGE_BUCKET``
 
@@ -154,12 +151,21 @@ Available types:
 
   This environment variable supports container secrets when the ``/run/secrets``
   volume is added to the path.
-  Example: `RSTUF_AWSS3_STORAGE_ACCESS_KEY=/run/secrets/S3_SECRET_KEY`
+  Example: ``RSTUF_AWSS3_STORAGE_ACCESS_KEY=/run/secrets/S3_SECRET_KEY``
 
+* (Optional) ``RSTUF_AWSS3_STORAGE_REGION``
+
+  The name of the region associated with the S3.
 
 * (Optional) ``RSTUF_AWSS3_STORAGE_ENDPOINT_URL``
 
-  The complete URL to use for the constructed
+  The complete URL to use for the constructed client. Normally, it is
+  automatically construct the appropriate URL to use when communicating with a
+  service.
+
+**_NOTE:_**  The AWS3 supports all `boto3`
+[environment variables](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables).
+
 
 
 #### (Optional) `RSTUF_LOCK_TIMEOUT`

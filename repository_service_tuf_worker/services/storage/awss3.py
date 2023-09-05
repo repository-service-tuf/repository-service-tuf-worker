@@ -55,12 +55,16 @@ class AWSS3(IStorage):
 
     @classmethod
     def configure(cls, settings) -> None:
+        aws_access_key_id = settings.AWSS3_STORAGE_ACCESS_KEY
+        aws_secret_access_key = settings.AWSS3_STORAGE_SECRET_KEY
+        region_name = settings.AWSS3_STORAGE_REGION
+        endpoint_url = settings.get("AWSS3_STORAGE_ENDPOINT_URL")
         s3_resource = boto3.resource(
             "s3",
-            aws_access_key_id=settings.AWSS3_STORAGE_ACCESS_KEY,
-            aws_secret_access_key=settings.AWSS3_STORAGE_SECRET_KEY,
-            region_name=settings.AWSS3_STORAGE_REGION,
-            endpoint_url=settings.get("AWSS3_STORAGE_ENDPOINT_URL"),
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            region_name=region_name,
+            endpoint_url=endpoint_url,
         )
         buckets = [bucket.name for bucket in s3_resource.buckets.all()]
         if settings.AWSS3_STORAGE_BUCKET not in buckets:
@@ -72,27 +76,27 @@ class AWSS3(IStorage):
     def settings(cls) -> List[ServiceSettings]:
         return [
             ServiceSettings(
-                name="AWSS3_STORAGE_BUCKET",
+                names=["AWSS3_STORAGE_BUCKET"],
                 argument="bucket",
                 required=True,
             ),
             ServiceSettings(
-                name="AWSS3_STORAGE_ACCESS_KEY",
+                names=["AWSS3_STORAGE_ACCESS_KEY"],
                 argument="access_key",
                 required=True,
             ),
             ServiceSettings(
-                name="AWSS3_STORAGE_SECRET_KEY",
+                names=["AWSS3_STORAGE_SECRET_KEY"],
                 argument="secret_key",
                 required=True,
             ),
             ServiceSettings(
-                name="AWSS3_STORAGE_REGION",
+                names=["AWSS3_STORAGE_REGION"],
                 argument="region",
-                required=True,
+                required=False,
             ),
             ServiceSettings(
-                name="AWSS3_STORAGE_ENDPOINT_URL",
+                names=["AWSS3_STORAGE_ENDPOINT_URL"],
                 argument="endpoint_url",
                 required=False,
             ),

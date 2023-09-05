@@ -127,27 +127,27 @@ class TestAWSS3Service:
 
         assert service_settings == [
             awss3.ServiceSettings(
-                name="AWSS3_STORAGE_BUCKET",
+                names=["AWSS3_STORAGE_BUCKET"],
                 argument="bucket",
                 required=True,
             ),
             awss3.ServiceSettings(
-                name="AWSS3_STORAGE_ACCESS_KEY",
+                names=["AWSS3_STORAGE_ACCESS_KEY"],
                 argument="access_key",
                 required=True,
             ),
             awss3.ServiceSettings(
-                name="AWSS3_STORAGE_SECRET_KEY",
+                names=["AWSS3_STORAGE_SECRET_KEY"],
                 argument="secret_key",
                 required=True,
             ),
             awss3.ServiceSettings(
-                name="AWSS3_STORAGE_REGION",
+                names=["AWSS3_STORAGE_REGION"],
                 argument="region",
-                required=True,
+                required=False,
             ),
             awss3.ServiceSettings(
-                name="AWSS3_STORAGE_ENDPOINT_URL",
+                names=["AWSS3_STORAGE_ENDPOINT_URL"],
                 argument="endpoint_url",
                 required=False,
             ),
