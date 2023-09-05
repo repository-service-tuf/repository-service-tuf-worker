@@ -207,20 +207,22 @@ RSTUF Worker Backend Services Development
 Storage
 =======
 
-The default RSTUF Worker source code is configured to use  `LocalKeyVault`.
+The default RSTUF Worker source code is configured to use  `LocalStorage`.
 
 AWSS3
 -----
 
-1. Update ``docker-compose.yml`` to use ``AWSS3``
+1. Initiate the local development environment ``make run-dev``
+
+2. Initiate the localstack configuration ``make localstack-init``
+
+3. Update ``docker-compose.yml`` to use ``AWSS3``
 
    * Set ``RSTUF_STORAGE_BACKEND`` as ``AWSS3``
    * Uncomment the ``RSTUF_AWSS3_STORAGE*`` environment variables
    * Comment the ``RSTUF_LOCAL_STORAGE*``
 
-2. Initiate the local development environment ``make run-dev``
-
-3. Initiate the localstack configuration ``make localstack-init``
+4. In another shell run `docker compose up -d`
 
 
 KeyVault
