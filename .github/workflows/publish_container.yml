@@ -51,6 +51,5 @@ jobs:
         context: .
         push: true
         tags: |
-          ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ inputs.image_version }}
-        build-args: |
-          RELEASE_VERSION=${{ inputs.image_version }}
+          ghcr.io/repository-service-tuf/repository-service-tuf-worker
+
