@@ -1,0 +1,23 @@
+name: FT pre-merge
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  build-pre-dev:
+    if: github.event.review.state == 'approved'
+    uses: ./.github/workflows/publish_container.yml
+    with:
+      image_version: ${{ github.sha }}
+
+  functional-tests:
+    if: github.event.review.state == 'approved'
+    needs: build-pre-dev
+    uses: repository-service-tuf/repository-service-tuf/.github/workflows/functional.yml@main
+    with:
+      worker_version: ${{ github.sha }}
+      api_version: dev
+      cli_version: dev
+    secrets:
+      RSTUF_ONLINE_KEY: ${{ secrets.RSTUF_ONLINE_KEY }}
