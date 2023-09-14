@@ -165,12 +165,12 @@ class LocalKeyVault(IKeyVault):
         """Define the settings parameters."""
         return [
             ServiceSettings(
-                name="LOCAL_KEYVAULT_PATH",
+                name=["LOCAL_KEYVAULT_PATH"],
                 argument="path",
                 required=True,
             ),
             ServiceSettings(
-                name="LOCAL_KEYVAULT_KEYS",
+                name=["LOCAL_KEYVAULT_KEYS"],
                 argument="keys",
                 required=True,
             ),

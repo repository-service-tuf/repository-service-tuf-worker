@@ -302,12 +302,12 @@ class TestLocalStorageService:
 
         assert service_settings == [
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_PATH",
+                name=["LOCAL_KEYVAULT_PATH"],
                 argument="path",
                 required=True,
             ),
             local.ServiceSettings(
-                name="LOCAL_KEYVAULT_KEYS",
+                name=["LOCAL_KEYVAULT_KEYS"],
                 argument="keys",
                 required=True,
             ),

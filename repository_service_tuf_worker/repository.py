@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MIT
 
 import enum
-import importlib
 import logging
 import time
 import warnings
@@ -41,12 +40,10 @@ from tuf.api.metadata import (  # noqa
 )
 from tuf.api.serialization.json import CanonicalJSONSerializer, JSONSerializer
 
-# the 'service import is used to retrieve sublcasses (Implemented Services)
 from repository_service_tuf_worker import (  # noqa
     Dynaconf,
     get_repository_settings,
     get_worker_settings,
-    services,
 )
 from repository_service_tuf_worker.interfaces import IKeyVault, IStorage
 from repository_service_tuf_worker.models import (
@@ -159,95 +156,12 @@ class MetadataRepository:
         #
         # Backends
         #
-        storage_backends = [
-            storage.__name__.upper() for storage in IStorage.__subclasses__()
-        ]
 
-        if type(settings.STORAGE_BACKEND) is not str and issubclass(
-            settings.STORAGE_BACKEND, tuple(IStorage.__subclasses__())
-        ):
-            logging.debug(
-                f"STORAGE_BACKEND is defined as {settings.STORAGE_BACKEND}"
-            )
+        # storage
+        IStorage.from_dynaconf(settings)
 
-        elif settings.STORAGE_BACKEND.upper() not in storage_backends:
-            raise ValueError(
-                f"Invalid Storage Backend {settings.STORAGE_BACKEND}. "
-                f"Supported Storage Backends {', '.join(storage_backends)}"
-            )
-        else:
-            settings.STORAGE_BACKEND = getattr(
-                importlib.import_module(
-                    "repository_service_tuf_worker.services"
-                ),
-                settings.STORAGE_BACKEND,
-            )
-
-            if missing := [
-                s.name
-                for s in settings.STORAGE_BACKEND.settings()
-                if s.required and s.name not in settings
-            ]:
-                raise AttributeError(
-                    "'Settings' object has not attribute(s) "
-                    f"{', '.join(missing)}"
-                )
-
-            storage_kwargs: Dict[str, Any] = {}
-            for s in settings.STORAGE_BACKEND.settings():
-                if settings.store.get(s.name) is None:
-                    settings.store[s.name] = s.default
-
-                storage_kwargs[s.argument] = settings.store[s.name]
-
-            settings.STORAGE_BACKEND.configure(settings)
-            settings.STORAGE = settings.STORAGE_BACKEND(**storage_kwargs)
-
-        keyvault_backends = [
-            keyvault.__name__.upper()
-            for keyvault in IKeyVault.__subclasses__()
-        ]
-
-        if type(settings.KEYVAULT_BACKEND) is not str and issubclass(
-            settings.KEYVAULT_BACKEND, tuple(IKeyVault.__subclasses__())
-        ):
-            logging.debug(
-                f"KEYVAULT_BACKEND is defined as {settings.KEYVAULT_BACKEND}"
-            )
-
-        elif settings.KEYVAULT_BACKEND.upper() not in keyvault_backends:
-            raise ValueError(
-                f"Invalid Key Vault Backend {settings.KEYVAULT_BACKEND}. "
-                "Supported Key Vault Backends :"
-                f"{', '.join(keyvault_backends)}"
-            )
-        else:
-            settings.KEYVAULT_BACKEND = getattr(
-                importlib.import_module(
-                    "repository_service_tuf_worker.services"
-                ),
-                settings.KEYVAULT_BACKEND,
-            )
-
-            if missing := [
-                s.name
-                for s in settings.KEYVAULT_BACKEND.settings()
-                if s.required and s.name not in settings
-            ]:
-                raise AttributeError(
-                    "'Settings' object has not attribute(s) "
-                    f"{', '.join(missing)}"
-                )
-
-            keyvault_kwargs: Dict[str, Any] = {}
-            for s in settings.KEYVAULT_BACKEND.settings():
-                if settings.store.get(s.name) is None:
-                    settings.store[s.name] = s.default
-
-                keyvault_kwargs[s.argument] = settings.store[s.name]
-
-            settings.KEYVAULT_BACKEND.configure(settings)
-            settings.KEYVAULT = settings.KEYVAULT_BACKEND(**keyvault_kwargs)
+        # keyvault
+        IKeyVault.from_dynaconf(settings)
 
         self._worker_settings = settings
         return settings

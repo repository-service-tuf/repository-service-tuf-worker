@@ -19,13 +19,16 @@ class LocalStorage(IStorage):
 
     @classmethod
     def configure(cls, settings) -> None:
-        os.makedirs(settings.LOCAL_STORAGE_BACKEND_PATH, exist_ok=True)
+        path = settings.get("LOCAL_STORAGE_BACKEND_PATH") or settings.get(
+            "LOCAL_STORAGE_PATH"
+        )
+        os.makedirs(path, exist_ok=True)
 
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
         return [
             ServiceSettings(
-                name="LOCAL_STORAGE_BACKEND_PATH",
+                name=["LOCAL_STORAGE_BACKEND_PATH", "LOCAL_STORAGE_PATH"],
                 argument="path",
                 required=True,
             ),
