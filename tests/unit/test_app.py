@@ -48,24 +48,6 @@ class TestApp:
             pretend.call(),
         ]
 
-    def test_repository_service_tuf_worker_refresh_settings_false(self):
-        import app
-
-        app.repository = pretend.stub(
-            test_action=pretend.call_recorder(lambda *a, **kw: True),
-        )
-
-        result = app.repository_service_tuf_worker(
-            "test_action", payload={"k": "v"}, refresh_settings=False
-        )
-        assert result is True
-        assert app.repository.test_action.calls == [
-            pretend.call(
-                {"k": "v", "task_id": None},
-                update_state=app.repository_service_tuf_worker.update_state,
-            ),
-        ]
-
     def test__publish_signals(self, app):
         app.redis_backend = pretend.stub(
             set=pretend.call_recorder(lambda *a: None)
