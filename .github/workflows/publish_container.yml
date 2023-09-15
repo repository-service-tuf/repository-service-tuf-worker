@@ -19,6 +19,7 @@ on:
 jobs:
   publish_container_image:
     permissions:
+      contents: read
       packages: write
     runs-on: ubuntu-latest
     steps:
