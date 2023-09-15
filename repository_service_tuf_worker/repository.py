@@ -108,16 +108,17 @@ class MetadataRepository:
 
     def __init__(self):
         self._worker_settings: Dynaconf = get_worker_settings()
-        self._storage_backend: IStorage = self.refresh_settings().STORAGE
-        self._key_storage_backend: IKeyVault = self.refresh_settings().KEYVAULT
-        self._db = self.refresh_settings().SQL
+        app_settings = self.refresh_settings()
+        self._storage_backend: IStorage = app_settings.STORAGE
+        self._key_storage_backend: IKeyVault = app_settings.KEYVAULT
+        self._db = app_settings.SQL
         self._redis = redis.StrictRedis.from_url(
             self._worker_settings.REDIS_SERVER
         )
         self._hours_before_expire: int = self._settings.get_fresh(
             "HOURS_BEFORE_EXPIRE", 1
         )
-        self._timeout = int(self.refresh_settings().get("LOCK_TIMEOUT", 60.0))
+        self._timeout = int(app_settings.get("LOCK_TIMEOUT", 60.0))
 
     @property
     def _settings(self) -> Dynaconf:
@@ -520,7 +521,6 @@ class MetadataRepository:
             kwargs={
                 "action": "publish_targets",
                 "payload": {"bin_targets": bins_targets},
-                "refresh_settings": False,
             },
             task_id=f"publish_targets-{task_id}",
             queue="rstuf_internals",
