@@ -18,7 +18,11 @@ from securesystemslib.exceptions import (
 from securesystemslib.interface import import_privatekey_from_file
 from securesystemslib.signer import Key, SSlibKey, SSlibSigner
 
-from repository_service_tuf_worker.interfaces import IKeyVault, ServiceSettings
+from repository_service_tuf_worker.interfaces import (
+    Dynaconf,
+    IKeyVault,
+    ServiceSettings,
+)
 
 
 @dataclass
@@ -130,7 +134,7 @@ class LocalKeyVault(IKeyVault):
         return parsed_keys
 
     @classmethod
-    def configure(cls, settings) -> None:
+    def configure(cls, settings: Dynaconf) -> None:
         """
         Run actions to check and configure the service using the settings.
         """
@@ -165,12 +169,12 @@ class LocalKeyVault(IKeyVault):
         """Define the settings parameters."""
         return [
             ServiceSettings(
-                name=["LOCAL_KEYVAULT_PATH"],
+                names=["LOCAL_KEYVAULT_PATH"],
                 argument="path",
                 required=True,
             ),
             ServiceSettings(
-                name=["LOCAL_KEYVAULT_KEYS"],
+                names=["LOCAL_KEYVAULT_KEYS"],
                 argument="keys",
                 required=True,
             ),

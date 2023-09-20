@@ -57,7 +57,7 @@ class TestInterfaces:
             settings=pretend.call_recorder(
                 lambda: [
                     interfaces.ServiceSettings(
-                        name=["FAKE_VAR1", "FAKE_VAR2"],
+                        names=["FAKE_VAR1", "FAKE_VAR2"],
                         argument="var",
                         required=True,
                     )
@@ -78,43 +78,57 @@ class TestInterfaces:
             )
 
         assert "Invalid Interface IFake" in str(err)
+        assert test_backend.settings.calls == [pretend.call(), pretend.call()]
+        assert test_backend.configure.calls == []
+        assert test_cls.__subclasses__.calls == [pretend.call()]
 
-    def test__setup_service_dynaconf_all_none(self, monkeypatch):
-        test_cls = pretend.stub(
-            __subclasses__=pretend.call_recorder(
-                lambda: [pretend.stub(__name__="FakeService")]
-            ),
-            __name__="IFake",
-        )
-        test_settings = interfaces.Dynaconf()
-        test_settings.RSTUF_FAKE_BACKEND = "FAKESERVICE"
-        test_settings.FAKE_VAR1 = None
-        test_settings.FAKE_VAR2 = None
-        test_backend = pretend.stub(
-            settings=pretend.call_recorder(
-                lambda: [
+    def test__setup_service_dynaconf_all_settings_none(self, monkeypatch):
+        class FakeStorage(interfaces.IStorage):
+            def __init__(self, var1: str, var2: str):
+                self._var1 = var1
+                self._var2 = var2
+
+            @classmethod
+            def configure(cls, settings):
+                ...
+
+            @classmethod
+            def settings(cls):
+                return [
                     interfaces.ServiceSettings(
-                        name=["FAKE_VAR1", "FAKE_VAR2"],
-                        argument="var",
-                        required=True,
-                    )
+                        names=["TEST_STORAGE_VAR1", "TEST_STORAGE_VARIABLE1"],
+                        argument="var1",
+                        required=False,
+                    ),
+                    interfaces.ServiceSettings(
+                        names=["TEST_STORAGE_VAR2"],
+                        argument="var2",
+                        required=False,
+                    ),
                 ]
-            ),
-            configure=pretend.call_recorder(lambda *a: None),
-        )
-        test_module = pretend.stub(FAKESERVICE=test_backend)
+
+            def get():
+                ...
+
+            def put():
+                ...
+
+        test_settings = interfaces.Dynaconf()
+        test_settings.STORAGE_BACKEND = "FAKESTORAGE"
+        test_settings.TEST_STORAGE_VAR1 = None
+        test_settings.TEST_STORAGE_VAR2 = None
 
         monkeypatch.setattr(
             "repository_service_tuf_worker.interfaces.importlib.import_module",
             lambda *a: test_module,
         )
+        test_module = pretend.stub(FAKESTORAGE=FakeStorage)
 
-        with pytest.raises(ValueError) as err:
-            interfaces._setup_service_dynaconf(
-                test_cls, test_settings.RSTUF_FAKE_BACKEND, test_settings
-            )
-
-        assert "Invalid Interface IFake" in str(err)
+        result = interfaces.IStorage.from_dynaconf(test_settings)
+        assert result is None
+        assert isinstance(test_settings.STORAGE, interfaces.IStorage)
+        assert test_settings.STORAGE._var1 is None
+        assert test_settings.STORAGE._var2 is None
 
     def test__setup_service_dynaconf_missing_config(self, monkeypatch):
         test_cls = pretend.stub(
@@ -130,7 +144,7 @@ class TestInterfaces:
                 settings=pretend.call_recorder(
                     lambda: [
                         interfaces.ServiceSettings(
-                            name=["FAKE_VAR1", "FAKE_VAR2"],
+                            names=["FAKE_VAR1", "FAKE_VAR2"],
                             argument="var",
                             required=True,
                         )
@@ -149,6 +163,9 @@ class TestInterfaces:
                 test_cls, test_settings.RSTUF_FAKE_BACKEND, test_settings
             )
 
-        assert "not attribute(s) RSTUF_FAKE_VAR1 or RSTUF_FAKE_VAR2" in str(
-            err
-        )
+        assert (
+            "'Settings' object has no attribute(s) (environment variables): "
+            "RSTUF_FAKE_VAR1 or RSTUF_FAKE_VAR2"
+        ) in str(err)
+        assert test_backend.FAKESERVICE.settings.calls == [pretend.call()]
+        assert test_cls.__subclasses__.calls == [pretend.call()]

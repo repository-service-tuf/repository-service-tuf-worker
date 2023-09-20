@@ -39,7 +39,7 @@ class TestLocalStorageService:
 
         assert service_settings == [
             local.ServiceSettings(
-                name=["LOCAL_STORAGE_BACKEND_PATH", "LOCAL_STORAGE_PATH"],
+                names=["LOCAL_STORAGE_BACKEND_PATH", "LOCAL_STORAGE_PATH"],
                 argument="path",
                 required=True,
             ),

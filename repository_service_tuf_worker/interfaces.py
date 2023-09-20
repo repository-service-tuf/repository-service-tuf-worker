@@ -16,7 +16,7 @@ from tuf.api.metadata import Metadata, T
 class ServiceSettings:
     """Dataclass for service settings."""
 
-    name: List[str]
+    names: List[str]
     argument: str
     required: bool
     default: Optional[Any] = None
@@ -64,7 +64,7 @@ class IStorage(ABC):
     @classmethod
     def from_dynaconf(cls, settings: Dynaconf) -> None:
         """
-        Run actions to test, configure using the settings.
+        Run actions to test and configure using the dynaconf settings.
         """
         _setup_service_dynaconf(cls, settings.STORAGE_BACKEND, settings)
 
@@ -125,18 +125,19 @@ def _setup_service_dynaconf(cls: Any, backend: Any, settings: Dynaconf):
         )
         # look all required settings
         if missing_settings := [
-            s.name
+            s.names
             for s in backend.settings()
-            if s.required and all(n not in settings for n in s.name)
+            if s.required and all(n not in settings for n in s.names)
         ]:
-            # map and fix name of the attributes including RSTUF_
+            # add the prefix `RSTUF_` to attributes including as dynaconf
+            # removes it. It makes the message more clear to the user.
             missing_stg: List = []
             for missing in missing_settings:
                 missing_stg.append("RSTUF_" + " or RSTUF_".join(missing))
 
             raise AttributeError(
-                "'Settings' object has not attribute(s) "
-                f"{', '.join(missing_stg)}"
+                "'Settings' object has no attribute(s) (environment variables)"
+                f": {', '.join(missing_stg)}"
             )
 
         # parse and define the keyargs from dynaconf
@@ -145,19 +146,17 @@ def _setup_service_dynaconf(cls: Any, backend: Any, settings: Dynaconf):
             if all(
                 [
                     settings.store.get(var_name) is None
-                    for var_name in s_var.name
+                    for var_name in s_var.names
                 ]
             ):
-                for var_name in s_var.name:
+                for var_name in s_var.names:
                     settings.store[var_name] = s_var.default
-                kwargs[s_var.argument] = settings.store[s_var.name[0]]
+                kwargs[s_var.argument] = settings.store[s_var.names[0]]
             else:
-                for var_name in s_var.name:
+                for var_name in s_var.names:
                     if settings.store.get(var_name) is not None:
                         kwargs[s_var.argument] = settings.store[var_name]
                         break
-
-        backend.configure(settings)
 
         if cls.__name__ == "IStorage":
             settings.STORAGE_BACKEND = backend
