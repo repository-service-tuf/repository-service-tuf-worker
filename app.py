@@ -75,7 +75,6 @@ def repository_service_tuf_worker(
     self,
     action: str,
     payload: Optional[Dict[str, Any]] = None,
-    refresh_settings: Optional[bool] = True,
 ):
     """
     Repository Service for TUF Metadata Worker main Celery consumer.
@@ -83,11 +82,7 @@ def repository_service_tuf_worker(
     Args:
         action: which action to be executed by the task.
         payload: data that will be given to the action.
-        refresh_settings: whether to refresh repository settings.
     """
-    if refresh_settings is True:
-        repository.refresh_settings(worker_settings)
-
     repository_action = getattr(repository, action)
     if payload is None:
         result = repository_action()
