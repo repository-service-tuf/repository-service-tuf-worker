@@ -1,15 +1,13 @@
 name: FT pre-merge
 
 on:
-  pull_request_review:
-    types: [submitted]
+  pull_request:
 
 jobs:
   build-pre-dev:
     permissions:
       contents: read
       packages: write
-    if: github.event.review.state == 'approved'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release tag
@@ -39,7 +37,6 @@ jobs:
             RELEASE_VERSION=${{ github.sha }}
 
   functional-tests:
-    if: github.event.review.state == 'approved'
     needs: build-pre-dev
     uses: repository-service-tuf/repository-service-tuf/.github/workflows/functional.yml@main
     with:
