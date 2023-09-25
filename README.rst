@@ -98,16 +98,6 @@ Install development requirements
         $ pip cache purge
         $ LDFLAGS=-L$(brew --prefix libffi)/lib CFLAGS=-I$(brew --prefix libffi)/include pip install cffi cryptography
 
-Database migrations
-===================
-
-Changing database model requires to generate a database migrations with Alembic.
-
-.. code:: shell
-
-  $ make db-migration M="update message"
-
-
 Running checks with pre-commit:
 ===============================
 
@@ -134,12 +124,20 @@ Running the development Worker locally
 
   $ make run-dev
 
+A specific docker compose can be used giving the parameter `DC=<name>`
+For example: `docker-compose-redis.yml` use `DC=redis`
+
+.. code:: shell
+
+  $ make run-dev DC=redis
 
 See Makefile for more options
 
 Tests
 =====
 
+Unit tests
+----------
 We use `Tox <ttps://tox.wiki/en/latest/>`_ to manage running the tests.
 
 Running tests
@@ -147,6 +145,20 @@ Running tests
 .. code:: shell
 
   $ tox
+
+You can run specific test from `tox.ini` using `-e`
+
+
+.. code:: shell
+
+  $ tox -e test
+
+Functional tests
+----------------
+
+1. Make sure you have a development environment Running (``make run-dev``)
+
+2. Run the FT tests ``make ft-das`` or ``make ft-signed``
 
 
 Managing requirements
@@ -175,3 +187,18 @@ Updating requirements files from Pipenv
 .. code:: shell
 
   $ make requirements
+
+
+Managing Database migrations
+============================
+
+It is required when changing the RSTUF Worker Database Models
+`repository_service_tuf_worker/models/`
+
+Updating the models requires a database migrations with Alembic.
+
+Use a clear update message with `M="Added field XYZ for Targets"`
+
+.. code:: shell
+
+  $ make db-migration M="update message"
