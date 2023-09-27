@@ -28,8 +28,8 @@ jobs:
     needs: build-pre-dev
     uses: ./.github/workflows/functional-tests.yml
     with:
-      api_version: dev
-      cli_version: dev
+      api_version: ${{ inputs.api_version }}
+      cli_version: ${{ inputs.cli_version }}
 
   functional-tests-local-redis:
     name: FT Deploy Local Services with Redis as Broker
@@ -37,8 +37,8 @@ jobs:
     uses: ./.github/workflows/functional-tests.yml
     with:
       docker_compose: docker-compose-redis.yml
-      api_version: dev
-      cli_version: dev
+      api_version: ${{ inputs.api_version }}
+      cli_version: ${{ inputs.cli_version }}
 
   prepare-rc:
     runs-on: ubuntu-latest
