@@ -5,46 +5,19 @@ on:
     types: [submitted]
 
 jobs:
-  build-pre-dev:
-    permissions:
-      contents: read
-      packages: write
+  functional-tests-local:
+    name: Deploy Local Services
     if: github.event.review.state == 'approved'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout release tag
-        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3
-  
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226
-  
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-  
-      - name: Build and push
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ github.sha }}
-          build-args: |
-            RELEASE_VERSION=${{ github.sha }}
-
-  functional-tests:
-    if: github.event.review.state == 'approved'
-    needs: build-pre-dev
-    uses: repository-service-tuf/repository-service-tuf/.github/workflows/functional.yml@main
+    uses: ./.github/workflows/functional-tests.yml
     with:
-      worker_version: ${{ github.sha }}
       api_version: dev
       cli_version: dev
-    secrets:
-      RSTUF_ONLINE_KEY: ${{ secrets.RSTUF_ONLINE_KEY }}
+
+  functional-tests-local-redis:
+    name: Deploy Local Services with Redis as Broker
+    if: github.event.review.state == 'approved'
+    uses: ./.github/workflows/functional-tests.yml
+    with:
+      docker_compose: docker-compose-redis.yml
+      api_version: dev
+      cli_version: dev

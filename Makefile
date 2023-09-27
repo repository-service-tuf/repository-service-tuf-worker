@@ -3,10 +3,17 @@
 build-dev:
 	docker build -t repository-service-tuf-worker:dev .
 
+
+run-dev: export API_VERSION = dev
 run-dev:
 	$(MAKE) build-dev
 	docker pull ghcr.io/repository-service-tuf/repository-service-tuf-api:dev
-	docker compose up --remove-orphans
+ifneq ($(DC),)
+	docker compose -f docker-compose-$(DC).yml up --remove-orphans
+else
+	docker compose -f docker-compose.yml up --remove-orphans
+endif
+
 
 db-migration:
 	if [ -z "$(M)" ]; then echo "Use: make db-migration M=\'message here\'"; exit 1; fi
@@ -53,3 +60,25 @@ precommit:
 	pre-commit install
 	pre-commit autoupdate
 	pre-commit run --all-files --show-diff-on-failure
+
+clone-umbrella:
+	if [ -d rstuf-umbrella ];\
+		then \
+		cd rstuf-umbrella && git pull;\
+	else \
+		git clone https://github.com/repository-service-tuf/repository-service-tuf.git rstuf-umbrella;\
+	fi
+
+ft-das:
+# Use "GITHUB_ACTION" to identify if we are running from a GitHub action.
+ifeq ($(GITHUB_ACTION),)
+	$(MAKE) clone-umbrella
+endif
+	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --entrypoint 'bash rstuf-umbrella/tests/functional/scripts/run-ft-das.sh $(CLI_VERSION)' --rm repository-service-tuf-worker
+
+ft-signed:
+# Use "GITHUB_ACTION" to identify if we are running from a GitHub action.
+ifeq ($(GITHUB_ACTION),)
+	$(MAKE) clone-umbrella
+endif
+	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --entrypoint 'bash rstuf-umbrella/tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION)' --rm repository-service-tuf-worker
