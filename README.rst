@@ -156,7 +156,7 @@ You can run specific test from `tox.ini` using `-e`
 Functional tests
 ----------------
 
-1. Make sure you have a development environment Running (``make run-dev``)
+1. Make sure you have a development environment running (``make run-dev``)
 
 2. Run the FT tests ``make ft-das`` or ``make ft-signed``
 
