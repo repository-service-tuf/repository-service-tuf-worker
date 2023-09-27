@@ -5,11 +5,9 @@ on:
     types: [submitted]
 
 jobs:
-
   functional-tests-local:
     name: Deploy Local Services
     if: github.event.review.state == 'approved'
-    needs: build-pre-dev
     uses: ./.github/workflows/functional-tests.yml
     with:
       api_version: dev
@@ -18,7 +16,6 @@ jobs:
   functional-tests-local-redis:
     name: Deploy Local Services with Redis as Broker
     if: github.event.review.state == 'approved'
-    needs: build-pre-dev
     uses: ./.github/workflows/functional-tests.yml
     with:
       docker_compose: docker-compose-redis.yml
