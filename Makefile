@@ -70,12 +70,14 @@ clone-umbrella:
 	fi
 
 ft-das:
+# Use "GITHUB_ACTION" to identify if we are running from a GitHub action.
 ifeq ($(GITHUB_ACTION),)
 	$(MAKE) clone-umbrella
 endif
 	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --entrypoint 'bash rstuf-umbrella/tests/functional/scripts/run-ft-das.sh $(CLI_VERSION)' --rm repository-service-tuf-worker
 
 ft-signed:
+# Use "GITHUB_ACTION" to identify if we are running from a GitHub action.
 ifeq ($(GITHUB_ACTION),)
 	$(MAKE) clone-umbrella
 endif
