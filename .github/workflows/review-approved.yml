@@ -21,3 +21,12 @@ jobs:
       docker_compose: docker-compose-redis.yml
       api_version: dev
       cli_version: dev
+
+  functional-tests-aws:
+    name: Deploy AWS Services
+    if: github.event.review.state == 'approved'
+    uses: ./.github/workflows/functional-tests.yml
+    with:
+      docker_compose: docker-compose-aws.yml
+      api_version: dev
+      cli_version: dev

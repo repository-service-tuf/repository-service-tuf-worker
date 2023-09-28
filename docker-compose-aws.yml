@@ -1,30 +1,16 @@
-# Default development deployment
+# Development deployment using AWS RSTUF Services
 version: "3.9"
 
 volumes:
   repository-service-tuf-storage:
   repository-service-tuf-api-data:
-  repository-service-tuf-mq-data:
-  repository-service-tuf-settings:
   repository-service-tuf-redis-data:
   repository-service-tuf-pgsql-data:
 
 services:
-  rabbitmq:
-    image: rabbitmq:3.10.7-management-alpine
-    volumes:
-     - "repository-service-tuf-mq-data:/var/lib/rabbitmq"
-    ports:
-      - 5672:5672
-      - 15672:15672
-    healthcheck:
-      test: "exit 0"
-    restart: always
-
   postgres:
     image: postgres:15.1
     ports:
-      # 5432 may already in use by another PostgreSQL on host
       - "5433:5432"
     environment:
       - POSTGRES_PASSWORD=secret
@@ -41,10 +27,10 @@ services:
     ports:
       - 80:80
     environment:
-      - RSTUF_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
-      - RSTUF_REDIS_SERVER="redis://redis"
+      - RSTUF_BROKER_SERVER=redis://redis
+      - RSTUF_REDIS_SERVER=redis://redis
     depends_on:
-      rabbitmq:
+      redis:
         condition: service_healthy
 
   web:
@@ -61,6 +47,20 @@ services:
       - repository-service-tuf-redis-data:/data
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+
+  localstack:
+    image: localstack/localstack:2.2
+    environment:
+      HOSTNAME: "localstack"
+      LOCALSTACK_HOST: "localstack"
+      LS_LOG: "error"
+    ports:
+      - "4566:4566"
+    volumes:
+      - "./tests/files/aws/init-services.sh:/etc/localstack/init/ready.d/init-services.sh"
 
   repository-service-tuf-worker:
     build:
@@ -68,23 +68,27 @@ services:
     entrypoint: "bash entrypoint-dev.sh"
     environment:
       - DATA_DIR=./data
-      - RSTUF_STORAGE_BACKEND=LocalStorage
-      - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
+      - RSTUF_STORAGE_BACKEND=AWSS3
+      - RSTUF_AWSS3_STORAGE_BUCKET=tuf-metadata
+      - RSTUF_AWSS3_STORAGE_ACCESS_KEY=access_key
+      - RSTUF_AWSS3_STORAGE_SECRET_KEY=secret_key
+      - RSTUF_AWSS3_STORAGE_REGION=us-east-1
+      - RSTUF_AWSS3_STORAGE_ENDPOINT_URL=http://localstack:4566
       - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
       - RSTUF_LOCAL_KEYVAULT_PATH=/opt/repository-service-tuf-worker/tests/files/key_storage
       - RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass:online-rsa.key,strongPass,rsa
-      - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
-      - RSTUF_SQL_SERVER=postgres:5432
-      - RSTUF_SQL_USER=postgres
-      - RSTUF_SQL_PASSWORD=secret
+      - RSTUF_BROKER_SERVER=redis://redis
       - RSTUF_REDIS_SERVER=redis://redis
+      - RSTUF_SQL_SERVER=postgres:secret@postgres:5432
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
     depends_on:
-      rabbitmq:
+      redis:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      localstack:
         condition: service_healthy
     tty: true
     stdin_open: true

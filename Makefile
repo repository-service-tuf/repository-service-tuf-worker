@@ -3,7 +3,6 @@
 build-dev:
 	docker build -t repository-service-tuf-worker:dev .
 
-
 run-dev: export API_VERSION = dev
 run-dev:
 	$(MAKE) build-dev
@@ -14,9 +13,6 @@ else
 	docker compose -f docker-compose.yml up --remove-orphans
 endif
 
-
-localstack-init:
-	awslocal s3api create-bucket --bucket tuf-metadata --region us-east-1
 
 db-migration:
 	if [ -z "$(M)" ]; then echo "Use: make db-migration M=\'message here\'"; exit 1; fi
