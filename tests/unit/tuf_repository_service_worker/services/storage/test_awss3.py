@@ -55,28 +55,25 @@ class TestAWSS3Service:
             AWSS3_STORAGE_BUCKET="bucket",
             AWSS3_STORAGE_ACCESS_KEY="access_key",
             AWSS3_STORAGE_SECRET_KEY="secret_key",
-            AWSS3_STORAGE_REGION="region",
-            AWSS3_STORAGE_ENDPOINT_URL=None,
         )
 
         service = awss3.AWSS3(
             "bucket",
             "access_key",
             "secret_key",
-            "region",
         )
         service.configure(test_settings)
         assert service._bucket == "bucket"
         assert service._access_key == "access_key"
         assert service._secret_key == "secret_key"
-        assert service._region == "region"
+        assert service._region is None
         assert service._endpoint_url is None
         assert awss3.boto3.resource.calls == [
             pretend.call(
                 "s3",
                 aws_access_key_id="access_key",
                 aws_secret_access_key="secret_key",
-                region_name="region",
+                region_name=None,
                 endpoint_url=None,
             )
         ]
@@ -114,7 +111,7 @@ class TestAWSS3Service:
         assert service._secret_key == "secret_key"
         assert service._region == "region"
         assert service._endpoint_url is None
-        assert awss3.boto3.resource().buckets.all.calls
+        assert awss3.boto3.resource().buckets.all.calls == [pretend.call()]
 
     def test_settings(self, mocked_boto3):
         service = awss3.AWSS3(
@@ -186,6 +183,7 @@ class TestAWSS3Service:
         assert result == expected_root
         assert fake_file_obj.read.calls == [pretend.call()]
         assert fake_file_obj.close.calls == [pretend.call()]
+        assert fake_aws3_object.get.calls == [pretend.call("Body")]
         assert awss3.Metadata.from_bytes.calls == [pretend.call(None)]
         assert awss3.awswrangler.s3.list_objects.calls == [
             pretend.call(
@@ -231,6 +229,7 @@ class TestAWSS3Service:
         assert result == expected_timestamp
         assert fake_file_obj.read.calls == [pretend.call()]
         assert fake_file_obj.close.calls == [pretend.call()]
+        assert fake_aws3_object.get.calls == [pretend.call("Body")]
         assert awss3.Metadata.from_bytes.calls == [pretend.call(None)]
         assert awss3.awswrangler.s3.list_objects.calls == []
         assert service._s3.get_object.calls == [

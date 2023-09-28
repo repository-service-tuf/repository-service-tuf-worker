@@ -17,7 +17,6 @@ def mocked_boto3(monkeypatch):
     )
     mock_boto3 = pretend.stub(
         Session=pretend.call_recorder(lambda *a, **kw: fake_Session),
-        client=pretend.call_recorder(lambda *a, **kw: fake_client),
         resource=pretend.call_recorder(lambda *a, **kw: fake_resource),
     )
 

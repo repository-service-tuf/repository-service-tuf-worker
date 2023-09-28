@@ -22,11 +22,11 @@ class AWSS3(IStorage):
         bucket: str,
         access_key: str,
         secret_key: str,
-        region: str,
+        region: Optional[str] = None,
         endpoint_url: Optional[str] = None,
     ) -> None:
-        self._bucket: str = bucket
-        self._region: str = region
+        self._bucket: Optional[str] = bucket
+        self._region: Optional[str] = region
         self._access_key: str = parse_if_secret(access_key)
         self._secret_key: str = parse_if_secret(secret_key)
         self._endpoint_url: Optional[str] = endpoint_url
@@ -57,7 +57,7 @@ class AWSS3(IStorage):
     def configure(cls, settings) -> None:
         aws_access_key_id = settings.AWSS3_STORAGE_ACCESS_KEY
         aws_secret_access_key = settings.AWSS3_STORAGE_SECRET_KEY
-        region_name = settings.AWSS3_STORAGE_REGION
+        region_name = settings.get("AWSS3_STORAGE_REGION")
         endpoint_url = settings.get("AWSS3_STORAGE_ENDPOINT_URL")
         s3_resource = boto3.resource(
             "s3",
