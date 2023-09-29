@@ -42,7 +42,7 @@ jobs:
     name: FT Deploy AWS Services
     uses: ./.github/workflows/functional-aws.yml
     with:
-      docker_compose: docker-compose-redis.yml
+      docker_compose: docker-compose-aws.yml
       api_version: ${{ inputs.api_version }}
       cli_version: ${{ inputs.cli_version }}
 
