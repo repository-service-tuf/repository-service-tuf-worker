@@ -132,7 +132,6 @@ Available types:
 
 ##### `AWSS3` (AWS S3)
 
-
 * (Required) ``RSTUF_AWSS3_STORAGE_BUCKET``
 
   The name of the region associated with the S3.
@@ -159,14 +158,12 @@ Available types:
 
 * (Optional) ``RSTUF_AWSS3_STORAGE_ENDPOINT_URL``
 
-  The complete URL to use for the constructed client. Normally, it is
-  automatically construct the appropriate URL to use when communicating with a
-  service.
+  The complete URL to use for the constructed client. Normally, the
+  client automatically constructs the appropriate URL to use when
+  communicating with a service.
 
 **_NOTE:_**  The AWS3 supports all `boto3`
 [environment variables](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables).
-
-
 
 #### (Optional) `RSTUF_LOCK_TIMEOUT`
 
