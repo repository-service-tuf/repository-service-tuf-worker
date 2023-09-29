@@ -25,10 +25,10 @@ class AWSS3(IStorage):
         region: Optional[str] = None,
         endpoint_url: Optional[str] = None,
     ) -> None:
-        self._bucket: Optional[str] = bucket
-        self._region: Optional[str] = region
         self._access_key: str = parse_if_secret(access_key)
         self._secret_key: str = parse_if_secret(secret_key)
+        self._bucket: str = bucket
+        self._region: Optional[str] = region
         self._endpoint_url: Optional[str] = endpoint_url
 
         self._s3_session = boto3.Session(

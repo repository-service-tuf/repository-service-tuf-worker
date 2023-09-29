@@ -15,19 +15,18 @@ class TestAWSS3Service:
             "bucket",
             "access_key",
             "secret_key",
-            "region",
         )
 
         assert service._bucket == "bucket"
         assert service._access_key == "access_key"
         assert service._secret_key == "secret_key"
-        assert service._region == "region"
+        assert service._region is None
         assert service._endpoint_url is None
         assert awss3.boto3.Session.calls == [
             pretend.call(
                 aws_access_key_id="access_key",
                 aws_secret_access_key="secret_key",
-                region_name="region",
+                region_name=None,
             )
         ]
         assert service._s3_session.client.calls == [
