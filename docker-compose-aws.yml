@@ -72,7 +72,7 @@ services:
       - RSTUF_AWSS3_STORAGE_BUCKET=tuf-metadata
       - RSTUF_AWSS3_STORAGE_ACCESS_KEY=access_key
       - RSTUF_AWSS3_STORAGE_SECRET_KEY=secret_key
-      # region and endpoint_url are required to use localstack
+      # region and endpoint_url are required by localstack
       - RSTUF_AWSS3_STORAGE_REGION=us-east-1
       - RSTUF_AWSS3_STORAGE_ENDPOINT_URL=http://localstack:4566
       - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
