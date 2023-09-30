@@ -33,14 +33,6 @@ services:
       redis:
         condition: service_healthy
 
-  web:
-    image: python:3.10-slim-buster
-    command: python -m http.server -d /var/opt/repository-service-tuf/storage 8080
-    volumes:
-      - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
-    ports:
-      - "8080:8080"
-
   redis:
     image: redis:4.0
     volumes:
@@ -83,7 +75,6 @@ services:
       - RSTUF_SQL_SERVER=postgres:secret@postgres:5432
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
-      - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
     depends_on:
       redis:
         condition: service_healthy
