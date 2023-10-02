@@ -8,11 +8,10 @@ pip install -r ${UMBRELLA_PATH}/requirements.txt
 
 curl http://web:8080
 if [[ $? -eq 0 ]]; then
-    METADATA_URL=http://web:8080/1.root.json
+    export METADATA_BASE_URL=http://web:8080
 else
-    METADATA_URL=http://localstack:4566/tuf-metadata/1.root.json
+    export METADATA_BASE_URL=http://localstack:4566/tuf-metadata
 fi
-
 
 # Install CLI
 case ${CLI_VERSION} in
@@ -76,7 +75,7 @@ rstuf admin ceremony -b -u -f payload.json --upload-server http://repository-ser
 
 # Get initial trusted Root
 rm metadata/1.root.json
-wget -P metadata/ ${METADATA_URL}
+wget -P metadata/ ${METADATA_BASE_URL}/1.root.json
 cp -r metadata ${UMBRELLA_PATH}/
 
 make -C ${UMBRELLA_PATH}/ functional-tests-exitfirst
