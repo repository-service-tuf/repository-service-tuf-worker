@@ -10,9 +10,9 @@ curl http://web:8080
 if [[ $? -eq 0 ]]; then
     export METADATA_BASE_URL=http://web:8080
 else
-    # using localstack for AWS S3
+    # using localstack for AWS
     export METADATA_BASE_URL=http://localstack:4566/tuf-metadata
-    export PERFORMANCE_FAILURE=False
+    export PERFORMANCE=False
 fi
 
 
