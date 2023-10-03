@@ -26,7 +26,7 @@ class IKeyVault(ABC):
     @abstractmethod
     def configure(cls, settings: Dynaconf) -> "IKeyVault":
         """
-        Run actions to check and configure the service using the settings.
+        Run actions to test, configure and create object using the settings.
         """
         pass  # pragma: no cover
 
@@ -56,7 +56,7 @@ class IStorage(ABC):
     @abstractmethod
     def configure(cls, settings: Dynaconf) -> "IStorage":
         """
-        Run actions to test, configure using the settings.
+        Run actions to test, configure and create object using the settings.
         """
         raise NotImplementedError  # pragma: no cover
 
