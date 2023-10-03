@@ -39,25 +39,18 @@ class KeyVaultError(Exception):
 class LocalKeyVault(IKeyVault):
     """Local KeyVault type"""
 
-    def __init__(self, path: str, keys: str):
+    def __init__(self, path: str, keys: List[LocalKey]):
         """Configuration class for RSTUF Worker LocalKeyVault service.
         Manages all settings related to the usage of the online key(s).
 
         Args:
             path: path for key vault (used to define the volume)
-            keys: list of online keys to be used. String uses two separators
-                `:` to separate the keys and `,` to separate the field.
-                `<file>,<password>,<type>`
-                Where:
-                    file: the file name or base64 content in the format:
-                        (base64|<key body in base64>)
-                    password: the key password
-                    type: optional, default=ed25519
-
-                    Example:`key1.key,pass1:key2.key,pass2,rsa`
+            keys: list of keys to be used. Each of the LocalKey objects
+                represents one online key. We allow multiple online keys for
+                easier key rotation.
         """
         self._path: str = path
-        self._keys: str = keys
+        self._keys: List[LocalKey] = keys
 
     @classmethod
     def _base64_key(cls, keyvault_path: str, base64_key_body: str) -> str:
@@ -164,7 +157,7 @@ class LocalKeyVault(IKeyVault):
             logging.error("No valid keys found in the LocalKeyVault")
             raise error
 
-        return cls(path, settings.LOCAL_KEYVAULT_KEYS)
+        return cls(path, local_keys)
 
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
@@ -186,9 +179,8 @@ class LocalKeyVault(IKeyVault):
 
     def get(self, public_key: Key) -> SSlibSigner:
         """Return a signer using the online key."""
-        keys = self._raw_key_parser(self._path, self._keys)
         valid_key = False
-        for key in keys:
+        for key in self._keys:
             key_path = os.path.join(self._path, key.file)
             priv_key_uri = f"file:{key_path}?encrypted=true"
             try:

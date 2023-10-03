@@ -170,6 +170,10 @@ class TestLocalStorageService:
             LOCAL_KEYVAULT_PATH="/path/key_vault/",
             LOCAL_KEYVAULT_KEYS="key1.key,pass1:key2.key,pass2,rsa",
         )
+        local_keys = [
+            local.LocalKey(file="key1.key", password="pass1"),
+            local.LocalKey(file="key2.key", password="pass2", type="rsa"),
+        ]
         local.import_privatekey_from_file = pretend.call_recorder(
             lambda *a: {}
         )
@@ -181,18 +185,19 @@ class TestLocalStorageService:
         ]
         assert isinstance(service, local.LocalKeyVault)
         assert service._path == test_settings.LOCAL_KEYVAULT_PATH
-        assert service._keys == test_settings.LOCAL_KEYVAULT_KEYS
+        assert service._keys == local_keys
 
     def test_configure_file_base64(self):
         test_settings = pretend.stub(
             LOCAL_KEYVAULT_PATH="/path/key_vault/",
             LOCAL_KEYVAULT_KEYS="base64|LnRvnYvCg==,pass1:key2.key,pass2,rsa",
         )
+        local_keys = [
+            local.LocalKey(file="fake_hash", password="pass1"),
+            local.LocalKey(file="key2.key", password="pass2", type="rsa"),
+        ]
         local.LocalKeyVault._raw_key_parser = pretend.call_recorder(
-            lambda *a: [
-                local.LocalKey(file="fake_hash", password="pass1"),
-                local.LocalKey(file="key2.key", password="pass2", type="rsa"),
-            ]
+            lambda *a: local_keys
         )
         local.import_privatekey_from_file = pretend.call_recorder(
             lambda *a: {}
@@ -201,7 +206,7 @@ class TestLocalStorageService:
         service = local.LocalKeyVault.configure(test_settings)
         assert isinstance(service, local.LocalKeyVault)
         assert service._path == test_settings.LOCAL_KEYVAULT_PATH
-        assert service._keys == test_settings.LOCAL_KEYVAULT_KEYS
+        assert service._keys == local_keys
         assert local.import_privatekey_from_file.calls == [
             pretend.call("/path/key_vault/fake_hash", "ed25519", "pass1"),
             pretend.call("/path/key_vault/key2.key", "rsa", "pass2"),
@@ -239,11 +244,12 @@ class TestLocalStorageService:
             LOCAL_KEYVAULT_KEYS="key1,pass1:key2,pass2,rsa",
         )
         caplog.set_level(local.logging.WARNING)
+        local_keys = [
+            local.LocalKey(file="key1", password="pass1"),
+            local.LocalKey(file="key2", password="pass2", type="rsa"),
+        ]
         local.LocalKeyVault._raw_key_parser = pretend.call_recorder(
-            lambda *a: [
-                local.LocalKey(file="key1", password="pass1"),
-                local.LocalKey(file="key2", password="pass2", type="rsa"),
-            ]
+            lambda *a: local_keys
         )
         mocked_import_pk_from_file = MagicMock()
         mocked_import_pk_from_file.side_effect = [
@@ -255,7 +261,7 @@ class TestLocalStorageService:
         service = local.LocalKeyVault.configure(test_settings)
         assert isinstance(service, local.LocalKeyVault)
         assert service._path == test_settings.LOCAL_KEYVAULT_PATH
-        assert service._keys == test_settings.LOCAL_KEYVAULT_KEYS
+        assert service._keys == local_keys
         assert caplog.record_tuples == [
             ("root", 40, "Invalid format"),
             ("root", 30, "Failed to load LocalKeyVault key"),
@@ -320,9 +326,11 @@ class TestLocalStorageService:
         ]
 
     def test_get(self):
-        service = local.LocalKeyVault(
-            "/test/key_vault", "key1.key,pass1:key2.key,pass2,rsa"
-        )
+        local_keys = [
+            local.LocalKey(file="key1.key", password="pass1"),
+            local.LocalKey(file="key2.key", password="pass2"),
+        ]
+        service = local.LocalKeyVault("/test/key_vault", local_keys)
         fake_key = pretend.stub(
             keyid="keyid", to_dict=pretend.call_recorder(lambda: {"k": "v"})
         )
@@ -338,7 +346,7 @@ class TestLocalStorageService:
         assert result == "fake_signer"
         assert local.SSlibSigner.from_priv_key_uri.calls == [
             pretend.call(
-                "file:/test/key_vault/key1?encrypted=true",
+                "file:/test/key_vault/key1.key?encrypted=true",
                 "fake_public_key",
                 "pass1",
             )
@@ -349,9 +357,11 @@ class TestLocalStorageService:
         assert service._secrets_handler.calls == [pretend.call("pass1")]
 
     def test_get_file_base64(self):
-        service = local.LocalKeyVault(
-            "/test/key_vault", "base64|LnRvnYvCg==,pass1:key2.key,pass2,rsa"
-        )
+        local_keys = [
+            local.LocalKey(file="fake_hash", password="pass1"),
+            local.LocalKey(file="key2.key", password="pass2", type="rsa"),
+        ]
+        service = local.LocalKeyVault("/test/key_vault", local_keys)
         fake_key = pretend.stub(
             keyid="keyid", to_dict=pretend.call_recorder(lambda: {"k": "v"})
         )
@@ -362,18 +372,9 @@ class TestLocalStorageService:
             lambda *a: "fake_signer"
         )
         service._secrets_handler = pretend.call_recorder(lambda pwd: pwd)
-        service._raw_key_parser = pretend.call_recorder(
-            lambda *a: [
-                local.LocalKey(file="fake_hash", password="pass1"),
-                local.LocalKey(file="key2.key", password="pass2", type="rsa"),
-            ]
-        )
         result = service.get(fake_key)
 
         assert result == "fake_signer"
-        assert service._raw_key_parser.calls == [
-            pretend.call(service._path, service._keys),
-        ]
         assert local.SSlibSigner.from_priv_key_uri.calls == [
             pretend.call(
                 "file:/test/key_vault/fake_hash?encrypted=true",
@@ -388,9 +389,11 @@ class TestLocalStorageService:
 
     def test_get_fail_first_key(self, caplog):
         caplog.set_level(local.logging.ERROR)
-        service = local.LocalKeyVault(
-            "/test/key_vault", "key1.key,pass1:key2,pass2,rsa"
-        )
+        local_keys = [
+            local.LocalKey(file="fake_hash", password="pass1"),
+            local.LocalKey(file="key2.key", password="pass2", type="rsa"),
+        ]
+        service = local.LocalKeyVault("/test/key_vault", local_keys)
         fake_key = pretend.stub(
             keyid="keyid", to_dict=pretend.call_recorder(lambda: {"k": "v"})
         )
@@ -404,21 +407,12 @@ class TestLocalStorageService:
             lambda *a: "fake_signer"
         )
         service._secrets_handler = pretend.call_recorder(lambda pwd: pwd)
-        service._raw_key_parser = pretend.call_recorder(
-            pretend.call_recorder(
-                lambda *a: [
-                    local.LocalKey(file="key1.key", password="pass1"),
-                    local.LocalKey(file="key2", password="pass2", type="rsa"),
-                ]
-            )
-        )
 
         result = service.get(fake_key)
-
         assert result == "fake_signer"
         assert local.SSlibSigner.from_priv_key_uri.calls == [
             pretend.call(
-                "file:/test/key_vault/key2?encrypted=true",
+                "file:/test/key_vault/key2.key?encrypted=true",
                 "fake_public_key",
                 "pass2",
             )
@@ -430,9 +424,11 @@ class TestLocalStorageService:
 
     def test_get_fail_all_configured_keys(self, caplog):
         caplog.set_level(local.logging.ERROR)
-        service = local.LocalKeyVault(
-            "/test/key_vault", "key1.key,pass1:key2.key,pass2,rsa"
-        )
+        local_keys = [
+            local.LocalKey(file="fake_hash", password="pass1"),
+            local.LocalKey(file="key2.key", password="pass2", type="rsa"),
+        ]
+        service = local.LocalKeyVault("/test/key_vault", local_keys)
         fake_key = pretend.stub(
             keyid="keyid", to_dict=pretend.call_recorder(lambda: {"k": "v"})
         )
