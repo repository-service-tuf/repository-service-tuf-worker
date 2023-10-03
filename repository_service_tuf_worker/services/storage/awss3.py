@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 from io import BytesIO
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import awswrangler
 import boto3
@@ -13,91 +13,87 @@ from tuf.api.metadata import Metadata, T, Timestamp
 from tuf.api.serialization import DeserializationError
 
 from repository_service_tuf_worker import parse_if_secret
-from repository_service_tuf_worker.interfaces import IStorage, ServiceSettings
+from repository_service_tuf_worker.interfaces import (
+    Dynaconf,
+    IStorage,
+    ServiceSettings,
+)
 
 
 class AWSS3(IStorage):
     def __init__(
         self,
         bucket: str,
-        access_key: str,
-        secret_key: str,
+        s3_session: boto3.Session,
+        s3_client: Any,
+        s3_resource: Any,
         region: Optional[str] = None,
         endpoint_url: Optional[str] = None,
     ) -> None:
-        self._access_key: str = parse_if_secret(access_key)
-        self._secret_key: str = parse_if_secret(secret_key)
         self._bucket: str = bucket
         self._region: Optional[str] = region
         self._endpoint_url: Optional[str] = endpoint_url
-
-        self._s3_session = boto3.Session(
-            aws_access_key_id=self._access_key,
-            aws_secret_access_key=self._secret_key,
-            region_name=self._region,
-        )
-
-        self._s3 = self._s3_session.client(
-            "s3",
-            aws_access_key_id=self._access_key,
-            aws_secret_access_key=self._secret_key,
-            region_name=self._region,
-            endpoint_url=self._endpoint_url,
-        )
-
-        self._s3_resource = self._s3_session.resource(
-            "s3",
-            aws_access_key_id=self._access_key,
-            aws_secret_access_key=self._secret_key,
-            region_name=self._region,
-            endpoint_url=self._endpoint_url,
-        )
+        self._s3_session = s3_session
+        self._s3_client = s3_client
+        self._s3_resource = s3_resource
 
     @classmethod
-    def configure(cls, settings) -> None:
-        aws_access_key_id = settings.AWSS3_STORAGE_ACCESS_KEY
-        aws_secret_access_key = settings.AWSS3_STORAGE_SECRET_KEY
-        region_name = settings.get("AWSS3_STORAGE_REGION")
-        endpoint_url = settings.get("AWSS3_STORAGE_ENDPOINT_URL")
-        s3_resource = boto3.resource(
+    def configure(cls, settings: Dynaconf) -> "AWSS3":
+        access_key = parse_if_secret(settings.AWSS3_STORAGE_ACCESS_KEY)
+        secret_access_key = parse_if_secret(settings.AWSS3_STORAGE_SECRET_KEY)
+        region = settings.get("AWSS3_STORAGE_REGION")
+        endpoint = settings.get("AWSS3_STORAGE_ENDPOINT_URL")
+
+        s3_session = boto3.Session(
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_access_key,
+            region_name=region,
+        )
+        s3_resource = s3_session.resource(
             "s3",
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            region_name=region_name,
-            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_access_key,
+            region_name=region,
+            endpoint_url=endpoint,
         )
         buckets = [bucket.name for bucket in s3_resource.buckets.all()]
-        if settings.AWSS3_STORAGE_BUCKET not in buckets:
-            raise ValueError(
-                f"Bucket '{settings.AWSS3_STORAGE_BUCKET}' not found."
-            )
+        user_bucket = settings.AWSS3_STORAGE_BUCKET
+        if user_bucket not in buckets:
+            raise ValueError(f"Bucket '{user_bucket}' not found.")
+
+        s3_client = s3_session.client(
+            "s3",
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_access_key,
+            region_name=region,
+            endpoint_url=endpoint,
+        )
+
+        return cls(
+            user_bucket, s3_session, s3_client, s3_resource, region, endpoint
+        )
 
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
         return [
             ServiceSettings(
                 names=["AWSS3_STORAGE_BUCKET"],
-                argument="bucket",
                 required=True,
             ),
             ServiceSettings(
                 names=["AWSS3_STORAGE_ACCESS_KEY"],
-                argument="access_key",
                 required=True,
             ),
             ServiceSettings(
                 names=["AWSS3_STORAGE_SECRET_KEY"],
-                argument="secret_key",
                 required=True,
             ),
             ServiceSettings(
                 names=["AWSS3_STORAGE_REGION"],
-                argument="region",
                 required=False,
             ),
             ServiceSettings(
                 names=["AWSS3_STORAGE_ENDPOINT_URL"],
-                argument="endpoint_url",
                 required=False,
             ),
         ]
@@ -132,7 +128,9 @@ class AWSS3(IStorage):
 
         file_object = BytesIO()
         try:
-            s3_object = self._s3.get_object(Bucket=self._bucket, Key=filename)
+            s3_object = self._s3_client.get_object(
+                Bucket=self._bucket, Key=filename
+            )
             file_object = s3_object.get("Body")
             return Metadata.from_bytes(file_object.read())
         except DeserializationError as e:
@@ -150,6 +148,8 @@ class AWSS3(IStorage):
         Writes passed file object to configured TUF S3 bucked.
         """
         try:
-            self._s3.put_object(Body=data, Bucket=self._bucket, Key=filename)
+            self._s3_client.put_object(
+                Body=data, Bucket=self._bucket, Key=filename
+            )
         except ClientError:
             raise StorageError(f"Can't write role file '{filename}'")
