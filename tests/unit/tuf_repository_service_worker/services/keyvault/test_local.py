@@ -174,11 +174,14 @@ class TestLocalStorageService:
             lambda *a: {}
         )
 
-        local.LocalKeyVault.configure(test_settings)
+        service = local.LocalKeyVault.configure(test_settings)
         assert local.import_privatekey_from_file.calls == [
             pretend.call("/path/key_vault/key1.key", "ed25519", "pass1"),
             pretend.call("/path/key_vault/key2.key", "rsa", "pass2"),
         ]
+        assert isinstance(service, local.LocalKeyVault)
+        assert service._path == test_settings.LOCAL_KEYVAULT_PATH
+        assert service._keys == test_settings.LOCAL_KEYVAULT_KEYS
 
     def test_configure_file_base64(self):
         test_settings = pretend.stub(
@@ -195,7 +198,10 @@ class TestLocalStorageService:
             lambda *a: {}
         )
 
-        local.LocalKeyVault.configure(test_settings)
+        service = local.LocalKeyVault.configure(test_settings)
+        assert isinstance(service, local.LocalKeyVault)
+        assert service._path == test_settings.LOCAL_KEYVAULT_PATH
+        assert service._keys == test_settings.LOCAL_KEYVAULT_KEYS
         assert local.import_privatekey_from_file.calls == [
             pretend.call("/path/key_vault/fake_hash", "ed25519", "pass1"),
             pretend.call("/path/key_vault/key2.key", "rsa", "pass2"),
@@ -246,8 +252,10 @@ class TestLocalStorageService:
         ]
         local.import_privatekey_from_file = mocked_import_pk_from_file
 
-        local.LocalKeyVault.configure(test_settings)
-
+        service = local.LocalKeyVault.configure(test_settings)
+        assert isinstance(service, local.LocalKeyVault)
+        assert service._path == test_settings.LOCAL_KEYVAULT_PATH
+        assert service._keys == test_settings.LOCAL_KEYVAULT_KEYS
         assert caplog.record_tuples == [
             ("root", 40, "Invalid format"),
             ("root", 30, "Failed to load LocalKeyVault key"),
@@ -303,12 +311,10 @@ class TestLocalStorageService:
         assert service_settings == [
             local.ServiceSettings(
                 names=["LOCAL_KEYVAULT_PATH"],
-                argument="path",
                 required=True,
             ),
             local.ServiceSettings(
                 names=["LOCAL_KEYVAULT_KEYS"],
-                argument="keys",
                 required=True,
             ),
         ]

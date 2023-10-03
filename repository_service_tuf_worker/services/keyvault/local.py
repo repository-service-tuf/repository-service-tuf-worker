@@ -134,7 +134,7 @@ class LocalKeyVault(IKeyVault):
         return parsed_keys
 
     @classmethod
-    def configure(cls, settings: Dynaconf) -> None:
+    def configure(cls, settings: Dynaconf) -> "LocalKeyVault":
         """
         Run actions to check and configure the service using the settings.
         """
@@ -164,18 +164,18 @@ class LocalKeyVault(IKeyVault):
             logging.error("No valid keys found in the LocalKeyVault")
             raise error
 
+        return cls(path, settings.LOCAL_KEYVAULT_KEYS)
+
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
         """Define the settings parameters."""
         return [
             ServiceSettings(
                 names=["LOCAL_KEYVAULT_PATH"],
-                argument="path",
                 required=True,
             ),
             ServiceSettings(
                 names=["LOCAL_KEYVAULT_KEYS"],
-                argument="keys",
                 required=True,
             ),
         ]

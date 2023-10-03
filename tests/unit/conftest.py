@@ -12,10 +12,13 @@ from repository_service_tuf_worker.repository import MetadataRepository
 
 @pytest.fixture()
 def test_repo(monkeypatch: pytest.MonkeyPatch) -> MetadataRepository:
-    fake_configure = pretend.call_recorder(lambda *a: None)
+    from repository_service_tuf_worker.services.keyvault import local
+
+    fake_import_privatekey_from_file = pretend.call_recorder(lambda *a: None)
     monkeypatch.setattr(
-        "repository_service_tuf_worker.services.keyvault.local.LocalKeyVault.configure",  # noqa
-        fake_configure,
+        local,
+        "import_privatekey_from_file",
+        fake_import_privatekey_from_file,
     )
     return MetadataRepository.create_service()
 
