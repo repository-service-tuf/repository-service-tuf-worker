@@ -25,7 +25,6 @@ jobs:
 
   functional-tests-local:
     name: FT Deploy Local Services
-    needs: build-pre-dev
     uses: ./.github/workflows/functional-tests.yml
     with:
       api_version: ${{ inputs.api_version }}
@@ -33,10 +32,17 @@ jobs:
 
   functional-tests-local-redis:
     name: FT Deploy Local Services with Redis as Broker
-    needs: build-pre-dev
     uses: ./.github/workflows/functional-tests.yml
     with:
       docker_compose: docker-compose-redis.yml
+      api_version: ${{ inputs.api_version }}
+      cli_version: ${{ inputs.cli_version }}
+
+  functional-tests-aws:
+    name: FT Deploy AWS Services
+    uses: ./.github/workflows/functional-aws.yml
+    with:
+      docker_compose: docker-compose-aws.yml
       api_version: ${{ inputs.api_version }}
       cli_version: ${{ inputs.cli_version }}
 

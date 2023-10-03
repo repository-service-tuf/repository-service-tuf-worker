@@ -200,6 +200,28 @@ locks [#f1]_ . It will  will do:
    ?highlight=Task%20cookbook#ensuring-a-task-is-only-executed-one-at-a-time>`_
    . I avoid that two tasks write the same metadata, causing a race condition.
 
+RSTUF Worker Backend Services Development
+#########################################
+
+Storage
+=======
+
+The default RSTUF Worker source code is configured to use  `LocalStorage`.
+
+1. Initiate the local development environment ``make run-dev``
+
+AWSS3
+-----
+
+1. Initiate the aws development environment ``make run-dev DC=aws``
+
+KeyVault
+========
+
+The default RSTUF Worker source code is configured to use  `LocalKeyVault`.
+
+1. Initiate the local development environment ``make run-dev``
+
 Important issues/problems
 #########################
 
