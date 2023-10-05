@@ -1109,18 +1109,18 @@ class MetadataRepository:
                 f"Expected 'root', got '{new_root.signed.type}'"
             )
 
-        # Verify that new root is signed by trusted root
-        current_root.verify_delegate(Root.type, new_root)
-
-        # Verify that new root is signed by itself
-        new_root.verify_delegate(Root.type, new_root)
-
         # Verify the new root version
         if new_root.signed.version != current_root.signed.version + 1:
             raise BadVersionNumberError(
                 f"Expected root version {current_root.signed.version + 1}"
                 f" instead got version {new_root.signed.version}"
             )
+
+        # Verify that new root is signed by trusted root
+        current_root.verify_delegate(Root.type, new_root)
+
+        # Verify that new root is signed by itself
+        new_root.verify_delegate(Root.type, new_root)
 
     def _root_metadata_update(
         self, new_root: Metadata[Root]
@@ -1130,9 +1130,26 @@ class MetadataRepository:
 
         try:
             self._trusted_root_update(current_root, new_root)
+
+        except UnsignedMetadataError:
+            # TODO: Add missing sanity check - new root must have at least 1
+            # and only valid signature - use `get_verification_status` (#367)
+            self.write_repository_settings("ROOT_SIGNING", new_root.to_dict())
+            return self._task_result(
+                TaskName.METADATA_UPDATE,
+                True,
+                {
+                    "message": "Metadata Update Processed",
+                    "role": Root.type,
+                    "update": (
+                        f"Root v{new_root.signed.version} is "
+                        "pending signatures"
+                    ),
+                },
+            )
+
         except (
             ValueError,
-            UnsignedMetadataError,
             TypeError,
             BadVersionNumberError,
             RepositoryError,

@@ -2513,25 +2513,17 @@ class TestMetadataRepository:
                 version=4,
                 type=repository.Root.type,
             ),
-            verify_delegate=pretend.call_recorder(lambda *a: None),
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
                 version=1,
             ),
-            verify_delegate=pretend.call_recorder(lambda *a: None),
         )
 
         with pytest.raises(repository.BadVersionNumberError) as err:
             test_repo._trusted_root_update(fake_old_root_md, fake_new_root_md)
         assert "Expected root version 2 instead got version 4" in str(err)
-        assert fake_new_root_md.verify_delegate.calls == [
-            pretend.call(repository.Root.type, fake_new_root_md)
-        ]
-        assert fake_old_root_md.verify_delegate.calls == [
-            pretend.call(repository.Root.type, fake_new_root_md)
-        ]
 
     def test__trusted_root_update_bad_type(self, test_repo):
         fake_new_root_md = pretend.stub(
@@ -2591,6 +2583,53 @@ class TestMetadataRepository:
         ]
         assert test_repo._persist.calls == [
             pretend.call(fake_new_root_md, repository.Root.type)
+        ]
+
+    def test__root_metadata_update_signatures_pending(
+        self, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
+        fake_new_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                version=2,
+            )
+        )
+        fake_old_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                version=1,
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda *a: fake_old_root_md
+        )
+        test_repo._trusted_root_update = pretend.raiser(
+            repository.UnsignedMetadataError()
+        )
+
+        fake_new_root_md.to_dict = pretend.call_recorder(lambda: "fake dict")
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: "fake"
+        )
+
+        result = test_repo._root_metadata_update(fake_new_root_md)
+
+        assert result == {
+            "task": "metadata_update",
+            "status": True,
+            "last_update": fake_datetime.now(),
+            "details": {
+                "message": "Metadata Update Processed",
+                "role": "root",
+                "update": "Root v2 is pending signatures",
+            },
+        }
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(repository.Root.type)
+        ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_SIGNING", "fake dict")
         ]
 
     def test__root_metadata_update_not_trusted(
