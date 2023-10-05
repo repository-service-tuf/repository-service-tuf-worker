@@ -40,7 +40,7 @@ jobs:
 
   functional-tests-aws:
     name: FT Deploy AWS Services
-    uses: ./.github/workflows/functional-aws.yml
+    uses: ./.github/workflows/functional-tests.yml
     with:
       docker_compose: docker-compose-aws.yml
       api_version: ${{ inputs.api_version }}
@@ -48,7 +48,7 @@ jobs:
 
   prepare-rc:
     runs-on: ubuntu-latest
-    needs: functional-tests
+    needs: [functional-tests-local, functional-tests-local-redis, functional-tests-aws]
     outputs:
       release_id: ${{ steps.gh-release.outputs.id }}
     steps:
