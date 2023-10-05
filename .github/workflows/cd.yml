@@ -23,28 +23,49 @@ jobs:
     with:
       image_version: ${{ github.sha }}
 
+  set-component-versions:
+    needs: publish-container-image
+    runs-on: ubuntu-latest
+    outputs:
+      api_version: ${{ steps.api_version.outputs.VERSION }}
+      cli_version: ${{ steps.cli_version.outputs.VERSION }}
+
+    steps:
+      - id: api_version
+        name: dynamic input worker version
+        run: |
+          if [[ "${{ inputs.api_version }}" == "" ]]; then echo "VERSION=latest" >> $GITHUB_OUTPUT; else echo "VERSION=${{ inputs.api_version }}" >> $GITHUB_OUTPUT;fi
+
+      - id: cli_version
+        name: dynamic input cli version
+        run: |
+          if [[ "${{ inputs.cli_version }}" == "" ]]; then echo "VERSION=latest" >> $GITHUB_OUTPUT; else echo "VERSION=${{ inputs.cli_version }}" >> $GITHUB_OUTPUT;fi
+
   functional-tests-local:
+    needs: set-component-versions
     name: FT Deploy Local Services
     uses: ./.github/workflows/functional-tests.yml
     with:
-      api_version: ${{ inputs.api_version }}
-      cli_version: ${{ inputs.cli_version }}
+      api_version: ${{ needs.set-component-versions.outputs.api_version }}
+      cli_version: ${{ needs.set-component-versions.outputs.cli_version }}
 
   functional-tests-local-redis:
+    needs: set-component-versions
     name: FT Deploy Local Services with Redis as Broker
     uses: ./.github/workflows/functional-tests.yml
     with:
       docker_compose: docker-compose-redis.yml
-      api_version: ${{ inputs.api_version }}
-      cli_version: ${{ inputs.cli_version }}
+      api_version: ${{ needs.set-component-versions.outputs.api_version }}
+      cli_version: ${{ needs.set-component-versions.outputs.cli_version }}
 
   functional-tests-aws:
+    needs: set-component-versions
     name: FT Deploy AWS Services
     uses: ./.github/workflows/functional-tests.yml
     with:
       docker_compose: docker-compose-aws.yml
-      api_version: ${{ inputs.api_version }}
-      cli_version: ${{ inputs.cli_version }}
+      api_version: ${{ needs.set-component-versions.outputs.api_version }}
+      cli_version: ${{ needs.set-component-versions.outputs.cli_version }}
 
   prepare-rc:
     runs-on: ubuntu-latest
