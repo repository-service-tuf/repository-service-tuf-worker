@@ -1,43 +1,53 @@
 -i https://pypi.org/simple
-alembic==1.12.0; python_version >= '3.7'
+alembic==1.12.0
 amqp==5.1.1; python_version >= '3.6'
 annotated-types==0.5.0; python_version >= '3.7'
 async-timeout==4.0.3; python_full_version <= '3.11.2'
+awswrangler==3.4.0
 billiard==4.1.0; python_version >= '3.7'
-celery==5.3.4; python_version >= '3.8'
+boto3==1.28.58
+botocore==1.31.58; python_version >= '3.7'
+celery==5.3.4
 certifi==2023.7.22; python_version >= '3.6'
-cffi==1.15.1
-charset-normalizer==3.2.0; python_full_version >= '3.7.0'
+cffi==1.16.0; python_version >= '3.8'
+charset-normalizer==3.3.0; python_full_version >= '3.7.0'
 click==8.1.7; python_version >= '3.7'
 click-didyoumean==0.3.0; python_full_version >= '3.6.2' and python_full_version < '4.0.0'
 click-plugins==1.1.1
 click-repl==0.3.0; python_version >= '3.6'
 configobj==5.0.8
 cryptography==41.0.4
-dynaconf[ini]==3.2.3; python_version >= '3.8'
-greenlet==2.0.2; platform_machine == 'aarch64' or (platform_machine == 'ppc64le' or (platform_machine == 'x86_64' or (platform_machine == 'amd64' or (platform_machine == 'AMD64' or (platform_machine == 'win32' or platform_machine == 'WIN32')))))
+dynaconf[ini]==3.2.3
+greenlet==3.0.0; platform_machine == 'aarch64' or (platform_machine == 'ppc64le' or (platform_machine == 'x86_64' or (platform_machine == 'amd64' or (platform_machine == 'AMD64' or (platform_machine == 'win32' or platform_machine == 'WIN32')))))
 idna==3.4; python_version >= '3.5'
+jmespath==1.0.1; python_version >= '3.7'
 kombu==5.3.2; python_version >= '3.8'
 mako==1.2.4; python_version >= '3.7'
 markupsafe==2.1.3; python_version >= '3.7'
+numpy==1.26.0; python_version < '3.13' and python_version >= '3.9'
+packaging==23.2; python_version >= '3.7'
+pandas==2.1.1; python_version >= '3.9'
 prompt-toolkit==3.0.39; python_full_version >= '3.7.0'
-psycopg2==2.9.7; python_version >= '3.6'
+psycopg2==2.9.8
+pyarrow==13.0.0; python_version >= '3.8'
 pycparser==2.21
-pydantic==2.4.1; python_version >= '3.7'
+pydantic==2.4.2
 pydantic-core==2.10.1; python_version >= '3.7'
 pynacl==1.5.0
 python-dateutil==2.8.2; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'
-redis==5.0.1; python_version >= '3.7'
+pytz==2023.3.post1
+redis==5.0.1
 requests==2.31.0; python_version >= '3.7'
-securesystemslib[crypto,pynacl]==0.29.0; python_version ~= '3.7'
+s3transfer==0.7.0; python_version >= '3.7'
+securesystemslib[crypto,pynacl]==0.29.0
 setuptools==68.2.2; python_version >= '3.8'
 six==1.16.0; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'
-sqlalchemy==2.0.21; python_version >= '3.7'
+sqlalchemy==2.0.21
 supervisor==4.2.5
-tuf==3.0.0; python_version >= '3.7'
+tuf==3.0.0
 typing-extensions==4.8.0; python_version >= '3.8'
 tzdata==2023.3; python_version >= '2'
-urllib3==2.0.5; python_version >= '3.7'
+urllib3==1.26.17; python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3, 3.4, 3.5'
 vine==5.0.0; python_version >= '3.6'
-watchdog==3.0.0; python_version >= '3.7'
-wcwidth==0.2.6
+watchdog==3.0.0
+wcwidth==0.2.8

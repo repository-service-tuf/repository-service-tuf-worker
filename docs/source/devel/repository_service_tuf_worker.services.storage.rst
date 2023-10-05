@@ -4,6 +4,14 @@ repository\_service\_tuf\_worker.services.storage package
 Submodules
 ----------
 
+repository\_service\_tuf\_worker.services.storage.awss3 module
+--------------------------------------------------------------
+
+.. automodule:: repository_service_tuf_worker.services.storage.awss3
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 repository\_service\_tuf\_worker.services.storage.local module
 --------------------------------------------------------------
 
