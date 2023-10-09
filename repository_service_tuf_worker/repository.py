@@ -1123,22 +1123,9 @@ class MetadataRepository:
             )
 
     def _root_metadata_update(
-        self,
-        new_root: Metadata[Root],
-        update_state: Optional[
-            Task.update_state
-        ] = None,  # It is required (see: app.py)
+        self, new_root: Metadata[Root]
     ) -> Dict[str, Any]:
-        """
-        Update Root metadata.
-        It checks if the new root metadata is trusted and runs a specific
-        process for updating the Root Metadata.
-
-        Args:
-            new_root: contains new metadata
-                example: {"metadata": {"root": Any}}
-            update_state: not used, but required argument by `app.py`
-        """
+        """Updates to new root metadata, if it is trusted."""
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
         try:
