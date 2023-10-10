@@ -26,14 +26,14 @@ class IKeyVault(ABC):
     @abstractmethod
     def configure(cls, settings: Dynaconf) -> "IKeyVault":
         """
-        Run actions to test, configure and create object using the settings.
+        Run actions to verify, configure and create object using the settings.
         """
         pass  # pragma: no cover
 
     @classmethod
     def from_dynaconf(cls, settings: Dynaconf) -> None:
         """
-        Run actions to test, configure using the settings.
+        Run actions to verify and configure using the settings.
         """
         _setup_service_dynaconf(cls, settings.KEYVAULT_BACKEND, settings)
 
@@ -56,14 +56,14 @@ class IStorage(ABC):
     @abstractmethod
     def configure(cls, settings: Dynaconf) -> "IStorage":
         """
-        Run actions to test, configure and create object using the settings.
+        Run actions to verify, configure and create object using the settings.
         """
         raise NotImplementedError  # pragma: no cover
 
     @classmethod
     def from_dynaconf(cls, settings: Dynaconf) -> None:
         """
-        Run actions to test and configure using the dynaconf settings.
+        Run actions to verify and configure using the dynaconf settings.
         """
         _setup_service_dynaconf(cls, settings.STORAGE_BACKEND, settings)
 

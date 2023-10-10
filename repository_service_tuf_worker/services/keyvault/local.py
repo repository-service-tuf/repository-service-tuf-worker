@@ -129,7 +129,7 @@ class LocalKeyVault(IKeyVault):
     @classmethod
     def configure(cls, settings: Dynaconf) -> "LocalKeyVault":
         """
-        Run actions to check and configure the service using the settings.
+        Run actions to verify, configure and create object using the settings.
         """
         # Check that the online key can be loaded without an error.
         path = settings.LOCAL_KEYVAULT_PATH

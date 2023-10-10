@@ -57,9 +57,9 @@ class AWSS3(IStorage):
             endpoint_url=endpoint,
         )
         buckets = [bucket.name for bucket in s3_resource.buckets.all()]
-        user_bucket = settings.AWSS3_STORAGE_BUCKET
-        if user_bucket not in buckets:
-            raise ValueError(f"Bucket '{user_bucket}' not found.")
+        bucket_name = settings.AWSS3_STORAGE_BUCKET
+        if bucket_name not in buckets:
+            raise ValueError(f"Bucket '{bucket_name}' not found.")
 
         s3_client = s3_session.client(
             "s3",
@@ -70,7 +70,7 @@ class AWSS3(IStorage):
         )
 
         return cls(
-            user_bucket, s3_session, s3_client, s3_resource, region, endpoint
+            bucket_name, s3_session, s3_client, s3_resource, region, endpoint
         )
 
     @classmethod
