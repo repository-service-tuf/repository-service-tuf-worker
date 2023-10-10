@@ -39,8 +39,8 @@ class TestAWSS3Service:
         assert service._s3_session == "session"
         assert service._s3_client == "client"
         assert service._s3_resource == "resource"
-        assert service._region is "region"
-        assert service._endpoint_url is "http://localstack:4566"
+        assert service._region == "region"
+        assert service._endpoint_url == "http://localstack:4566"
 
     def test_configure(self, mocked_boto3):
         test_settings = pretend.stub(
