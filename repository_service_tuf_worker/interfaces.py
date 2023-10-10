@@ -5,7 +5,7 @@ import importlib
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from dynaconf import Dynaconf
 from securesystemslib.signer import Key, Signer
@@ -17,7 +17,6 @@ class ServiceSettings:
     """Dataclass for service settings."""
 
     names: List[str]
-    argument: str
     required: bool
     default: Optional[Any] = None
 
@@ -25,16 +24,16 @@ class ServiceSettings:
 class IKeyVault(ABC):
     @classmethod
     @abstractmethod
-    def configure(cls, settings) -> None:
+    def configure(cls, settings: Dynaconf) -> "IKeyVault":
         """
-        Run actions to check and configure the service using the settings.
+        Run actions to verify, configure and create object using the settings.
         """
         pass  # pragma: no cover
 
     @classmethod
     def from_dynaconf(cls, settings: Dynaconf) -> None:
         """
-        Run actions to test, configure using the settings.
+        Run actions to verify and configure using the settings.
         """
         _setup_service_dynaconf(cls, settings.KEYVAULT_BACKEND, settings)
 
@@ -55,16 +54,16 @@ class IKeyVault(ABC):
 class IStorage(ABC):
     @classmethod
     @abstractmethod
-    def configure(cls, settings: Dynaconf) -> None:
+    def configure(cls, settings: Dynaconf) -> "IStorage":
         """
-        Run actions to test, configure using the settings.
+        Run actions to verify, configure and create object using the settings.
         """
         raise NotImplementedError  # pragma: no cover
 
     @classmethod
     def from_dynaconf(cls, settings: Dynaconf) -> None:
         """
-        Run actions to test and configure using the dynaconf settings.
+        Run actions to verify and configure using the dynaconf settings.
         """
         _setup_service_dynaconf(cls, settings.STORAGE_BACKEND, settings)
 
@@ -140,8 +139,7 @@ def _setup_service_dynaconf(cls: Any, backend: Any, settings: Dynaconf):
                 f": {', '.join(missing_stg)}"
             )
 
-        # parse and define the keyargs from dynaconf
-        kwargs: Dict[str, Any] = {}
+        # Make sure all settings have value set for at least one of their names
         for s_var in backend.settings():
             if all(
                 [
@@ -151,22 +149,14 @@ def _setup_service_dynaconf(cls: Any, backend: Any, settings: Dynaconf):
             ):
                 for var_name in s_var.names:
                     settings.store[var_name] = s_var.default
-                kwargs[s_var.argument] = settings.store[s_var.names[0]]
-            else:
-                for var_name in s_var.names:
-                    if settings.store.get(var_name) is not None:
-                        kwargs[s_var.argument] = settings.store[var_name]
-                        break
 
         if cls.__name__ == "IStorage":
             settings.STORAGE_BACKEND = backend
-            settings.STORAGE_BACKEND.configure(settings)
-            settings.STORAGE = settings.STORAGE_BACKEND(**kwargs)
+            settings.STORAGE = settings.STORAGE_BACKEND.configure(settings)
 
         elif cls.__name__ == "IKeyVault":
             settings.KEYVAULT_BACKEND = backend
-            settings.KEYVAULT_BACKEND.configure(settings)
-            settings.KEYVAULT = settings.KEYVAULT_BACKEND(**kwargs)
+            settings.KEYVAULT = settings.KEYVAULT_BACKEND.configure(settings)
 
         else:
             raise ValueError(f"Invalid Interface {cls.__name__}")

@@ -23,8 +23,8 @@ class TestLocalStorageService:
             makedirs=pretend.call_recorder(lambda *a, **kw: None)
         )
 
-        service = local.LocalStorage("/path")
-        service.configure(test_settings)
+        service = local.LocalStorage.configure(test_settings)
+        assert isinstance(service, local.LocalStorage)
         assert service._path == "/path"
         assert local.os.makedirs.calls == [
             pretend.call("/path", exist_ok=True)
@@ -40,7 +40,6 @@ class TestLocalStorageService:
         assert service_settings == [
             local.ServiceSettings(
                 names=["LOCAL_STORAGE_BACKEND_PATH", "LOCAL_STORAGE_PATH"],
-                argument="path",
                 required=True,
             ),
         ]

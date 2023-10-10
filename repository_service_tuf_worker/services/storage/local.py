@@ -10,7 +10,11 @@ from securesystemslib.exceptions import StorageError  # noqa
 from tuf.api.metadata import Metadata, T, Timestamp
 from tuf.api.serialization import DeserializationError
 
-from repository_service_tuf_worker.interfaces import IStorage, ServiceSettings
+from repository_service_tuf_worker.interfaces import (
+    Dynaconf,
+    IStorage,
+    ServiceSettings,
+)
 
 
 class LocalStorage(IStorage):
@@ -18,18 +22,18 @@ class LocalStorage(IStorage):
         self._path: str = path
 
     @classmethod
-    def configure(cls, settings) -> None:
+    def configure(cls, settings: Dynaconf) -> "LocalStorage":
         path = settings.get("LOCAL_STORAGE_BACKEND_PATH") or settings.get(
             "LOCAL_STORAGE_PATH"
         )
         os.makedirs(path, exist_ok=True)
+        return cls(path)
 
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
         return [
             ServiceSettings(
                 names=["LOCAL_STORAGE_BACKEND_PATH", "LOCAL_STORAGE_PATH"],
-                argument="path",
                 required=True,
             ),
         ]
