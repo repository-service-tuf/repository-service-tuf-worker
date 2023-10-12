@@ -504,12 +504,7 @@ class MetadataRepository:
         # sign, add to `Snapshot` meta and persist in the backend storage
         # service.
         for delegated_name in succinct_roles.get_roles():
-            targets.signed.add_key(
-                SSlibKey.from_securesystemslib_key(
-                    self._key_storage_backend.get(public_key).key_dict
-                ),
-                delegated_name,
-            )
+            targets.signed.add_key(public_key, delegated_name)
             bins_role = Metadata(Targets())
             self._bump_expiry(bins_role, BINS)
             self._sign(bins_role)
