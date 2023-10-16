@@ -21,6 +21,10 @@ class ServiceSettings:
     default: Optional[Any] = None
 
 
+class KeyVaultError(Exception):
+    pass
+
+
 class IKeyVault(ABC):
     @classmethod
     @abstractmethod

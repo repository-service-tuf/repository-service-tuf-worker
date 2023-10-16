@@ -18,9 +18,11 @@ from securesystemslib.exceptions import (
 from securesystemslib.interface import import_privatekey_from_file
 from securesystemslib.signer import Key, SSlibKey, SSlibSigner
 
+from repository_service_tuf_worker import parse_raw_key
 from repository_service_tuf_worker.interfaces import (
     Dynaconf,
     IKeyVault,
+    KeyVaultError,
     ServiceSettings,
 )
 
@@ -30,10 +32,6 @@ class LocalKey:
     file: str
     password: str
     type: Optional[str] = "ed25519"
-
-
-class KeyVaultError(Exception):
-    pass
 
 
 class LocalKeyVault(IKeyVault):
@@ -88,12 +86,7 @@ class LocalKeyVault(IKeyVault):
         """
         parsed_keys: List[LocalKey] = []
         for raw_key in keys.split(":"):
-            if raw_key.startswith("/run/secrets/"):
-                # The user has stored their keys using container secrets.
-                with open(raw_key) as f:
-                    key_data = f.read().rstrip("\n").split(",")
-            else:
-                key_data = raw_key.split(",")
+            key_data = parse_raw_key(raw_key)
 
             if len(key_data) == 2:  # filename and password
                 file = key_data[0]

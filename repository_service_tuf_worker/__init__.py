@@ -3,11 +3,17 @@
 # SPDX-License-Identifier: MIT
 
 import os
+from typing import List
 
 from dynaconf import Dynaconf
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def parse_raw_key(raw_key: str) -> List[str]:
+    key_data = parse_if_secret(raw_key)
+    return key_data.split(",")
 
 
 def parse_if_secret(env_var: str) -> str:

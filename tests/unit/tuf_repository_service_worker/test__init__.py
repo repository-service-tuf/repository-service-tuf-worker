@@ -46,3 +46,16 @@ class TestParseIfSecret:
             "/run/secrets/VARIABLE"
         )
         assert result == "mysecret"
+
+    def test_parse_raw_key(self, monkeypatch):
+        fake_parse_if_secert = pretend.call_recorder(
+            lambda *a: "key,password,rsa"
+        )
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.parse_if_secret",
+            fake_parse_if_secert,
+        )
+
+        result = repository_service_tuf_worker.parse_raw_key("key,pass2,rsa")
+        assert result == ["key", "password", "rsa"]
+        assert fake_parse_if_secert.calls == [pretend.call("key,pass2,rsa")]

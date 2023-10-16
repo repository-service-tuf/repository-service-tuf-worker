@@ -102,27 +102,6 @@ class TestLocalStorageService:
             local.LocalKey(file="key2.key", password="pass2", type="rsa"),
         ]
 
-    def test__raw_key_parser_with_secrets(self, monkeypatch):
-        service = local.LocalKeyVault("/test/key_vault", "/run/secrets/KEY1")
-
-        fake_data = pretend.stub(
-            read=pretend.call_recorder(lambda: "key1.key,pass1\n")
-        )
-        fake_file_obj = pretend.stub(
-            __enter__=pretend.call_recorder(lambda: fake_data),
-            __exit__=pretend.call_recorder(lambda *a: None),
-            close=pretend.call_recorder(lambda: None),
-        )
-        monkeypatch.setitem(
-            local.__builtins__, "open", lambda *a: fake_file_obj
-        )
-
-        parsed_keys = service._raw_key_parser(service._path, service._keys)
-
-        assert parsed_keys == [
-            local.LocalKey(file="key1.key", password="pass1", type="ed25519")
-        ]
-
     def test__raw_key_parser_with_key_base64(self):
         local.LocalKeyVault._base64_key = pretend.call_recorder(
             lambda *a: "fake-hash"
