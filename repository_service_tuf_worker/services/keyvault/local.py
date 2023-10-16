@@ -95,10 +95,6 @@ class LocalKeyVault(IKeyVault):
             else:
                 key_data = raw_key.split(",")
 
-            if len(key_data) == 1:
-                logging.error("Key is invalid")
-                pass
-
             if len(key_data) == 2:  # filename and password
                 file = key_data[0]
                 password = key_data[1]
