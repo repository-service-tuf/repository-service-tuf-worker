@@ -309,10 +309,7 @@ class TestLocalStorageService:
         ]
 
     def test_settings(self):
-        service = local.LocalKeyVault(
-            "/test/key_vault", "key1.key,pass1:key2.key,rsa,pass2"
-        )
-        service_settings = service.settings()
+        service_settings = local.LocalKeyVault.settings()
 
         assert service_settings == [
             local.ServiceSettings(

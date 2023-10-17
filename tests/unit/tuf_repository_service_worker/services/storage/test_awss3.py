@@ -126,13 +126,7 @@ class TestAWSS3Service:
         ]
 
     def test_settings(self, mocked_boto3):
-        service = awss3.AWSS3(
-            "bucket",
-            "session",
-            "client",
-            "resource",
-        )
-        service_settings = service.settings()
+        service_settings = awss3.AWSS3.settings()
 
         assert service_settings == [
             awss3.ServiceSettings(

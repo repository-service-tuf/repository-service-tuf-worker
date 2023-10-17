@@ -34,8 +34,7 @@ class TestLocalStorageService:
         ]
 
     def test_settings(self):
-        service = local.LocalStorage("/path")
-        service_settings = service.settings()
+        service_settings = local.LocalStorage.settings()
 
         assert service_settings == [
             local.ServiceSettings(
