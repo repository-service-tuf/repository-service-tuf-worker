@@ -7,7 +7,8 @@ from repository_service_tuf_worker.interfaces import (  # noqa
     IStorage,
     ServiceSettings,
 )
-from repository_service_tuf_worker.services.keyvault.local import (  # noqa
+from repository_service_tuf_worker.services.keyvault import (  # noqa
+    AWSKMS,
     LocalKeyVault,
 )
 from repository_service_tuf_worker.services.storage import (  # noqa

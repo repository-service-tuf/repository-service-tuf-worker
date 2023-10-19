@@ -60,6 +60,7 @@ services:
     entrypoint: "bash entrypoint-dev.sh"
     environment:
       - DATA_DIR=./data
+      # -------------- Storage --------------
       - RSTUF_STORAGE_BACKEND=AWSS3
       - RSTUF_AWSS3_STORAGE_BUCKET=tuf-metadata
       - RSTUF_AWSS3_STORAGE_ACCESS_KEY=access_key
@@ -67,9 +68,15 @@ services:
       # region and endpoint_url are required by localstack
       - RSTUF_AWSS3_STORAGE_REGION=us-east-1
       - RSTUF_AWSS3_STORAGE_ENDPOINT_URL=http://localstack:4566
-      - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
-      - RSTUF_LOCAL_KEYVAULT_PATH=/opt/repository-service-tuf-worker/tests/files/key_storage
-      - RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass:online-rsa.key,strongPass,rsa
+      # -------------- KeyVault --------------
+      - RSTUF_KEYVAULT_BACKEND=AWSKMS
+      - RSTUF_AWSKMS_KEYVAULT_KEYS=alias/online-key,rsassa-pss-sha256
+      - RSTUF_AWSKMS_KEYVAULT_ACCESS_KEY=access_key
+      - RSTUF_AWSKMS_KEYVAULT_SECRET_KEY=secret
+      # region and endpoint_url are required by localstack
+      - RSTUF_AWSKMS_KEYVAULT_REGION=us-east-1
+      - RSTUF_AWSKMS_KEYVAULT_ENDPOINT_URL=http://localstack:4566
+
       - RSTUF_BROKER_SERVER=redis://redis
       - RSTUF_REDIS_SERVER=redis://redis
       - RSTUF_SQL_SERVER=postgres:secret@postgres:5432

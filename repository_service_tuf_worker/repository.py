@@ -20,7 +20,7 @@ from securesystemslib.exceptions import (  # type: ignore
     StorageError,
     UnverifiedSignatureError,
 )
-from securesystemslib.signer import Signature, SSlibKey
+from securesystemslib.signer import Signature
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
