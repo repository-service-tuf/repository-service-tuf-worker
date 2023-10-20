@@ -1414,12 +1414,12 @@ class MetadataRepository:
             # - threshold must validate with the threshold of keys as defined
             #   in the trusted root AND as defined in the new root
             trusted_root = self._storage_backend.get("root")
-            trusted_signature = self._validate_signature(
+            is_valid_trusted = self._validate_signature(
                 root, signature, trusted_root
             )
-            new_signature = self._validate_signature(root, signature)
+            is_valid_new = self._validate_signature(root, signature)
 
-            if not (trusted_signature or new_signature):
+            if not (is_valid_trusted or is_valid_new):
                 return _result(False, error="Invalid signature")
 
             root.signatures[signature.keyid] = signature
