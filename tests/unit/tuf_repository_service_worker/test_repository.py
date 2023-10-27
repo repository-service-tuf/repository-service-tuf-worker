@@ -3313,46 +3313,10 @@ class TestMetadataRepository:
     def test_sign_metadata__update__bad_role_type(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        def fake_get_fresh(key):
-            if key == "BOOTSTRAP":
-                return "<task-id>"
-            if key == "ROOT_SIGNING":
-                return {"metadata": "fake"}
-
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(fake_get_fresh),
-        )
-        monkeypatch.setattr(
-            repository,
-            "get_repository_settings",
-            lambda *a, **kw: fake_settings,
-        )
         fake_signature = pretend.stub(keyid="fake")
         repository.Signature.from_dict = pretend.call_recorder(
             lambda *a: fake_signature
         )
-        fake_trusted_root = repository.Metadata(
-            signed=repository.Root(version=1)
-        )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda r: fake_trusted_root
-        )
-        fake_new_root = repository.Metadata(signed=repository.Root(version=2))
-        repository.Metadata.from_dict = pretend.call_recorder(
-            lambda *a: fake_new_root
-        )
-        fake_new_root.to_dict = pretend.call_recorder(lambda: "fake")
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: "fake"
-        )
-
-        test_repo._root_metadata_update = pretend.call_recorder(
-            lambda a: {
-                "message": "Metadata Update Processed",
-                "role": "root",
-            }
-        )
-
         payload = {"signature": "fake", "role": "foo"}
         result = test_repo.sign_metadata(payload)
 
@@ -3399,17 +3363,6 @@ class TestMetadataRepository:
         fake_new_root = repository.Metadata(signed=repository.Root(version=2))
         repository.Metadata.from_dict = pretend.call_recorder(
             lambda *a: fake_new_root
-        )
-        fake_new_root.to_dict = pretend.call_recorder(lambda: "fake")
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: "fake"
-        )
-
-        test_repo._root_metadata_update = pretend.call_recorder(
-            lambda a: {
-                "message": "Metadata Update Processed",
-                "role": "root",
-            }
         )
 
         # Use `next` below to mock subsequent calls
@@ -3468,13 +3421,6 @@ class TestMetadataRepository:
         fake_new_root.to_dict = pretend.call_recorder(lambda: "fake")
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: "fake"
-        )
-
-        test_repo._root_metadata_update = pretend.call_recorder(
-            lambda a: {
-                "message": "Metadata Update Processed",
-                "role": "root",
-            }
         )
 
         # Use `next` below to mock subsequent calls
@@ -3540,13 +3486,6 @@ class TestMetadataRepository:
         fake_new_root.to_dict = pretend.call_recorder(lambda: "fake")
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: "fake"
-        )
-
-        test_repo._root_metadata_update = pretend.call_recorder(
-            lambda a: {
-                "message": "Metadata Update Processed",
-                "role": "root",
-            }
         )
 
         # Use `next` below to mock subsequent calls
@@ -3616,13 +3555,6 @@ class TestMetadataRepository:
             lambda *a: "fake"
         )
 
-        test_repo._root_metadata_update = pretend.call_recorder(
-            lambda a: {
-                "message": "Metadata Update Processed",
-                "role": "root",
-            }
-        )
-
         # Use `next` below to mock subsequent calls
         fake_signature_result = iter((True, True))
         fake_threshold_result = iter((True, False))
@@ -3688,12 +3620,6 @@ class TestMetadataRepository:
             lambda *a: "fake"
         )
 
-        test_repo._root_metadata_update = pretend.call_recorder(
-            lambda a: {
-                "message": "Metadata Update Processed",
-                "role": "root",
-            }
-        )
         # Use `next` below to mock subsequent calls
         fake_signature_result = iter((True, True))
         fake_threshold_result = iter((True, True))
