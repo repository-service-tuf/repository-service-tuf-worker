@@ -54,6 +54,9 @@ class AWSKMS(IKeyVault):
         """
         Parses the key(s) given in the `RSTUF_AWSKMS_KEYVAULT_KEYS` and returns
         as `AWSKey` object(s).
+        RSTUF_AWSKMS_KEYVAULT_KEYS contains a list of keys. Each key has to
+        have information about: where each of the
+        keys is separated by ":". Each key field is separated by ",".
         """
         parsed_keys: List[AWSKey] = []
         for raw_key in keys.split(":"):
@@ -164,9 +167,19 @@ class AWSKMS(IKeyVault):
         """Return a signer using the online key."""
         # TODO: update docs how to rotate the online key:
         # https://github.com/repository-service-tuf/repository-service-tuf/issues/527
-        for signer in self._signers:
-            if signer.public_key.keyid == public_key.keyid:
-                return signer
 
-        e = "Online key in root doesn't match any of the keys used by keyvault"
-        raise KeyVaultError(e)
+        # TODO: DOn't check keyids when comparing a key, but public part
+
+        return self._signers[0]
+        # for signer in self._signers:
+        #     # signer.public_key.keyid will be securesystemslib keyid
+        #     # public_key.keyid will be alias/online-key
+        #     if signer.public_key.keyid == public_key.keyid:
+        #         return signer
+
+        # e = (
+        #     "Online key in root doesn't match any of the keys used by keyvault"
+        #     f" Signer keyid: {self._signers[0].public_key.keyid}, keytype: {self._signers[0].public_key.keytype}, scheme: {self._signers[0].public_key.scheme}, keyval: {self._signers[0].public_key.keyval}"
+        #     f"Public key id: {public_key.keyid}, keytype: {public_key.keytype}, scheme: {public_key.scheme}, keyval: {public_key.keyval}"
+        # )
+        # raise KeyVaultError(e)

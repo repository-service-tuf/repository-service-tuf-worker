@@ -70,7 +70,7 @@ services:
       - RSTUF_AWSS3_STORAGE_ENDPOINT_URL=http://localstack:4566
       # -------------- KeyVault --------------
       - RSTUF_KEYVAULT_BACKEND=AWSKMS
-      - RSTUF_AWSKMS_KEYVAULT_KEYS=alias/online-key,rsassa-pss-sha256
+      - RSTUF_AWSKMS_KEYVAULT_KEYS=alias/online-key,RSASSA_PSS_SHA_256
       - RSTUF_AWSKMS_KEYVAULT_ACCESS_KEY=access_key
       - RSTUF_AWSKMS_KEYVAULT_SECRET_KEY=secret
       # region and endpoint_url are required by localstack
@@ -80,7 +80,7 @@ services:
       - RSTUF_BROKER_SERVER=redis://redis
       - RSTUF_REDIS_SERVER=redis://redis
       - RSTUF_SQL_SERVER=postgres:secret@postgres:5432
-      - METADATA_BASE_URL="http://localstack:4566/tuf-metadata/"
+      - METADATA_BASE_URL=http://localstack:4566/tuf-metadata/
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
     depends_on:
