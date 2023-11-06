@@ -98,5 +98,23 @@ rm metadata/1.root.json
 wget -P metadata/ ${METADATA_BASE_URL}/1.root.json
 cp -r metadata ${UMBRELLA_PATH}/
 
+# Run metadata update to be used later (during FT)
+python ${UMBRELLA_PATH}/tests/functional/scripts/rstuf-admin-metadata-update.py '{
+    "File name or URL to the current root metadata": "metadata/1.root.json",
+    "(Authz threshold 1/2) Choose root key type [ed25519/ecdsa/rsa] (ed25519)": "",
+    "(Authz threshold 1/2) Enter the root`s private key path": "tests/files/key_storage/JanisJoplin.key",
+    "(Authz threshold 1/2) Enter the root`s private key password": "strongPass",
+    "(Authz threshold 2/2) Choose root key type [ed25519/ecdsa/rsa] (ed25519)": "",
+    "(Authz threshold 2/2) Enter the root`s private key path": "tests/files/key_storage/JimiHendrix.key",
+    "(Authz threshold 2/2) Enter the root`s private key password": "strongPass",
+    "Do you want to extend the root`s expiration?": "y",
+    "Days to extend root`s expiration starting from today (365)": "",
+    "New root expiration: YYYY-M-DD. Do you agree?": "y",
+    "Do you want to modify root keys? [y/n]": "n",
+    "Do you want to change the online key?": "n"
+}'
+
+cp ./metadata-update-payload.json ${UMBRELLA_PATH}
+
 make -C ${UMBRELLA_PATH}/ functional-tests-exitfirst
 
