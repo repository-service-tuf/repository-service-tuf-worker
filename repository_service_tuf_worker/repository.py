@@ -40,6 +40,7 @@ from tuf.api.serialization.json import CanonicalJSONSerializer, JSONSerializer
 
 from repository_service_tuf_worker import (  # noqa
     Dynaconf,
+    _signer,
     get_repository_settings,
     get_worker_settings,
 )
@@ -105,7 +106,7 @@ class MetadataRepository:
         self._worker_settings: Dynaconf = get_worker_settings()
         app_settings = self.refresh_settings()
         self._storage_backend: IStorage = app_settings.STORAGE
-        self._key_storage_backend: IKeyVault = app_settings.KEYVAULT
+        self._signer_store = _signer.SignerStore(app_settings)
         self._db = app_settings.SQL
         self._redis = redis.StrictRedis.from_url(
             self._worker_settings.REDIS_SERVER
@@ -199,7 +200,7 @@ class MetadataRepository:
         # from which role we will get the key.
         keyid: str = root.signed.roles["timestamp"].keyids[0]
         public_key = root.signed.keys[keyid]
-        signer = self._key_storage_backend.get(public_key)
+        signer = self._signer_store.get(public_key)
         role.sign(signer, append=True)
 
     def _persist(self, role: Metadata, role_name: str) -> str:
@@ -519,12 +520,7 @@ class MetadataRepository:
         # sign, add to `Snapshot` meta and persist in the backend storage
         # service.
         for delegated_name in succinct_roles.get_roles():
-            targets.signed.add_key(
-                SSlibKey.from_securesystemslib_key(
-                    self._key_storage_backend.get(public_key).key_dict
-                ),
-                delegated_name,
-            )
+            targets.signed.add_key(public_key, delegated_name)
             bins_role = Metadata(Targets())
             self._bump_expiry(bins_role, BINS)
             self._sign(bins_role)
