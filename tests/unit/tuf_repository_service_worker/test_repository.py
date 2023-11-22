@@ -221,7 +221,7 @@ class TestMetadataRepository:
     def test__persist_timestamp(self, test_repo):
         self._test_helper_persist(test_repo, "timestamp", 2, "timestamp.json")
 
-    def test_bump_expiry(self, monkeypatch, test_repo):
+    def test_bump_expiry(self, monkeypatch, test_repo, mocked_datetime):
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: 1460)
         )
@@ -230,15 +230,9 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
+        fake_datetime = mocked_datetime
         fake_role = pretend.stub(
-            signed=pretend.stub(expires=fake_time),
+            signed=pretend.stub(expires=fake_datetime.now()),
         )
 
         result = test_repo._bump_expiry(fake_role, "root")
@@ -246,7 +240,7 @@ class TestMetadataRepository:
         assert fake_role.signed.expires == datetime.datetime(
             2023, 6, 15, 9, 5, 1
         )
-        assert fake_datetime.now.calls == [pretend.call()]
+        assert fake_datetime.now.calls == [pretend.call(), pretend.call()]
 
     def test__bump_version(self, test_repo):
         role = pretend.stub(
@@ -567,7 +561,7 @@ class TestMetadataRepository:
             pretend.call("targets")
         ]
 
-    def test__update_task(self, monkeypatch, test_repo):
+    def test__update_task(self, test_repo, mocked_datetime):
         test_repo._db = pretend.stub(
             refresh=pretend.call_recorder(lambda *a: None)
         )
@@ -578,14 +572,8 @@ class TestMetadataRepository:
             "bin-f": [fake_target, fake_target],
         }
         fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
+        fake_datetime = mocked_datetime
         fake_subtask = pretend.stub(status=states.SUCCESS)
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
         result = test_repo._update_task(
             fake_bin_targets, fake_update_state, fake_subtask
         )
@@ -603,14 +591,14 @@ class TestMetadataRepository:
                     "published_roles": ["bin-e"],
                     "roles_to_publish": "['bin-e', 'bin-f']",
                     "status": "Publishing",
-                    "last_update": fake_time,
+                    "last_update": fake_datetime.now(),
                     "exc_type": None,
                     "exc_message": None,
                 },
             ),
         ]
 
-    def test__update_task_subtask_failure(self, test_repo, monkeypatch):
+    def test__update_task_subtask_failure(self, test_repo, mocked_datetime):
         test_repo._db = pretend.stub(
             refresh=pretend.call_recorder(lambda *a: None)
         )
@@ -621,17 +609,11 @@ class TestMetadataRepository:
             "bin-f": [fake_target, fake_target],
         }
         fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
+        fake_datetime = mocked_datetime
         fake_subtask = pretend.stub(
             status=states.FAILURE,
             task_id="publish_targets-fakeid",
             result=PermissionError("failed to write in the storage"),
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
 
         with pytest.raises(ChordError) as err:
@@ -651,7 +633,7 @@ class TestMetadataRepository:
                     "published_roles": ["bin-e"],
                     "roles_to_publish": "['bin-e', 'bin-f']",
                     "status": "Publishing",
-                    "last_update": fake_time,
+                    "last_update": fake_datetime.now(),
                     "exc_type": "PermissionError",
                     "exc_message": ["failed to write in the storage"],
                 },
@@ -2081,7 +2063,10 @@ class TestMetadataRepository:
             },
         }
 
-    def test__run_online_roles_bump(self, monkeypatch, test_repo):
+    def test__run_online_roles_bump(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_datetime = mocked_datetime
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
@@ -2089,14 +2074,15 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=datetime.datetime(2019, 6, 16, 8, 5, 1),
+                expires=fake_datetime.now(),
                 version=1,
             )
         )
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_bins = pretend.stub(
-            signed=pretend.stub(targets={}, version=6, expires=fake_time)
+            signed=pretend.stub(
+                targets={}, version=6, expires=fake_datetime.now()
+            )
         )
 
         def mocked_get(role):
@@ -2148,8 +2134,9 @@ class TestMetadataRepository:
         ]
 
     def test__run_online_roles_bump_target_no_online_keys(
-        self, monkeypatch, caplog, test_repo
+        self, monkeypatch, caplog, test_repo, mocked_datetime
     ):
+        fake_datetime = mocked_datetime
         caplog.set_level(repository.logging.WARNING)
         fake_targets = pretend.stub(
             signed=pretend.stub(
@@ -2158,14 +2145,15 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=datetime.datetime(2019, 6, 16, 8, 5, 1),
+                expires=fake_datetime.now(),
                 version=1,
             )
         )
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_bins = pretend.stub(
-            signed=pretend.stub(targets={}, version=6, expires=fake_time)
+            signed=pretend.stub(
+                targets={}, version=6, expires=fake_datetime.now()
+            )
         )
 
         def mocked_get(role):
@@ -2215,8 +2203,9 @@ class TestMetadataRepository:
         ]
 
     def test__run_online_roles_bump_warning_missing_config(
-        self, caplog, test_repo
+        self, caplog, test_repo, mocked_datetime
     ):
+        fake_datetime = mocked_datetime
         caplog.set_level(repository.logging.CRITICAL)
         fake_targets = pretend.stub(
             signed=pretend.stub(
@@ -2225,14 +2214,15 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=datetime.datetime(2019, 6, 16, 8, 5, 1),
+                expires=fake_datetime.now(),
                 version=1,
             )
         )
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_bins = pretend.stub(
-            signed=pretend.stub(targets={}, version=6, expires=fake_time)
+            signed=pretend.stub(
+                targets={}, version=6, expires=fake_datetime.now()
+            )
         )
 
         def mocked_get(role):
@@ -2253,7 +2243,7 @@ class TestMetadataRepository:
                 signed=pretend.stub(
                     snapshot_meta=pretend.stub(version=79),
                     version=87,
-                    expires=datetime.datetime(2028, 6, 16, 9, 5, 1),
+                    expires=fake_datetime.now(),
                 )
             )
         )
@@ -2287,7 +2277,7 @@ class TestMetadataRepository:
             )
         )
 
-        fake_time = datetime.datetime(2054, 6, 16, 9, 5, 1)
+        fake_time = datetime.datetime(2054, 6, 16, 8, 5, 1)
         fake_bins = pretend.stub(
             signed=pretend.stub(targets={}, version=6, expires=fake_time)
         )
@@ -2317,11 +2307,12 @@ class TestMetadataRepository:
         result = test_repo._run_online_roles_bump()
         assert result is False
 
-    def test_bump_snapshot(self, test_repo):
+    def test_bump_snapshot(self, test_repo, mocked_datetime):
+        fake_datetime = mocked_datetime
         fake_snapshot = pretend.stub(
             signed=pretend.stub(
                 meta={},
-                expires=datetime.datetime(2019, 6, 16, 9, 5, 1),
+                expires=fake_datetime.now(),
                 version=87,
             )
         )
