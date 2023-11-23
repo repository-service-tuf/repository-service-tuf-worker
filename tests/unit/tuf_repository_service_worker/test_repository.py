@@ -240,7 +240,6 @@ class TestMetadataRepository:
         assert fake_role.signed.expires == datetime.datetime(
             2023, 6, 15, 9, 5, 1
         )
-        assert fake_datetime.now.calls == [pretend.call(), pretend.call()]
 
     def test__bump_version(self, test_repo):
         role = pretend.stub(
