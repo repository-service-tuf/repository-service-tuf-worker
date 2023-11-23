@@ -1,5 +1,8 @@
+from typing import List, Optional
+
 import pretend
 import pytest
+from tuf.api.metadata import Metadata, T
 
 from repository_service_tuf_worker import interfaces
 
@@ -58,7 +61,6 @@ class TestInterfaces:
                 lambda: [
                     interfaces.ServiceSettings(
                         names=["FAKE_VAR1", "FAKE_VAR2"],
-                        argument="var",
                         required=True,
                     )
                 ]
@@ -89,28 +91,30 @@ class TestInterfaces:
                 self._var2 = var2
 
             @classmethod
-            def configure(cls, settings):
-                ...
+            def configure(cls, settings: interfaces.Dynaconf) -> "FakeStorage":
+                return FakeStorage(
+                    settings.TEST_STORAGE_VAR1, settings.TEST_STORAGE_VAR2
+                )
 
             @classmethod
-            def settings(cls):
+            def settings(cls) -> List[interfaces.ServiceSettings]:
                 return [
                     interfaces.ServiceSettings(
                         names=["TEST_STORAGE_VAR1", "TEST_STORAGE_VARIABLE1"],
-                        argument="var1",
                         required=False,
                     ),
                     interfaces.ServiceSettings(
                         names=["TEST_STORAGE_VAR2"],
-                        argument="var2",
                         required=False,
                     ),
                 ]
 
-            def get():
+            def get(
+                self, rolename: str, version: Optional[int]
+            ) -> Metadata[T]:
                 ...
 
-            def put():
+            def put(self, file_data: bytes, filename: str) -> None:
                 ...
 
         test_settings = interfaces.Dynaconf()
@@ -145,7 +149,6 @@ class TestInterfaces:
                     lambda: [
                         interfaces.ServiceSettings(
                             names=["FAKE_VAR1", "FAKE_VAR2"],
-                            argument="var",
                             required=True,
                         )
                     ]
