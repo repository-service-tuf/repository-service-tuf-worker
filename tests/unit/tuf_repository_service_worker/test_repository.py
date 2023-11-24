@@ -221,7 +221,7 @@ class TestMetadataRepository:
     def test__persist_timestamp(self, test_repo):
         self._test_helper_persist(test_repo, "timestamp", 2, "timestamp.json")
 
-    def test_bump_expiry(self, monkeypatch, test_repo):
+    def test_bump_expiry(self, monkeypatch, test_repo, mocked_datetime):
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: 1460)
         )
@@ -230,15 +230,8 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
         fake_role = pretend.stub(
-            signed=pretend.stub(expires=fake_time),
+            signed=pretend.stub(expires=mocked_datetime.now()),
         )
 
         result = test_repo._bump_expiry(fake_role, "root")
@@ -246,7 +239,6 @@ class TestMetadataRepository:
         assert fake_role.signed.expires == datetime.datetime(
             2023, 6, 15, 9, 5, 1
         )
-        assert fake_datetime.now.calls == [pretend.call()]
 
     def test__bump_version(self, test_repo):
         role = pretend.stub(
@@ -567,7 +559,7 @@ class TestMetadataRepository:
             pretend.call("targets")
         ]
 
-    def test__update_task(self, monkeypatch, test_repo):
+    def test__update_task(self, test_repo, mocked_datetime):
         test_repo._db = pretend.stub(
             refresh=pretend.call_recorder(lambda *a: None)
         )
@@ -578,14 +570,7 @@ class TestMetadataRepository:
             "bin-f": [fake_target, fake_target],
         }
         fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
         fake_subtask = pretend.stub(status=states.SUCCESS)
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
-        )
         result = test_repo._update_task(
             fake_bin_targets, fake_update_state, fake_subtask
         )
@@ -603,14 +588,14 @@ class TestMetadataRepository:
                     "published_roles": ["bin-e"],
                     "roles_to_publish": "['bin-e', 'bin-f']",
                     "status": "Publishing",
-                    "last_update": fake_time,
+                    "last_update": mocked_datetime.now(),
                     "exc_type": None,
                     "exc_message": None,
                 },
             ),
         ]
 
-    def test__update_task_subtask_failure(self, test_repo, monkeypatch):
+    def test__update_task_subtask_failure(self, test_repo, mocked_datetime):
         test_repo._db = pretend.stub(
             refresh=pretend.call_recorder(lambda *a: None)
         )
@@ -621,17 +606,10 @@ class TestMetadataRepository:
             "bin-f": [fake_target, fake_target],
         }
         fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-        fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
-        )
         fake_subtask = pretend.stub(
             status=states.FAILURE,
             task_id="publish_targets-fakeid",
             result=PermissionError("failed to write in the storage"),
-        )
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.repository.datetime", fake_datetime
         )
 
         with pytest.raises(ChordError) as err:
@@ -651,7 +629,7 @@ class TestMetadataRepository:
                     "published_roles": ["bin-e"],
                     "roles_to_publish": "['bin-e', 'bin-f']",
                     "status": "Publishing",
-                    "last_update": fake_time,
+                    "last_update": mocked_datetime.now(),
                     "exc_type": "PermissionError",
                     "exc_message": ["failed to write in the storage"],
                 },
@@ -813,7 +791,6 @@ class TestMetadataRepository:
         assert len(test_repo._sign.calls) == len(test_repo._persist.calls)
 
     def test_update_settings(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -837,7 +814,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "update_settings",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Update Settings Succeded",
                 "invalid_roles": [],
@@ -856,7 +833,6 @@ class TestMetadataRepository:
         ]
 
     def test_update_settings_no_settings(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -865,7 +841,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "update_settings",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Update Settings Failed",
                 "error": "No 'settings' in the payload",
@@ -873,13 +849,11 @@ class TestMetadataRepository:
         }
 
     def test_update_settings_no_expiration(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
-
         result = test_repo.update_settings(payload={"settings": {}})
         assert result == {
             "task": "update_settings",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Update Settings Failed",
                 "error": "No 'expiration' in the payload",
@@ -889,15 +863,13 @@ class TestMetadataRepository:
     def test_update_settings_no_role_in_expiration(
         self, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
-
         result = test_repo.update_settings(
             payload={"settings": {"expiration": {}}}
         )
         assert result == {
             "task": "update_settings",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Update Settings Failed",
                 "error": "No role provided for expiration policy change",
@@ -907,15 +879,13 @@ class TestMetadataRepository:
     def test_update_settings_no_valid_role_in_expiration(
         self, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
-
         result = test_repo.update_settings(
             payload={"settings": {"expiration": {"foo": 1}}}
         )
         assert result == {
             "task": "update_settings",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Update Settings Succeded",
                 "invalid_roles": ["foo"],
@@ -926,7 +896,6 @@ class TestMetadataRepository:
     def test_update_settings_valid_and_invalid_roles(
         self, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -947,7 +916,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "update_settings",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Update Settings Succeded",
                 "invalid_roles": ["foo", "bar"],
@@ -983,7 +952,6 @@ class TestMetadataRepository:
         ]
 
     def test_bootstrap(self, monkeypatch, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
         )
@@ -1031,7 +999,7 @@ class TestMetadataRepository:
                 "message": "Bootstrap Processed",
                 "bootstrap": "Bootstrap finished fake_task_id",
             },
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
         }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -1056,7 +1024,6 @@ class TestMetadataRepository:
     def test_bootstrap_no_signatures(
         self, monkeypatch, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
         )
@@ -1100,7 +1067,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "bootstrap",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Bootstrap Failed",
                 "error": "Metadata requires at least one valid signature",
@@ -1120,7 +1087,6 @@ class TestMetadataRepository:
     def test_bootstrap_invalid_signatures(
         self, monkeypatch, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
         )
@@ -1164,7 +1130,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "bootstrap",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Bootstrap Failed",
                 "error": "Bootstrap has invalid signature(s)",
@@ -1186,7 +1152,6 @@ class TestMetadataRepository:
     def test_bootstrap_distributed_async_sign(
         self, monkeypatch, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
         )
@@ -1235,7 +1200,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "bootstrap",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Bootstrap Processed",
                 "bootstrap": "Root v1 is pending signature",
@@ -1266,7 +1231,6 @@ class TestMetadataRepository:
     def test_bootstrap_when_bootstrap_started(
         self, monkeypatch, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "signing-task_id")
         )
@@ -1291,7 +1255,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "bootstrap",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Bootstrap Failed",
                 "error": "Bootstrap state is signing-task_id",
@@ -1303,7 +1267,6 @@ class TestMetadataRepository:
         assert test_repo.write_repository_settings.calls == []
 
     def test_bootstrap_missing_settings(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -1317,7 +1280,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "bootstrap",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Bootstrap Failed",
                 "error": "No 'settings' in the payload",
@@ -1326,7 +1289,6 @@ class TestMetadataRepository:
         assert test_repo.write_repository_settings.calls == []
 
     def test_bootstrap_missing_metadata(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -1339,7 +1301,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "bootstrap",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Bootstrap Failed",
                 "error": "No 'metadata' in the payload",
@@ -1351,8 +1313,6 @@ class TestMetadataRepository:
         assert test_repo.write_repository_settings.calls == []
 
     def test_publish_targets(self, test_repo, monkeypatch, mocked_datetime):
-        fake_datetime = mocked_datetime
-
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -1378,7 +1338,7 @@ class TestMetadataRepository:
         assert test_result == {
             "task": "publish_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Publish Targets Processed",
                 "target_roles": ["bins-0", "bins-e"],
@@ -1398,8 +1358,6 @@ class TestMetadataRepository:
     def test_publish_targets_payload_bins_targets_empty(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
-
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -1426,7 +1384,7 @@ class TestMetadataRepository:
         assert test_result == {
             "task": "publish_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Publish Targets Processed",
                 "target_roles": ["bins-0", "bins-e"],
@@ -1463,8 +1421,6 @@ class TestMetadataRepository:
     def test_publish_targets_without_targets_to_publish(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
-
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -1486,7 +1442,7 @@ class TestMetadataRepository:
         assert test_result == {
             "task": "publish_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Publish Targets Processed",
                 "target_roles": None,
@@ -1501,7 +1457,6 @@ class TestMetadataRepository:
         )
 
     def test_add_targets(self, test_repo, monkeypatch, mocked_datetime):
-        fake_datetime = mocked_datetime
         test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
@@ -1557,7 +1512,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "add_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Target(s) Added",
                 "targets": ["file1.tar.gz"],
@@ -1601,7 +1556,6 @@ class TestMetadataRepository:
         ]
 
     def test_add_targets_exists(self, test_repo, monkeypatch, mocked_datetime):
-        fake_datetime = mocked_datetime
         test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
@@ -1651,7 +1605,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "add_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Target(s) Added",
                 "targets": ["file1.tar.gz"],
@@ -1682,7 +1636,6 @@ class TestMetadataRepository:
         ]
 
     def test_add_targets_without_targets(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         payload = {
             "artifacts": [
                 {
@@ -1702,7 +1655,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "add_targets",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Adding target(s) Failed",
                 "error": "No 'targets' in the payload",
@@ -1712,7 +1665,6 @@ class TestMetadataRepository:
     def test_add_targets_skip_publishing(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         test_repo._db = pretend.stub()
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
@@ -1766,7 +1718,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "add_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Target(s) Added",
                 "targets": ["file1.tar.gz"],
@@ -1805,7 +1757,6 @@ class TestMetadataRepository:
         ]
 
     def test_remove_targets(self, test_repo, monkeypatch, mocked_datetime):
-        fake_datetime = mocked_datetime
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
         )
@@ -1839,7 +1790,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "remove_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Target(s) removed",
                 "deleted_targets": [
@@ -1885,7 +1836,6 @@ class TestMetadataRepository:
     def test_remove_targets_skip_publishing(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bins-e"
         )
@@ -1917,7 +1867,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "remove_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Target(s) removed",
                 "deleted_targets": [
@@ -1960,7 +1910,6 @@ class TestMetadataRepository:
     def test_remove_targets_all_none(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
@@ -1980,7 +1929,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "remove_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Target(s) removed",
                 "deleted_targets": [],
@@ -2005,7 +1954,6 @@ class TestMetadataRepository:
     def test_remove_targets_action_remove_published_true(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         test_repo._get_path_succinct_role = pretend.call_recorder(
             lambda *a: "bin-e"
         )
@@ -2027,7 +1975,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "remove_targets",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Target(s) removed",
                 "deleted_targets": [],
@@ -2050,7 +1998,6 @@ class TestMetadataRepository:
         ]
 
     def test_remove_targets_without_targets(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         payload = {"paths": []}
 
         result = test_repo.remove_targets(payload, update_state=pretend.stub())
@@ -2058,7 +2005,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "remove_targets",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Removing target(s) Failed",
                 "error": "No 'targets' in the payload",
@@ -2066,7 +2013,6 @@ class TestMetadataRepository:
         }
 
     def test_remove_targets_empty_targets(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         payload = {"targets": []}
 
         result = test_repo.remove_targets(payload, update_state=pretend.stub())
@@ -2074,14 +2020,16 @@ class TestMetadataRepository:
         assert result == {
             "task": "remove_targets",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Removing target(s) Failed",
                 "error": "At list one target is required",
             },
         }
 
-    def test__run_online_roles_bump(self, monkeypatch, test_repo):
+    def test__run_online_roles_bump(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
@@ -2089,14 +2037,15 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=datetime.datetime(2019, 6, 16, 8, 5, 1),
+                expires=mocked_datetime.now(),
                 version=1,
             )
         )
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_bins = pretend.stub(
-            signed=pretend.stub(targets={}, version=6, expires=fake_time)
+            signed=pretend.stub(
+                targets={}, version=6, expires=mocked_datetime.now()
+            )
         )
 
         def mocked_get(role):
@@ -2148,7 +2097,7 @@ class TestMetadataRepository:
         ]
 
     def test__run_online_roles_bump_target_no_online_keys(
-        self, monkeypatch, caplog, test_repo
+        self, monkeypatch, caplog, test_repo, mocked_datetime
     ):
         caplog.set_level(repository.logging.WARNING)
         fake_targets = pretend.stub(
@@ -2158,14 +2107,15 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=datetime.datetime(2019, 6, 16, 8, 5, 1),
+                expires=mocked_datetime.now(),
                 version=1,
             )
         )
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_bins = pretend.stub(
-            signed=pretend.stub(targets={}, version=6, expires=fake_time)
+            signed=pretend.stub(
+                targets={}, version=6, expires=mocked_datetime.now()
+            )
         )
 
         def mocked_get(role):
@@ -2215,7 +2165,7 @@ class TestMetadataRepository:
         ]
 
     def test__run_online_roles_bump_warning_missing_config(
-        self, caplog, test_repo
+        self, caplog, test_repo, mocked_datetime
     ):
         caplog.set_level(repository.logging.CRITICAL)
         fake_targets = pretend.stub(
@@ -2225,14 +2175,15 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=datetime.datetime(2019, 6, 16, 8, 5, 1),
+                expires=mocked_datetime.now(),
                 version=1,
             )
         )
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
         fake_bins = pretend.stub(
-            signed=pretend.stub(targets={}, version=6, expires=fake_time)
+            signed=pretend.stub(
+                targets={}, version=6, expires=mocked_datetime.now()
+            )
         )
 
         def mocked_get(role):
@@ -2253,7 +2204,7 @@ class TestMetadataRepository:
                 signed=pretend.stub(
                     snapshot_meta=pretend.stub(version=79),
                     version=87,
-                    expires=datetime.datetime(2028, 6, 16, 9, 5, 1),
+                    expires=mocked_datetime.now(),
                 )
             )
         )
@@ -2287,7 +2238,7 @@ class TestMetadataRepository:
             )
         )
 
-        fake_time = datetime.datetime(2054, 6, 16, 9, 5, 1)
+        fake_time = datetime.datetime(2054, 6, 16, 8, 5, 1)
         fake_bins = pretend.stub(
             signed=pretend.stub(targets={}, version=6, expires=fake_time)
         )
@@ -2317,11 +2268,11 @@ class TestMetadataRepository:
         result = test_repo._run_online_roles_bump()
         assert result is False
 
-    def test_bump_snapshot(self, test_repo):
+    def test_bump_snapshot(self, test_repo, mocked_datetime):
         fake_snapshot = pretend.stub(
             signed=pretend.stub(
                 meta={},
-                expires=datetime.datetime(2019, 6, 16, 9, 5, 1),
+                expires=mocked_datetime.now(),
                 version=87,
             )
         )
@@ -2545,7 +2496,6 @@ class TestMetadataRepository:
         assert "Expected 'root', got 'snapshot'" in str(err)
 
     def test__root_metadata_update(self, test_repo, mocked_datetime):
-        fake_datetime = mocked_datetime
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -2569,7 +2519,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "metadata_update",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Processed",
                 "role": "root",
@@ -2588,7 +2538,6 @@ class TestMetadataRepository:
     def test__root_metadata_update_signatures_pending(
         self, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -2618,7 +2567,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "metadata_update",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Processed",
                 "role": "root",
@@ -2635,7 +2584,6 @@ class TestMetadataRepository:
     def test__root_metadata_update_not_trusted(
         self, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -2660,7 +2608,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "metadata_update",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Failed",
                 "error": "Failed to verify the trust: Version v3 instead v2",
@@ -2673,7 +2621,6 @@ class TestMetadataRepository:
     def test__root_metadata_update_online_key(
         self, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
@@ -2708,7 +2655,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "metadata_update",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Processed",
                 "role": "root",
@@ -2809,7 +2756,6 @@ class TestMetadataRepository:
     def test_metadata_update_invalid_metadata_type(
         self, monkeypatch, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
@@ -2824,7 +2770,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "metadata_update",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Failed",
                 "error": "Unsupported Metadata type",
@@ -2837,7 +2783,6 @@ class TestMetadataRepository:
     def test_metadata_update_no_metadata(
         self, monkeypatch, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: "fake_bootstrap_id")
         )
@@ -2853,7 +2798,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "metadata_update",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Failed",
                 "error": "No 'metadata' in the payload",
@@ -2866,7 +2811,6 @@ class TestMetadataRepository:
     def test_metadata_update_no_bootstrap(
         self, monkeypatch, test_repo, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         payload = {"metadata": {"root": {}}}
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: None)
@@ -2881,7 +2825,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "metadata_update",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Failed",
                 "error": "Metadata Update requires a complete bootstrap",
@@ -3050,8 +2994,6 @@ class TestMetadataRepository:
     def test_sign_metadata_finalize_bootstrap(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
-
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
                 return "signing-<task-id>"
@@ -3087,7 +3029,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "sign_metadata",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Signature Processed",
                 "bootstrap": "Bootstrap Finished",
@@ -3113,7 +3055,6 @@ class TestMetadataRepository:
     def test_sign_metadata_no_role_signing(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: None),
         )
@@ -3132,7 +3073,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "sign_metadata",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Signature Failed",
                 "error": f"No signatures pending for {payload['role']}",
@@ -3145,8 +3086,6 @@ class TestMetadataRepository:
     def test_sign_metadata_invalid_role_type(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
-
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
                 return "signing-<task-id>"
@@ -3176,7 +3115,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "sign_metadata",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Signature Failed",
                 "error": "Expected 'root', got 'targets'",
@@ -3189,8 +3128,6 @@ class TestMetadataRepository:
     def test_sign_metadata_invalid_signature(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
-
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
                 return "signing-<task-id>"
@@ -3224,7 +3161,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "sign_metadata",
             "status": False,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Signature Failed",
                 "error": "Invalid signature",
@@ -3244,8 +3181,6 @@ class TestMetadataRepository:
     def test_sign_metadata_bootstrap_unfinished(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        fake_datetime = mocked_datetime
-
         def fake_get_fresh(key):
             if key == "BOOTSTRAP":
                 return "signing-<task-id>"
@@ -3284,7 +3219,7 @@ class TestMetadataRepository:
         assert result == {
             "task": "sign_metadata",
             "status": True,
-            "last_update": fake_datetime.now(),
+            "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Signature Processed",
                 "bootstrap": (
