@@ -9,7 +9,7 @@ import pretend
 import pytest
 from celery.exceptions import ChordError
 from celery.result import states
-from tuf.api.metadata import Metadata, Snapshot, Targets, Timestamp
+from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
@@ -187,12 +187,16 @@ class TestMetadataRepository:
         fake_role = pretend.stub(
             signed=pretend.stub(version=version),
             to_bytes=pretend.call_recorder(lambda *a, **kw: fake_bytes),
+            to_dict=pretend.call_recorder(lambda: None),
         )
 
         repository.JSONSerializer = pretend.call_recorder(lambda: None)
 
         test_repo._storage_backend = pretend.stub(
             put=pretend.call_recorder(lambda *a: None)
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
         )
 
         test_result = test_repo._persist(fake_role, role)
@@ -206,6 +210,14 @@ class TestMetadataRepository:
                 expected_file_name,
             )
         ]
+        if role == Root.type:
+            assert test_repo.write_repository_settings.calls == [
+                pretend.call("TRUSTED_ROOT", None)
+            ]
+            assert fake_role.to_dict.calls == [pretend.call()]
+        else:
+            assert test_repo.write_repository_settings.calls == []
+            assert fake_role.to_dict.calls == []
 
     def test__persist(self, test_repo):
         self._test_helper_persist(test_repo, "snapshot", 2, "2.snapshot.json")
@@ -220,6 +232,9 @@ class TestMetadataRepository:
 
     def test__persist_timestamp(self, test_repo):
         self._test_helper_persist(test_repo, "timestamp", 2, "timestamp.json")
+
+    def test__persist_root(self, test_repo):
+        self._test_helper_persist(test_repo, "root", 2, "2.root.json")
 
     def test_bump_expiry(self, monkeypatch, test_repo, mocked_datetime):
         fake_settings = pretend.stub(
