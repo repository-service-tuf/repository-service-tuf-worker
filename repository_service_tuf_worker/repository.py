@@ -217,6 +217,9 @@ class MetadataRepository:
             if filename[0].isdigit() is False:
                 filename = f"{role.signed.version}.{filename}"
 
+            if role_name == Root.type:
+                self.write_repository_settings("TRUSTED_ROOT", role.to_dict())
+
         bytes_data = role.to_bytes(JSONSerializer())
         self._storage_backend.put(bytes_data, filename)
         logging.debug(f"{filename} saved")
