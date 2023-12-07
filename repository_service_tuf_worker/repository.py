@@ -106,7 +106,7 @@ class MetadataRepository:
         self._worker_settings: Dynaconf = get_worker_settings()
         app_settings = self.refresh_settings()
         self._storage_backend: IStorage = app_settings.STORAGE
-        self._signer_store = _signer.SignerStore(app_settings)
+        self._signer_store = _signer.SignerStore()
         self._db = app_settings.SQL
         self._redis = redis.StrictRedis.from_url(
             self._worker_settings.REDIS_SERVER
