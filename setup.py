@@ -6,11 +6,10 @@
 # SPDX-License-Identifier: MIT
 
 from setuptools import find_packages, setup
-from repository_service_tuf_worker.__version__ import version
 
 setup(
     name="repository-service-tuf-worker",
-    version=version,
+    version="0.0.1",
     url="https://github.com/repository-service-tuf/repository-service-tuf-worker",  # noqa
     author="Kairo de Araujo",
     author_email="kairo@dearaujo.nl",
