@@ -42,8 +42,34 @@ class FileSigner(CryptoSigner):
         return FileSigner(private_key, public_key)
 
 
+class EnvSigner(CryptoSigner):
+    """Environment variable -based signer implementation.
+
+    Overrides `CryptoSigner.from_priv_key_uri` to load private key from an
+    environment variable defined in the passed uri:
+
+    `env:<environment variable name>`
+
+    """
+
+    SCHEME = "env"
+
+    @classmethod
+    def from_priv_key_uri(
+        cls,
+        priv_key_uri: str,
+        public_key: Key,
+        secrets_handler: Optional[SecretsHandler] = None,
+    ) -> "EnvSigner":
+        _, _, env_name = priv_key_uri.partition(":")
+        private_pem = os.environ[env_name]
+        private_key = load_pem_private_key(private_pem, None)
+        return EnvSigner(private_key, public_key)
+
+
 # Register signer for scheme for usage via generic `Signer.from_priv_key_uri`
 SIGNER_FOR_URI_SCHEME.update({FileSigner.SCHEME: FileSigner})
+SIGNER_FOR_URI_SCHEME.update({EnvSigner.SCHEME: EnvSigner})
 
 
 class SignerStore:
