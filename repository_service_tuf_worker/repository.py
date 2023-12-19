@@ -286,66 +286,75 @@ class MetadataRepository:
         Returns the new snapshot version.
 
         Args:
-            bump_all: Wheter to bump all bin target roles.
+            target_roles: List of roles to bump. If provided, 'bump_all' arg
+                will NOT be taken into account.
+            bump_all: Wheter to bump all bin target roles. If provided, then
+                'target_roles' arg is NOT taken into acount.
         """
         snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
 
+        db_target_roles: List[targets_models.RSTUFTargetRoles] = []
         if target_roles:
-            db_target_roles: List[targets_models.RSTUFTargetRoles] = []
-            if bump_all:
-                db_target_roles = targets_crud.read_all_roles(self._db)
-                for db_role in db_target_roles:
-                    rolename = db_role.rolename
-                    bins_md: Metadata[Targets] = self._storage_backend.get(
-                        db_role.rolename
-                    )
-                    # update expiry, bump version and persist to the storage
-                    self._bump_and_persist(bins_md, BINS, persist=False)
-                    self._persist(bins_md, db_role.rolename)
+            db_target_roles = targets_crud.read_roles_joint_files(
+                self._db, target_roles
+            )
 
-                    snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                        version=bins_md.signed.version
-                    )
-            else:
-                db_target_roles = targets_crud.read_roles_joint_files(
-                    self._db, target_roles
+            for db_role in db_target_roles:
+                rolename = db_role.rolename
+                bins_md: Metadata[Targets] = self._storage_backend.get(
+                    rolename
+                )
+                bins_md.signed.targets.clear()
+                bins_md.signed.targets = {
+                    file.path: TargetFile.from_dict(file.info, file.path)
+                    for file in db_role.target_files
+                    if file.action == targets_schema.TargetAction.ADD
+                    # Filtering the files with action 'ADD' cannot be done
+                    # in CRUD. If a target role doesn't have any target
+                    # files with an action 'ADD' (only 'REMOVE') then using
+                    # CRUD will not return the target role and it won't be
+                    # updated. An example can be when there is a role with
+                    # one target file with action "REMOVE" and the CRUD
+                    # will return None for this specific role.
+                }
+
+                # update expiry, bump version and persist to the storage
+                self._bump_and_persist(bins_md, BINS, persist=False)
+                self._persist(bins_md, rolename)
+                # update targetfile in db
+                # note: It update only if is not published see the CRUD.
+                targets_crud.update_files_to_published(
+                    self._db, [file.path for file in db_role.target_files]
                 )
 
-                for db_role in db_target_roles:
-                    rolename = db_role.rolename
-                    bins_md: Metadata[Targets] = self._storage_backend.get(
-                        rolename
-                    )
-                    bins_md.signed.targets.clear()
-                    bins_md.signed.targets = {
-                        file.path: TargetFile.from_dict(file.info, file.path)
-                        for file in db_role.target_files
-                        if file.action == targets_schema.TargetAction.ADD
-                        # Filtering the files with action 'ADD' cannot be done
-                        # in CRUD. If a target role doesn't have any target
-                        # files with an action 'ADD' (only 'REMOVE') then using
-                        # CRUD will not return the target role and it won't be
-                        # updated. An example can be when there is a role with
-                        # one target file with action "REMOVE" and the CRUD
-                        # will return None for this specific role.
-                    }
+                snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
+                    version=bins_md.signed.version
+                )
 
-                    # update expiry, bump version and persist to the storage
-                    self._bump_and_persist(bins_md, BINS, persist=False)
-                    self._persist(bins_md, rolename)
-                    # update targetfile in db
-                    # note: It update only if is not published see the CRUD.
-                    targets_crud.update_files_to_published(
-                        self._db, [file.path for file in db_role.target_files]
-                    )
+        elif bump_all:
+            db_target_roles = targets_crud.read_all_roles(self._db)
+            for db_role in db_target_roles:
+                rolename = db_role.rolename
+                bins_md: Metadata[Targets] = self._storage_backend.get(
+                    db_role.rolename
+                )
+                # update expiry, bump version and persist to the storage
+                self._bump_and_persist(bins_md, BINS, persist=False)
+                self._persist(bins_md, db_role.rolename)
 
-                    snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                        version=bins_md.signed.version
-                    )
+                snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
+                    version=bins_md.signed.version
+                )
 
+        if len(db_target_roles) > 0:
             targets_crud.update_roles_version(
                 self._db, [int(db_role.id) for db_role in db_target_roles]
             )
+
+        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
+        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
+            version=targets.signed.version
+        )
 
         # update expiry, bump version and persist to the storage
         self._bump_and_persist(snapshot, Snapshot.type)
@@ -958,17 +967,17 @@ class MetadataRepository:
         signed and persisted using the configured key and storage services.
 
         Args:
-            force: force target roles bump if they don't match the hours before
-                expire (`self._hours_before_expire`)
+            force: force all target roles bump even if they have more than
+            `self._hours_before_expire` hours to expire.
         """
-        targets_roles: List[str] = []
-
         try:
-            targets = self._storage_backend.get(Targets.type)
+            targets: Metadata = self._storage_backend.get(Targets.type)
         except StorageError:
             logging.error(f"{Targets.type} not found, not bumping.")
             return False
 
+        timestamp: Metadata
+        snapshot_bump = False
         if self._settings.get_fresh("TARGETS_ONLINE_KEY") is None:
             logging.critical("No configuration found for TARGETS_ONLINE_KEY")
 
@@ -976,45 +985,54 @@ class MetadataRepository:
             logging.warning(
                 f"{Targets.type} don't use online key, skipping 'Targets' role"
             )
-
         else:
-            if (targets.signed.expires - datetime.now()) < timedelta(
+            if force or (targets.signed.expires - datetime.now()) < timedelta(
                 hours=self._hours_before_expire
             ):
+                logging.info("Bumped version of 'Targets' role")
                 self._bump_and_persist(targets, Targets.type)
-                targets_roles.append(Targets.type)
+                snapshot_bump = True
 
-        targets_succinct_roles = targets.signed.delegations.succinct_roles
-        for bins_name in targets_succinct_roles.get_roles():
-            bins_role: Metadata[Targets] = self._storage_backend.get(bins_name)
-
-            if (bins_role.signed.expires - datetime.now()) < timedelta(
-                hours=self._hours_before_expire or force is True
-            ):
-                targets_roles.append(bins_name)
-
-        if len(targets_roles) > 0:
-            logging.info(
-                "[scheduled targets bump] Targets and delegated Targets roles "
-                "version bumped: {targets_meta}"
-            )
+        if force:
+            # Updating all bin target roles.
             timestamp = self._update_timestamp(
-                self._update_snapshot(targets_roles, bump_all=True)
+                self._update_snapshot(bump_all=True)
             )
-            logging.info(
-                "[scheduled targets bump] Snapshot version bumped: "
-                f"{timestamp.signed.snapshot_meta.version}"
-            )
-            logging.info(
-                "[scheduled targets bump] Timestamp version bumped: "
-                f"{timestamp.signed.version} new expire "
-                f"{timestamp.signed.expires}"
-            )
+            snapshot_bump = True
+            logging.info("Targets and delegated Targets roles version bumped")
         else:
-            logging.debug(
-                "[scheduled targets bump] All more than "
-                f"{self._hours_before_expire} hour(s) to expire, "
-                "skipping"
+            # Updating only those bins that have expired.
+            bin_roles: List[str] = []
+            targets_succinct_roles = targets.signed.delegations.succinct_roles
+            for bin in targets_succinct_roles.get_roles():
+                bin_role: Metadata[Targets] = self._storage_backend.get(bin)
+                if (bin_role.signed.expires - datetime.now()) < timedelta(
+                    hours=self._hours_before_expire or force is True
+                ):
+                    bin_roles.append(bin)
+
+            if len(bin_roles) > 0:
+                timestamp = self._update_timestamp(
+                    self._update_snapshot(target_roles=bin_roles)
+                )
+                snapshot_bump = True
+                bins = "".join(bin_roles)
+                logging.info(f"Bumped versions of expired bin roles: {bins}")
+            else:
+                logging.debug(
+                    "[scheduled bump] All bin roles have more than "
+                    f"{self._hours_before_expire} hour(s) to expire, "
+                    "skipping"
+                )
+
+        if snapshot_bump:
+            snapshot_v = timestamp.signed.snapshot_meta.version
+            logging.info(
+                f"[scheduled bump] Snapshot version bumped: {snapshot_v}"
+            )
+            timestamp_v = timestamp.signed.version
+            logging.info(
+                f"[scheduled bump] Timestamp version bumped: {timestamp_v}"
             )
 
         return True
