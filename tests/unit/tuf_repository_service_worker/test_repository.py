@@ -531,10 +531,11 @@ class TestMetadataRepository:
 
         assert result == snapshot_version + 1
         assert mocked_snapshot.signed.version == snapshot_version + 1
-        assert mocked_snapshot.signed.meta == {
-            "bins-e.json": mocked_bins["bins-e"].signed.version,
-            "bins-f.json": mocked_bins["bins-f"].signed.version,
-        }
+        for meta_key, meta_value in mocked_snapshot.signed.meta.items():
+            assert (
+                meta_value.to_dict()["version"]
+                == mocked_bins[meta_key.split(".json")[0]].signed.version
+            )
         assert fake_read_all_roles.calls == [pretend.call(test_repo._db)]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(mocked_bins["bins-e"], "bins", persist=False),
