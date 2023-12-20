@@ -1059,8 +1059,8 @@ class MetadataRepository:
             return False
 
         if (snapshot.signed.expires - datetime.now()) < timedelta(
-            hours=self._hours_before_expire or force is True
-        ):
+            hours=self._hours_before_expire
+        ) or force:
             timestamp = self._update_timestamp(self._update_snapshot())
             logging.info(
                 "[scheduled snapshot bump] Snapshot version bumped: "

@@ -2095,7 +2095,7 @@ class TestMetadataRepository:
             },
         }
 
-    def test__run_online_roles_bump_bump_expired(
+    def test__run_online_roles_bump_only_expired(
         self, monkeypatch, test_repo, mocked_datetime, caplog
     ):
         caplog.set_level(repository.logging.INFO)
@@ -2426,6 +2426,54 @@ class TestMetadataRepository:
         assert result is True
         assert test_repo._storage_backend.get.calls == [
             pretend.call("snapshot")
+        ]
+
+    def test_bump_snapshot_check_force_is_acknowledged(
+        self, test_repo, caplog
+    ):
+        # Reproduce a bug where we checked if we need to update snapshot with:
+        # if (snapshot.signed.expires - datetime.now()) < timedelta(
+        #    hours=self._hours_before_expire or True
+        # )
+        # The problem is that `force` is used inside timedelta function call
+        # which could potentially distort the end result.
+
+        # In order to reproduce it we need to have such a high snapshot
+        # expiration date, that this timedelta check cannot be true, but
+        # because we pass "force=True" we expect that snapshot must be updated.
+        # The current situation as described in the previous comment is that
+        # in this case snapshot won't be updated.
+        caplog.set_level(repository.logging.DEBUG)
+        fake_snapshot = pretend.stub(
+            signed=pretend.stub(
+                expires=datetime.datetime(2080, 6, 16, 9, 5, 1),
+                version=87,
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda *a: fake_snapshot
+        )
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda *a: "fake_snapshot"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a: pretend.stub(
+                signed=pretend.stub(
+                    snapshot_meta=pretend.stub(version=79),
+                    version=87,
+                    expires=datetime.datetime(2028, 6, 16, 9, 5, 1),
+                )
+            )
+        )
+
+        result = test_repo.bump_snapshot(force=True)
+        assert result is True
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Snapshot.type)
+        ]
+        assert test_repo._update_snapshot.calls == [pretend.call()]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call("fake_snapshot")
         ]
 
     def test_bump_snapshot_not_found(self, test_repo):
