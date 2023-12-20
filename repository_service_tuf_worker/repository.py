@@ -1007,7 +1007,7 @@ class MetadataRepository:
             for bin in targets_succinct_roles.get_roles():
                 bin_role: Metadata[Targets] = self._storage_backend.get(bin)
                 if (bin_role.signed.expires - datetime.now()) < timedelta(
-                    hours=self._hours_before_expire or force is True
+                    hours=self._hours_before_expire
                 ):
                     bin_roles.append(bin)
 
