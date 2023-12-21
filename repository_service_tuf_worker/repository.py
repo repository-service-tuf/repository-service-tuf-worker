@@ -1178,8 +1178,11 @@ class MetadataRepository:
                 expire (`self._hours_before_expire`)
         """
         logging.debug(f"Configured timeout: {self._timeout}")
-        if self._settings.get_fresh("BOOTSTRAP") is None:
-            logging.info("[automatic_version_bump] No bootstrap, skipping...")
+        bootstrap = self._settings.get_fresh("BOOTSTRAP")
+        if bootstrap is None or "pre-" in bootstrap or "signing-" in bootstrap:
+            logging.info(
+                "[automatic_version_bump] Bootstrap not completed, skipping..."
+            )
             return False
 
         status_lock_targets = False

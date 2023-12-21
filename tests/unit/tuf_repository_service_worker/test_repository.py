@@ -3365,6 +3365,40 @@ class TestMetadataRepository:
             pretend.call("BOOTSTRAP")
         ]
 
+    def test_bump_online_roles_when_inital_bootstrap(
+        self, monkeypatch, test_repo
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "pre-")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        result = test_repo.bump_online_roles()
+        assert result is False
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
+    def test_bump_online_roles_when_bootstrap_signing_process(
+        self, monkeypatch, test_repo
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "signing-")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        result = test_repo.bump_online_roles()
+        assert result is False
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
     def test_bump_online_roles_exception_LockNotOwnedError(
         self, monkeypatch, test_repo
     ):
