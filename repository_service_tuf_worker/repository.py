@@ -331,6 +331,9 @@ class MetadataRepository:
                     version=bins_md.signed.version
                 )
 
+            bins = "".join(target_roles)
+            logging.info(f"Bumped all expired target 'bin' roles: {bins}")
+
         elif bump_all:
             db_target_roles = targets_crud.read_all_roles(self._db)
             for db_role in db_target_roles:
@@ -345,6 +348,7 @@ class MetadataRepository:
                 snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
                     version=bins_md.signed.version
                 )
+            logging.info("Bumped all target 'bin' roles")
 
         if len(db_target_roles) > 0:
             targets_crud.update_roles_version(
@@ -358,6 +362,7 @@ class MetadataRepository:
 
         # update expiry, bump version and persist to the storage
         self._bump_and_persist(snapshot, Snapshot.type)
+        logging.info("Bumped version of 'Snapshot' role")
 
         return snapshot.signed.version
 
@@ -1260,7 +1265,7 @@ class MetadataRepository:
                 False,
                 {
                     "message": "Metadata Update Failed",
-                    "error": "Metadata Update requires a complete bootstrap",
+                    "error": "Metadata Update requires a completed bootstrap",
                 },
             )
 

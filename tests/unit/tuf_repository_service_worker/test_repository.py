@@ -2984,7 +2984,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Failed",
-                "error": "Metadata Update requires a complete bootstrap",
+                "error": "Metadata Update requires a completed bootstrap",
             },
         }
         assert test_repo._settings.get_fresh.calls == [
