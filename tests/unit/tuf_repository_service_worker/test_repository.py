@@ -10,6 +10,7 @@ import pretend
 import pytest
 from celery.exceptions import ChordError
 from celery.result import states
+from securesystemslib.exceptions import StorageError
 from tuf.api.metadata import (
     Metadata,
     MetaFile,
@@ -2143,8 +2144,7 @@ class TestMetadataRepository:
                 )
             )
         )
-        result = test_repo._run_online_roles_bump()
-        assert result is True
+        test_repo._run_online_roles_bump()
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type),
             pretend.call("bin-a"),
@@ -2198,8 +2198,7 @@ class TestMetadataRepository:
                 )
             )
         )
-        result = test_repo._run_online_roles_bump(force=True)
-        assert result is True
+        test_repo._run_online_roles_bump(force=True)
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type),
         ]
@@ -2262,10 +2261,9 @@ class TestMetadataRepository:
                 )
             )
         )
-        result = test_repo._run_online_roles_bump()
+        test_repo._run_online_roles_bump()
         msg = "targets don't use online key, skipping 'Targets' role"
         assert msg == caplog.messages[0]
-        assert result is True
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type),
             pretend.call("bin-a"),
@@ -2315,10 +2313,9 @@ class TestMetadataRepository:
                 )
             )
         )
-        result = test_repo._run_online_roles_bump()
+        test_repo._run_online_roles_bump()
         msg = "No configuration found for TARGETS_ONLINE_KEY"
         assert msg == caplog.messages[0]
-        assert result is True
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type),
             pretend.call("bin-a"),
@@ -2355,8 +2352,7 @@ class TestMetadataRepository:
             else fake_bins
         )
 
-        result = test_repo._run_online_roles_bump()
-        assert result is True
+        test_repo._run_online_roles_bump()
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type),
             pretend.call("bin-a"),
@@ -2370,11 +2366,11 @@ class TestMetadataRepository:
 
     def test__run_online_roles_bump_StorageError(self, test_repo):
         test_repo._storage_backend.get = pretend.raiser(
-            repository.StorageError("Overwrite it")
+            StorageError("Overwrite it")
         )
 
-        result = test_repo._run_online_roles_bump()
-        assert result is False
+        with pytest.raises(StorageError):
+            test_repo._run_online_roles_bump()
 
     def test_bump_snapshot(self, test_repo, mocked_datetime):
         fake_snapshot = pretend.stub(
@@ -2400,8 +2396,7 @@ class TestMetadataRepository:
             )
         )
 
-        result = test_repo.bump_snapshot()
-        assert result is True
+        test_repo.bump_snapshot()
         assert test_repo._storage_backend.get.calls == [
             pretend.call("snapshot")
         ]
@@ -2422,8 +2417,7 @@ class TestMetadataRepository:
             lambda *a: fake_snapshot
         )
 
-        result = test_repo.bump_snapshot()
-        assert result is True
+        test_repo.bump_snapshot()
         assert test_repo._storage_backend.get.calls == [
             pretend.call("snapshot")
         ]
@@ -2466,8 +2460,7 @@ class TestMetadataRepository:
             )
         )
 
-        result = test_repo.bump_snapshot(force=True)
-        assert result is True
+        test_repo.bump_snapshot(force=True)
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Snapshot.type)
         ]
@@ -2477,12 +2470,9 @@ class TestMetadataRepository:
         ]
 
     def test_bump_snapshot_not_found(self, test_repo):
-        test_repo._storage_backend.get = pretend.raiser(
-            repository.StorageError
-        )
-
-        result = test_repo.bump_snapshot()
-        assert result is False
+        test_repo._storage_backend.get = pretend.raiser(StorageError)
+        with pytest.raises(StorageError):
+            test_repo.bump_snapshot()
 
     def test_bump_online_roles(self, monkeypatch, test_repo):
         @contextmanager

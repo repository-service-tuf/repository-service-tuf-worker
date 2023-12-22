@@ -17,10 +17,7 @@ from celery.app.task import Task
 from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
-from securesystemslib.exceptions import (  # type: ignore
-    StorageError,
-    UnverifiedSignatureError,
-)
+from securesystemslib.exceptions import UnverifiedSignatureError
 from securesystemslib.signer import Signature, SSlibKey
 from tuf.api.exceptions import (
     BadVersionNumberError,
@@ -960,7 +957,7 @@ class MetadataRepository:
             },
         )
 
-    def _run_online_roles_bump(self, force: Optional[bool] = False) -> bool:
+    def _run_online_roles_bump(self, force: Optional[bool] = False):
         """
         Bumps version and expiration date of all online roles (`Targets`,
         `Succinct Delegated` targets roles, `Timestamp` and `Snapshot`).
@@ -975,12 +972,7 @@ class MetadataRepository:
             force: force all target roles bump even if they have more than
             `self._hours_before_expire` hours to expire.
         """
-        try:
-            targets: Metadata = self._storage_backend.get(Targets.type)
-        except StorageError:
-            logging.error(f"{Targets.type} not found, not bumping.")
-            return False
-
+        targets: Metadata = self._storage_backend.get(Targets.type)
         timestamp: Metadata
         snapshot_bump = False
         if self._settings.get_fresh("TARGETS_ONLINE_KEY") is None:
@@ -1040,9 +1032,7 @@ class MetadataRepository:
                 f"[scheduled bump] Timestamp version bumped: {timestamp_v}"
             )
 
-        return True
-
-    def bump_snapshot(self, force: Optional[bool] = False) -> bool:
+    def bump_snapshot(self, force: Optional[bool] = False):
         """
         Bumps version and expiration date of TUF 'snapshot' role metadata.
 
@@ -1057,12 +1047,7 @@ class MetadataRepository:
                 expire (`self._hours_before_expire`)
         """
 
-        try:
-            snapshot = self._storage_backend.get(Snapshot.type)
-        except StorageError:
-            logging.error(f"{Snapshot.type} not found, not bumping.")
-            return False
-
+        snapshot = self._storage_backend.get(Snapshot.type)
         if (snapshot.signed.expires - datetime.now()) < timedelta(
             hours=self._hours_before_expire
         ) or force:
@@ -1083,8 +1068,6 @@ class MetadataRepository:
                 f"{snapshot.signed.expires}. More than "
                 f"{self._hours_before_expire} hour, skipping"
             )
-
-        return True
 
     def bump_online_roles(self, force: Optional[bool] = False) -> bool:
         """
