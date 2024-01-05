@@ -82,6 +82,7 @@ class TaskName(str, enum.Enum):
     BOOTSTRAP = "bootstrap"
     UPDATE_SETTINGS = "update_settings"
     PUBLISH_ARTIFACTS = "publish_artifacts"
+    FORCE_ONLINE_METADATA_UPDATE = "force_online_metadata_update"
     METADATA_UPDATE = "metadata_update"
     SIGN_METADATA = "sign_metadata"
     DELETE_SIGN_METADATA = "delete_sign_metadata"
@@ -1210,6 +1211,106 @@ class MetadataRepository:
                 )
 
         return True
+
+    def _run_force_online_metadata_update(
+        self, payload: List[str]
+    ) -> List[str]:
+        "Run the actual metadata update for set of online roles."
+        roles_diff: List[str] = []
+        if Targets.type in payload and "bins" in payload:
+            self._run_online_roles_bump(force=True)
+            roles_diff = [Targets.type, "bins", Snapshot.type, Timestamp.type]
+
+        elif Targets.type in payload or "bins" in payload:
+            if Targets.type in payload:
+                targets = self._storage_backend.get(Targets.type)
+                self._bump_and_persist(targets, Targets.type)
+                logging.info("Bumped version of 'Targets' role")
+                self.bump_snapshot(force=True)
+                roles_diff = [Targets.type, Snapshot.type, Timestamp.type]
+            else:
+                # Bump all bins
+                self._update_timestamp(self._update_snapshot(bump_all=True))
+                roles_diff = ["bins", Snapshot.type, Timestamp.type]
+
+        elif Snapshot.type in payload:
+            self.bump_snapshot(force=True)
+            roles_diff = [Snapshot.type, Timestamp.type]
+
+        elif Timestamp.type in payload:
+            snapshot = self._storage_backend.get(Snapshot.type)
+            self._update_timestamp(snapshot.signed.version)
+            roles_diff = [Timestamp.type]
+
+        return roles_diff
+
+    def force_online_metadata_update(
+        self,
+        payload: Dict[str, Any],
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ) -> Dict[str, Any]:
+        """Force metadata update on given online roles."""
+        bootstrap = self._settings.get_fresh("BOOTSTRAP")
+        if bootstrap is None or "pre-" in bootstrap or "signing-" in bootstrap:
+            return self._task_result(
+                TaskName.FORCE_ONLINE_METADATA_UPDATE,
+                "Force new online metadata update failed",
+                "New metadata updates requre completed bootstrap",
+                details=None,
+            )
+        if len(payload["roles"]) < 1:
+            return self._task_result(
+                TaskName.FORCE_ONLINE_METADATA_UPDATE,
+                "Force new online metadata update failed",
+                error="No online metadata roles given",
+                details=None,
+            )
+
+        # There is a specific order in which we should update the online roles:
+        # 1. targets and all other target roles (like bins)
+        # 2. snapshot
+        # 3. timestamp
+        # If a user requests an update of role from step X, then all other
+        # roles from step X+1, X+2, etc. MUST be updated as well.
+        roles_updated: List[str]
+        status_lock_targets = False
+        # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
+        # documentation.
+        try:
+            with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+                roles_updated = self._run_force_online_metadata_update(
+                    payload["roles"]
+                )
+
+            status_lock_targets = True
+        except redis.exceptions.LockNotOwnedError:
+            # The LockNotOwnedError happens when the task exceeds the timeout,
+            # and another task owns the lock.
+            # If the task time out, the lock is released. If it doesn't finish
+            # properly, it will raise (fail) the task. Otherwise, the ignores
+            # the error because another task didn't lock it.
+            if status_lock_targets is False:
+                error = (
+                    "The task to update online roles exceeded the "
+                    f"timeout of {self._timeout} seconds."
+                )
+                return self._task_result(
+                    TaskName.FORCE_ONLINE_METADATA_UPDATE,
+                    "Force new online metadata update failed",
+                    error,
+                    details=None,
+                )
+
+        return self._task_result(
+            TaskName.FORCE_ONLINE_METADATA_UPDATE,
+            "Force new online metadata update succeeded",
+            error=None,
+            details={
+                "updated_roles": roles_updated,
+            },
+        )
 
     def _trusted_root_update(
         self, current_root: Metadata[Root], new_root: Metadata[Root]
