@@ -10,7 +10,15 @@ import pretend
 import pytest
 from celery.exceptions import ChordError
 from celery.result import states
-from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp
+from securesystemslib.exceptions import StorageError
+from tuf.api.metadata import (
+    Metadata,
+    MetaFile,
+    Root,
+    Snapshot,
+    Targets,
+    Timestamp,
+)
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
@@ -151,7 +159,7 @@ class TestMetadataRepository:
             test_repo.refresh_settings()
 
         assert "No permission /run/secrets/*" in str(e)
-        assert "No permission /run/secrets/*" in caplog.record_tuples[0]
+        assert "No permission /run/secrets/*" == caplog.messages[0]
 
     def test__sign(self, test_repo):
         fake_role = pretend.stub(keyids=["keyid_1"])
@@ -338,14 +346,20 @@ class TestMetadataRepository:
 
     def test__update_snapshot(self, test_repo):
         snapshot_version = 3
+        targets_version = 4
         mocked_snapshot = pretend.stub(
             signed=pretend.stub(
                 meta={},
                 version=snapshot_version,
             )
         )
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(version=targets_version)
+        )
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: mocked_snapshot
+            lambda rolename: mocked_snapshot
+            if rolename == Snapshot.type
+            else mocked_targets
         )
 
         def fake__bump_and_persist(md, role, **kw):
@@ -359,8 +373,12 @@ class TestMetadataRepository:
 
         assert result == snapshot_version + 1
         assert mocked_snapshot.signed.version == snapshot_version + 1
+        assert mocked_snapshot.signed.meta == {
+            "targets.json": MetaFile(version=targets_version)
+        }
         assert test_repo._storage_backend.get.calls == [
-            pretend.call(repository.Roles.SNAPSHOT.value)
+            pretend.call(repository.Roles.SNAPSHOT.value),
+            pretend.call(repository.Roles.TARGETS.value),
         ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(mocked_snapshot, repository.Roles.SNAPSHOT.value)
@@ -374,6 +392,8 @@ class TestMetadataRepository:
         snapshot_version = 3
         bins_a_version = 4
         bins_e_version = 4
+        targets_version = 3
+        # Test that only "bins-e" is updated. "bins-a" doesn't require update.
         mocked_snapshot = pretend.stub(
             signed=pretend.stub(
                 meta={
@@ -386,10 +406,20 @@ class TestMetadataRepository:
         mocked_bins_md = pretend.stub(
             signed=pretend.stub(targets={"k": "v"}, version=bins_e_version)
         )
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(version=targets_version)
+        )
+
+        def get(rolename: str):
+            if rolename == Snapshot.type:
+                return mocked_snapshot
+            elif rolename == Targets.type:
+                return mocked_targets
+            else:
+                return mocked_bins_md
+
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: mocked_snapshot
-            if rolename == "snapshot"
-            else mocked_bins_md
+            lambda rolename: get(rolename)
         )
         fake_bins_e = pretend.stub(
             rolename="bins-e",
@@ -442,6 +472,7 @@ class TestMetadataRepository:
         assert mocked_snapshot.signed.meta == {
             "bins-a.json": bins_a_version,
             "bins-e.json": bins_a_version + 1,
+            "targets.json": targets_version,
         }
         assert mocked_bins_md.signed.targets == {"k1": "f1"}
         assert repository.targets_crud.read_roles_joint_files.calls == [
@@ -456,7 +487,8 @@ class TestMetadataRepository:
             )
         ]
         assert repository.MetaFile.calls == [
-            pretend.call(version=mocked_bins_md.signed.version)
+            pretend.call(version=mocked_bins_md.signed.version),
+            pretend.call(version=mocked_targets.signed.version),
         ]
         assert repository.targets_crud.update_roles_version.calls == [
             pretend.call(
@@ -466,6 +498,7 @@ class TestMetadataRepository:
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Roles.SNAPSHOT.value),
             pretend.call("bins-e"),
+            pretend.call(repository.Roles.TARGETS.value),
         ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(
@@ -479,6 +512,7 @@ class TestMetadataRepository:
 
     def test__update_snapshot_bump_all(self, test_repo, monkeypatch):
         snapshot_version = 3
+        targets_version = 4
         mocked_snapshot = pretend.stub(
             signed=pretend.stub(
                 meta={"bins-e.json": 2, "bins-f.json": 6},
@@ -493,20 +527,28 @@ class TestMetadataRepository:
                 signed=pretend.stub(targets={"k": "v"}, version=6)
             ),
         }
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(version=targets_version)
+        )
+
+        def get(rolename: str):
+            if rolename == Snapshot.type:
+                return mocked_snapshot
+            elif rolename == Targets.type:
+                return mocked_targets
+            else:
+                return mocked_bins[rolename]
+
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: mocked_snapshot
-            if rolename == "snapshot"
-            else mocked_bins[rolename]
+            lambda rolename: get(rolename)
         )
         fake_bins = [
             pretend.stub(rolename="bins-e", id=3),
-            pretend.stub(
-                rolename="bins-f",
-                id=4,
-            ),
+            pretend.stub(rolename="bins-f", id=4),
         ]
         fake_read_all_roles = pretend.call_recorder(lambda *a: fake_bins)
         test_repo._db = pretend.stub()
+        repository.MetaFile = pretend.call_recorder(lambda **kw: kw["version"])
         monkeypatch.setattr(
             repository.targets_crud,
             "read_all_roles",
@@ -526,21 +568,26 @@ class TestMetadataRepository:
             "update_roles_version",
             fake_update_roles_version,
         )
-        targets = ["bins-e", "bins-f"]
-        result = test_repo._update_snapshot(targets, bump_all=True)
+        result = test_repo._update_snapshot(bump_all=True)
 
         assert result == snapshot_version + 1
         assert mocked_snapshot.signed.version == snapshot_version + 1
-        for meta_key, meta_value in mocked_snapshot.signed.meta.items():
-            assert (
-                meta_value.to_dict()["version"]
-                == mocked_bins[meta_key.split(".json")[0]].signed.version
-            )
+        assert mocked_snapshot.signed.meta == {
+            "bins-e.json": mocked_bins["bins-e"].signed.version,
+            "bins-f.json": mocked_bins["bins-f"].signed.version,
+            "targets.json": mocked_targets.signed.version,
+        }
         assert fake_read_all_roles.calls == [pretend.call(test_repo._db)]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(mocked_bins["bins-e"], "bins", persist=False),
             pretend.call(mocked_bins["bins-f"], "bins", persist=False),
             pretend.call(mocked_snapshot, "snapshot"),
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Snapshot.type),
+            pretend.call("bins-e"),
+            pretend.call("bins-f"),
+            pretend.call(Targets.type),
         ]
         assert test_repo._persist.calls == [
             pretend.call(mocked_bins["bins-e"], "bins-e"),
@@ -548,6 +595,11 @@ class TestMetadataRepository:
         ]
         assert fake_update_roles_version.calls == [
             pretend.call(test_repo._db, [3, 4])
+        ]
+        assert repository.MetaFile.calls == [
+            pretend.call(version=mocked_bins["bins-e"].signed.version),
+            pretend.call(version=mocked_bins["bins-f"].signed.version),
+            pretend.call(version=mocked_targets.signed.version),
         ]
 
     def test__get_path_succinct_role(self, test_repo):
@@ -573,7 +625,7 @@ class TestMetadataRepository:
             == [pretend.call("v0.0.1/test_path.tar.gz")]
         )
         assert test_repo._storage_backend.get.calls == [
-            pretend.call("targets")
+            pretend.call(Targets.type)
         ]
 
     def test__update_task(self, test_repo, mocked_datetime):
@@ -2044,9 +2096,10 @@ class TestMetadataRepository:
             },
         }
 
-    def test__run_online_roles_bump(
-        self, monkeypatch, test_repo, mocked_datetime
+    def test__run_online_roles_bump_only_expired(
+        self, monkeypatch, test_repo, mocked_datetime, caplog
     ):
+        caplog.set_level(repository.logging.INFO)
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
@@ -2065,28 +2118,76 @@ class TestMetadataRepository:
             )
         )
 
-        def mocked_get(role):
-            if role == "targets":
-                return fake_targets
-            else:
-                return fake_bins
-
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda r: mocked_get(r)
+            lambda rolename: fake_targets
+            if rolename == Targets.type
+            else fake_bins
         )
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: True)
+            get_fresh=pretend.call_recorder(lambda a: True)
         )
         monkeypatch.setattr(
             repository,
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        test_repo._bump_and_persist = pretend.call_recorder(
-            lambda *a, **kw: None
-        )
+        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
-            lambda *a, **kw: "fake_snapshot"
+            lambda **kw: "fake_snapshot"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda a: pretend.stub(
+                signed=pretend.stub(
+                    snapshot_meta=pretend.stub(version=79),
+                    version=87,
+                    expires=datetime.datetime(2028, 6, 16, 9, 5, 1),
+                )
+            )
+        )
+        test_repo._run_online_roles_bump()
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Targets.type),
+            pretend.call("bin-a"),
+        ]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(fake_targets, Targets.type),
+        ]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=["bin-a"])
+        ]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call("fake_snapshot")
+        ]
+        assert "Bumped version of 'Targets' role" == caplog.messages[0]
+        msg_2 = "Bumped versions of expired bin roles: bin-a"
+        assert msg_2 == caplog.messages[1]
+        assert "Snapshot version bumped: 79" in caplog.messages[2]
+        assert "Timestamp version bumped: 87" in caplog.messages[3]
+
+    def test__run_online_roles_bump_force(
+        self, monkeypatch, test_repo, caplog
+    ):
+        caplog.set_level(repository.logging.INFO)
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                version=1,
+            )
+        )
+
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda a: fake_targets
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: True)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda **kw: "fake_snapshot"
         )
         test_repo._update_timestamp = pretend.call_recorder(
             lambda *a: pretend.stub(
@@ -2097,23 +2198,26 @@ class TestMetadataRepository:
                 )
             )
         )
-        result = test_repo._run_online_roles_bump()
-        assert result is True
+        test_repo._run_online_roles_bump(force=True)
         assert test_repo._storage_backend.get.calls == [
-            pretend.call("targets"),
-            pretend.call("bin-a"),
+            pretend.call(Targets.type),
         ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(fake_targets, Targets.type),
         ]
         assert test_repo._update_snapshot.calls == [
-            pretend.call(["targets", "bin-a"], bump_all=True)
+            pretend.call(bump_all=True)
         ]
         assert test_repo._update_timestamp.calls == [
             pretend.call("fake_snapshot")
         ]
+        assert "Bumped version of 'Targets' role" == caplog.messages[0]
+        msg_2 = "Targets and delegated Targets roles version bumped"
+        assert msg_2 == caplog.messages[1]
+        assert "Snapshot version bumped: 79" in caplog.messages[2]
+        assert "Timestamp version bumped: 87" in caplog.messages[3]
 
-    def test__run_online_roles_bump_target_no_online_keys(
+    def test__run_online_roles_bump_target_targets_online_key_config_false(
         self, monkeypatch, caplog, test_repo, mocked_datetime
     ):
         caplog.set_level(repository.logging.WARNING)
@@ -2124,25 +2228,18 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=mocked_datetime.now(),
-                version=1,
             )
         )
-
         fake_bins = pretend.stub(
             signed=pretend.stub(
                 targets={}, version=6, expires=mocked_datetime.now()
             )
         )
 
-        def mocked_get(role):
-            if role == "targets":
-                return fake_targets
-            else:
-                return fake_bins
-
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda r: mocked_get(r)
+            lambda rolename: fake_targets
+            if rolename == Targets.type
+            else fake_bins
         )
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: False)
@@ -2153,7 +2250,7 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         test_repo._update_snapshot = pretend.call_recorder(
-            lambda *a, **kw: "fake_snapshot"
+            lambda **kw: "fake_snapshot"
         )
         test_repo._update_timestamp = pretend.call_recorder(
             lambda *a: pretend.stub(
@@ -2164,18 +2261,15 @@ class TestMetadataRepository:
                 )
             )
         )
-        result = test_repo._run_online_roles_bump()
-        assert (
-            "targets don't use online key, skipping 'Targets' role"
-            in caplog.record_tuples[0]
-        )
-        assert result is True
+        test_repo._run_online_roles_bump()
+        msg = "targets don't use online key, skipping 'Targets' role"
+        assert msg == caplog.messages[0]
         assert test_repo._storage_backend.get.calls == [
-            pretend.call("targets"),
+            pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
         assert test_repo._update_snapshot.calls == [
-            pretend.call(["bin-a"], bump_all=True)
+            pretend.call(target_roles=["bin-a"])
         ]
         assert test_repo._update_timestamp.calls == [
             pretend.call("fake_snapshot")
@@ -2192,8 +2286,6 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=mocked_datetime.now(),
-                version=1,
             )
         )
 
@@ -2203,14 +2295,10 @@ class TestMetadataRepository:
             )
         )
 
-        def mocked_get(role):
-            if role == "targets":
-                return fake_targets
-            else:
-                return fake_bins
-
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda r: mocked_get(r)
+            lambda rolename: fake_targets
+            if rolename == Targets.type
+            else fake_bins
         )
         test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
@@ -2225,24 +2313,23 @@ class TestMetadataRepository:
                 )
             )
         )
-        result = test_repo._run_online_roles_bump()
-        assert (
-            "No configuration found for TARGETS_ONLINE_KEY"
-            in caplog.record_tuples[0]
-        )
-        assert result is True
+        test_repo._run_online_roles_bump()
+        msg = "No configuration found for TARGETS_ONLINE_KEY"
+        assert msg == caplog.messages[0]
         assert test_repo._storage_backend.get.calls == [
-            pretend.call("targets"),
+            pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
         assert test_repo._update_snapshot.calls == [
-            pretend.call(["bin-a"], bump_all=True)
+            pretend.call(target_roles=["bin-a"])
         ]
         assert test_repo._update_timestamp.calls == [
             pretend.call("fake_snapshot")
         ]
 
-    def test__run_online_roles_bump_no_changes(self, test_repo):
+    def test__run_online_roles_bump_no_changes(self, test_repo, caplog):
+        caplog.set_level(repository.logging.DEBUG)
+        fake_time = datetime.datetime(2054, 6, 16, 8, 5, 1)
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
@@ -2250,40 +2337,40 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=datetime.datetime(2054, 6, 16, 8, 5, 1),
+                expires=fake_time,
                 version=1,
             )
         )
 
-        fake_time = datetime.datetime(2054, 6, 16, 8, 5, 1)
         fake_bins = pretend.stub(
             signed=pretend.stub(targets={}, version=6, expires=fake_time)
         )
 
-        def mocked_get(role):
-            if role == "targets":
-                return fake_targets
-            else:
-                return fake_bins
-
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda r: mocked_get(r)
+            lambda rolename: fake_targets
+            if rolename == Targets.type
+            else fake_bins
         )
 
-        result = test_repo._run_online_roles_bump()
-        assert result is True
+        test_repo._run_online_roles_bump()
         assert test_repo._storage_backend.get.calls == [
-            pretend.call("targets"),
+            pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
+        msg_1 = "No configuration found for TARGETS_ONLINE_KEY"
+        assert msg_1 == caplog.messages[0]
+        msg_2 = "All bin roles have more than 1 hour(s) to expire, skipping"
+        assert msg_2 in caplog.messages[1]
+        assert "Snapshot version bumped:" not in caplog.messages
+        assert "Timestamp version bumped:" not in caplog.messages
 
     def test__run_online_roles_bump_StorageError(self, test_repo):
         test_repo._storage_backend.get = pretend.raiser(
-            repository.StorageError("Overwrite it")
+            StorageError("Overwrite it")
         )
 
-        result = test_repo._run_online_roles_bump()
-        assert result is False
+        with pytest.raises(StorageError):
+            test_repo._run_online_roles_bump()
 
     def test_bump_snapshot(self, test_repo, mocked_datetime):
         fake_snapshot = pretend.stub(
@@ -2309,8 +2396,7 @@ class TestMetadataRepository:
             )
         )
 
-        result = test_repo.bump_snapshot()
-        assert result is True
+        test_repo.bump_snapshot()
         assert test_repo._storage_backend.get.calls == [
             pretend.call("snapshot")
         ]
@@ -2331,19 +2417,62 @@ class TestMetadataRepository:
             lambda *a: fake_snapshot
         )
 
-        result = test_repo.bump_snapshot()
-        assert result is True
+        test_repo.bump_snapshot()
         assert test_repo._storage_backend.get.calls == [
             pretend.call("snapshot")
         ]
 
-    def test_bump_snapshot_not_found(self, test_repo):
-        test_repo._storage_backend.get = pretend.raiser(
-            repository.StorageError
+    def test_bump_snapshot_check_force_is_acknowledged(
+        self, test_repo, caplog
+    ):
+        # Reproduce a bug where we checked if we need to update snapshot with:
+        # if (snapshot.signed.expires - datetime.now()) < timedelta(
+        #    hours=self._hours_before_expire or True
+        # )
+        # The problem is that `force` is used inside timedelta function call
+        # which could potentially distort the end result.
+
+        # In order to reproduce it we need to have such a high snapshot
+        # expiration date, that this timedelta check cannot be true, but
+        # because we pass "force=True" we expect that snapshot must be updated.
+        # The current situation as described in the previous comment is that
+        # in this case snapshot won't be updated.
+        caplog.set_level(repository.logging.DEBUG)
+        fake_snapshot = pretend.stub(
+            signed=pretend.stub(
+                expires=datetime.datetime(2080, 6, 16, 9, 5, 1),
+                version=87,
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda *a: fake_snapshot
+        )
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda *a: "fake_snapshot"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a: pretend.stub(
+                signed=pretend.stub(
+                    snapshot_meta=pretend.stub(version=79),
+                    version=87,
+                    expires=datetime.datetime(2028, 6, 16, 9, 5, 1),
+                )
+            )
         )
 
-        result = test_repo.bump_snapshot()
-        assert result is False
+        test_repo.bump_snapshot(force=True)
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Snapshot.type)
+        ]
+        assert test_repo._update_snapshot.calls == [pretend.call()]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call("fake_snapshot")
+        ]
+
+    def test_bump_snapshot_not_found(self, test_repo):
+        test_repo._storage_backend.get = pretend.raiser(StorageError)
+        with pytest.raises(StorageError):
+            test_repo.bump_snapshot()
 
     def test_bump_online_roles(self, monkeypatch, test_repo):
         @contextmanager
@@ -2845,7 +2974,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "details": {
                 "message": "Metadata Update Failed",
-                "error": "Metadata Update requires a complete bootstrap",
+                "error": "Metadata Update requires a completed bootstrap",
             },
         }
         assert test_repo._settings.get_fresh.calls == [
