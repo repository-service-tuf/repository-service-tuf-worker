@@ -26,6 +26,46 @@ from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
 
 
+class TestRoles:
+    def test_roles_online_roles_method(self, monkeypatch):
+        fake_settings = pretend.stub(
+            reload=pretend.call_recorder(lambda: None),
+            get_fresh=pretend.call_recorder(lambda *a: True),
+        )
+        fake_get_worker_settings = pretend.call_recorder(lambda: fake_settings)
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.get_worker_settings",
+            fake_get_worker_settings,
+        )
+
+        result = repository.Roles.online_roles()
+        assert result == [Targets.type, Snapshot.type, Timestamp.type, "bins"]
+        assert fake_settings.reload.calls == [pretend.call()]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_ONLINE_KEY", True)
+        ]
+        assert fake_get_worker_settings.calls == [pretend.call()]
+
+    def test_roles_online_roles_method_targets_is_online(self, monkeypatch):
+        fake_settings = pretend.stub(
+            reload=pretend.call_recorder(lambda: None),
+            get_fresh=pretend.call_recorder(lambda *a: False),
+        )
+        fake_get_worker_settings = pretend.call_recorder(lambda: fake_settings)
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.repository.get_worker_settings",
+            fake_get_worker_settings,
+        )
+
+        result = repository.Roles.online_roles()
+        assert result == [Snapshot.type, Timestamp.type, "bins"]
+        assert fake_settings.reload.calls == [pretend.call()]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_ONLINE_KEY", True)
+        ]
+        assert fake_get_worker_settings.calls == [pretend.call()]
+
+
 class TestMetadataRepository:
     def test_basic_init(self, monkeypatch):
         fake_configure = pretend.call_recorder(lambda *a: None)
@@ -3662,23 +3702,44 @@ class TestMetadataRepository:
         mocked_datetime,
     ):
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: "123")
+            get_fresh=pretend.call_recorder(lambda a: "123")
         )
         monkeypatch.setattr(
             repository,
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        result = test_repo.force_online_metadata_update({"roles": []})
+
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+        test_repo._run_force_online_metadata_update = pretend.call_recorder(
+            lambda a: [Targets.type, Snapshot.type, Timestamp.type, "bins"]
+        )
+        payload = {"roles": []}
+        result = test_repo.force_online_metadata_update(payload)
+        expected_roles = [Targets.type, Snapshot.type, Timestamp.type, "bins"]
         assert result == {
             "task": repository.TaskName.FORCE_ONLINE_METADATA_UPDATE,
-            "status": False,
-            "message": "Force new online metadata update failed",
-            "error": "No online metadata roles given",
-            "details": None,
+            "status": True,
+            "message": "Force new online metadata update succeeded",
+            "error": None,
+            "details": {
+                "updated_roles": expected_roles,
+            },
             "last_update": mocked_datetime.now(),
         }
         assert fake_settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._redis.lock.calls == [
+            pretend.call(repository.LOCK_TARGETS, timeout=test_repo._timeout)
+        ]
+        assert test_repo._run_force_online_metadata_update.calls == [
+            pretend.call(expected_roles)
+        ]
 
     def test__force_online_metadata_update_timeout(
         self, test_repo, monkeypatch, mocked_datetime
