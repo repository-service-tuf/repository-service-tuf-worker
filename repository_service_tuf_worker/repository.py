@@ -61,7 +61,13 @@ class Roles(enum.Enum):
 
     @staticmethod
     def online_roles() -> List[str]:
-        return [Targets.type, Snapshot.type, Timestamp.type, "bins"]
+        online_roles = [Targets.type, Snapshot.type, Timestamp.type, "bins"]
+        settings_repository = get_worker_settings()
+        settings_repository.reload()
+        if not settings_repository.get_fresh("TARGETS_ONLINE_KEY", True):
+            online_roles = [Snapshot.type, Timestamp.type, "bins"]
+
+        return online_roles
 
 
 ALL_REPOSITORY_ROLES_NAMES = [rolename.value for rolename in Roles]
@@ -1162,14 +1168,8 @@ class MetadataRepository:
                     "error": "New metadata updates requre completed bootstrap",
                 },
             )
-        if len(payload["roles"]) < 1:
-            return self._task_result(
-                TaskName.FORCE_ONLINE_METADATA_UPDATE,
-                True,
-                {
-                    "message": "No online metadata roles given",
-                },
-            )
+        if len(payload["roles"]) == 0:
+            payload["roles"] = Roles.online_roles()
 
         # There is a specific order in which we should update the online roles:
         # 1. targets and all other target roles (like bins)
