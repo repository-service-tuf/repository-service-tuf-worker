@@ -94,6 +94,8 @@ class TaskResult:
     task: TaskName
     status: bool
     last_update: datetime
+    message: Optional[str]
+    error: Optional[str]
     details: Dict[str, Any]
 
 
@@ -553,12 +555,19 @@ class MetadataRepository:
 
     @staticmethod
     def _task_result(
-        task: TaskName, status: bool, details: Dict[str, Any]
+        task: TaskName,
+        status: bool,
+        details: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Returns a standardized Task Result to the Result Backend Service"""
+        message = details.pop("message", None) if not status else None
+        error = details.pop("error", None) if not status else None
+
         result = TaskResult(
             task=task,
             status=status,
+            message=message,
+            error=error,
             details=details,
             last_update=datetime.now(),
         )
