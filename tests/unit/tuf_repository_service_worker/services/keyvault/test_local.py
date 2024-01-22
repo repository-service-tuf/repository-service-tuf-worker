@@ -158,13 +158,9 @@ class TestLocalStorageService:
     def test__raw_key_parser_with_invalid_configuration(self):
         service = local.LocalKeyVault("/test/key_vault", "key1.key:pass2")
 
-        with pytest.raises(local.KeyVaultError) as err:
-            service._raw_key_parser(service._path, service._keys)
+        parsed_keys = service._raw_key_parser(service._path, service._keys)
 
-        assert (
-            "No valid keys in configuration 'RSTUF_LOCAL_KEYVAULT_KEYS'"
-            in str(err)
-        )
+        assert not parsed_keys
 
     def test_configure(self):
         test_settings = pretend.stub(
@@ -228,10 +224,9 @@ class TestLocalStorageService:
         local.LocalKeyVault._raw_key_parser = pretend.call_recorder(
             lambda *a: []
         )
-        with pytest.raises(local.KeyVaultError) as err:
-            local.LocalKeyVault.configure(test_settings)
+        key_vault = local.LocalKeyVault.configure(test_settings)
 
-        assert "No valid keys found in the LocalKeyVault" in str(err)
+        assert not key_vault._keys
         assert local.LocalKeyVault._raw_key_parser.calls == [
             pretend.call(
                 test_settings.LOCAL_KEYVAULT_PATH,
@@ -262,7 +257,6 @@ class TestLocalStorageService:
         service = local.LocalKeyVault.configure(test_settings)
         assert isinstance(service, local.LocalKeyVault)
         assert service._path == test_settings.LOCAL_KEYVAULT_PATH
-        assert service._keys == local_keys
         assert caplog.record_tuples == [
             ("root", 40, "Invalid format"),
             ("root", 30, "Failed to load LocalKeyVault key"),
@@ -290,10 +284,9 @@ class TestLocalStorageService:
             local.FormatError("Invalid format")
         )
 
-        with pytest.raises(local.KeyVaultError) as err:
-            local.LocalKeyVault.configure(test_settings)
+        key_vault = local.LocalKeyVault.configure(test_settings)
 
-        assert "No valid keys found in the LocalKeyVault" in str(err)
+        assert not key_vault._keys
 
         assert caplog.record_tuples == [
             ("root", 40, "Invalid format"),

@@ -120,11 +120,6 @@ class LocalKeyVault(IKeyVault):
                 logging.error("Key is invalid")
                 pass
 
-        if len(parsed_keys) == 0:
-            raise KeyVaultError(
-                "No valid keys in configuration 'RSTUF_LOCAL_KEYVAULT_KEYS'"
-            )
-
         return parsed_keys
 
     @classmethod
@@ -135,14 +130,14 @@ class LocalKeyVault(IKeyVault):
         # Check that the online key can be loaded without an error.
         path = settings.LOCAL_KEYVAULT_PATH
         local_keys = cls._raw_key_parser(path, settings.LOCAL_KEYVAULT_KEYS)
-        valid_key_found = False  # we look for at least one key is load
+        valid_keys = []
         for local_key in local_keys:
             local_key_path = os.path.join(path, local_key.file)
             try:
                 import_privatekey_from_file(
                     local_key_path, local_key.type, local_key.password
                 )
-                valid_key_found = True
+                valid_keys.append(local_key)
             except (
                 FormatError,
                 ValueError,
@@ -153,12 +148,10 @@ class LocalKeyVault(IKeyVault):
                 logging.error(str(e))
                 logging.warning("Failed to load LocalKeyVault key")
 
-        if valid_key_found is False:
-            error = KeyVaultError("No valid keys found in the LocalKeyVault")
+        if not valid_keys:
             logging.error("No valid keys found in the LocalKeyVault")
-            raise error
 
-        return cls(path, local_keys)
+        return cls(path, valid_keys)
 
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
