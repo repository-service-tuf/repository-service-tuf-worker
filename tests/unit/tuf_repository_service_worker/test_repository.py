@@ -34,6 +34,16 @@ class TestMetadataRepository:
         test_repo = repository.MetadataRepository()
         assert isinstance(test_repo, repository.MetadataRepository) is True
 
+    def test_init_with_no_keyvault(self, monkeypatch):
+        settings = repository.get_worker_settings()
+        del settings.KEYVAULT_BACKEND
+
+        monkeypatch.setattr(
+            repository, "get_worker_settings", lambda: settings
+        )
+        test_repo = repository.MetadataRepository()
+        assert "KEYVAULT" not in test_repo.refresh_settings()
+
     def test_create_service(self, test_repo):
         assert isinstance(test_repo, repository.MetadataRepository) is True
 
@@ -174,14 +184,14 @@ class TestMetadataRepository:
         test_repo._storage_backend = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_md)
         )
-        test_repo._key_storage_backend = pretend.stub(
+        test_repo._signer_store = pretend.stub(
             get=pretend.call_recorder(lambda *a: "key_signer_1")
         )
 
         test_result = test_repo._sign(fake_md)
 
         assert test_result is None
-        assert test_repo._key_storage_backend.get.calls == [pretend.call({})]
+        assert test_repo._signer_store.get.calls == [pretend.call({})]
         assert fake_md.signatures.clear.calls == [pretend.call()]
         assert test_repo._storage_backend.get.calls == [pretend.call("root")]
         assert fake_md.sign.calls == [
@@ -773,29 +783,18 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         repository.Targets.add_key = pretend.call_recorder(lambda *a: None)
-        repository.SSlibKey.from_securesystemslib_key = pretend.call_recorder(
-            lambda *a: "key"
-        )
         monkeypatch.setattr(
             repository.targets_crud,
             "create_roles",
             pretend.call_recorder(lambda *a: None),
         )
-        fake_online_public_key = pretend.stub(key_dict={"k": "v"})
         test_repo._db = "db_session"
-        test_repo._key_storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_online_public_key
-        )
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._sign = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
 
         result = test_repo._bootstrap_online_roles(fake_root_md)
         assert result is None
-        assert repository.SSlibKey.from_securesystemslib_key.calls == [
-            pretend.call({"k": "v"}),
-            pretend.call({"k": "v"}),
-        ]
         assert repository.targets_crud.create_roles.calls == [
             pretend.call(
                 "db_session",
@@ -809,10 +808,9 @@ class TestMetadataRepository:
                 ],
             )
         ]
-        assert test_repo._key_storage_backend.get.calls == [
-            pretend.call("online_public_key"),
-            pretend.call("online_public_key"),
-        ]
+        for idx, call in enumerate(repository.Targets.add_key.calls):
+            assert call.args[1] == "online_public_key"
+            assert call.args[2] == f"bins-{idx}"
         # Special checks as calls use metadata object instances
 
         # Assert that calls contain two args and 'role' argument is a

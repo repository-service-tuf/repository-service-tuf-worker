@@ -18,7 +18,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import UnverifiedSignatureError
-from securesystemslib.signer import Signature, SSlibKey
+from securesystemslib.signer import Signature
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
@@ -50,6 +50,7 @@ from repository_service_tuf_worker.models import (
     targets_models,
     targets_schema,
 )
+from repository_service_tuf_worker.signer import SignerStore
 
 
 class Roles(enum.Enum):
@@ -105,7 +106,7 @@ class MetadataRepository:
         self._worker_settings: Dynaconf = get_worker_settings()
         app_settings = self.refresh_settings()
         self._storage_backend: IStorage = app_settings.STORAGE
-        self._key_storage_backend: IKeyVault = app_settings.KEYVAULT
+        self._signer_store = SignerStore(app_settings)
         self._db = app_settings.SQL
         self._redis = redis.StrictRedis.from_url(
             self._worker_settings.REDIS_SERVER
@@ -160,7 +161,8 @@ class MetadataRepository:
         IStorage.from_dynaconf(settings)
 
         # keyvault
-        IKeyVault.from_dynaconf(settings)
+        if settings.get("KEYVAULT_BACKEND"):
+            IKeyVault.from_dynaconf(settings)
 
         self._worker_settings = settings
         return settings
@@ -199,7 +201,7 @@ class MetadataRepository:
         # from which role we will get the key.
         keyid: str = root.signed.roles["timestamp"].keyids[0]
         public_key = root.signed.keys[keyid]
-        signer = self._key_storage_backend.get(public_key)
+        signer = self._signer_store.get(public_key)
         role.sign(signer, append=True)
 
     def _persist(self, role: Metadata, role_name: str) -> str:
@@ -519,12 +521,7 @@ class MetadataRepository:
         # sign, add to `Snapshot` meta and persist in the backend storage
         # service.
         for delegated_name in succinct_roles.get_roles():
-            targets.signed.add_key(
-                SSlibKey.from_securesystemslib_key(
-                    self._key_storage_backend.get(public_key).key_dict
-                ),
-                delegated_name,
-            )
+            targets.signed.add_key(public_key, delegated_name)
             bins_role = Metadata(Targets())
             self._bump_expiry(bins_role, BINS)
             self._sign(bins_role)
