@@ -161,7 +161,8 @@ class MetadataRepository:
         IStorage.from_dynaconf(settings)
 
         # keyvault
-        IKeyVault.from_dynaconf(settings)
+        if settings.get("KEYVAULT_BACKEND"):
+            IKeyVault.from_dynaconf(settings)
 
         self._worker_settings = settings
         return settings
