@@ -174,14 +174,14 @@ class TestMetadataRepository:
         test_repo._storage_backend = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_md)
         )
-        test_repo._key_storage_backend = pretend.stub(
+        test_repo._signer_store = pretend.stub(
             get=pretend.call_recorder(lambda *a: "key_signer_1")
         )
 
         test_result = test_repo._sign(fake_md)
 
         assert test_result is None
-        assert test_repo._key_storage_backend.get.calls == [pretend.call({})]
+        assert test_repo._signer_store.get.calls == [pretend.call({})]
         assert fake_md.signatures.clear.calls == [pretend.call()]
         assert test_repo._storage_backend.get.calls == [pretend.call("root")]
         assert fake_md.sign.calls == [
