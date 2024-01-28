@@ -94,7 +94,7 @@ class TaskResult:
     task: TaskName
     status: bool
     last_update: datetime
-    message: Optional[str]
+    message: str
     error: Optional[str]
     details: Dict[str, Any]
 
@@ -557,12 +557,13 @@ class MetadataRepository:
     def _task_result(
         task: TaskName,
         status: bool,
+        message: str,
+        error: Optional[str],
         details: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Returns a standardized Task Result to the Result Backend Service"""
-        message = details.pop("message", None) if not status else None
-        error = details.pop("error", None) if not status else None
-
+        if error:
+            status = True
         result = TaskResult(
             task=task,
             status=status,
@@ -597,10 +598,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.BOOTSTRAP,
                 False,
-                {
-                    "message": "Bootstrap Failed",
-                    "error": "No 'settings' in the payload",
-                },
+                "Bootstrap Failed",
+                "No 'settings' in the payload",
+                {},
             )
 
         root_metadata = payload.get("metadata")
@@ -608,10 +608,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.BOOTSTRAP,
                 False,
-                {
-                    "message": "Bootstrap Failed",
-                    "error": "No 'metadata' in the payload",
-                },
+                "Bootstrap Failed",
+                "No 'metadata' in the payload",
+                {},
             )
 
         bootstrap_status = self._settings.get_fresh("BOOTSTRAP")
@@ -619,10 +618,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.BOOTSTRAP,
                 False,
-                {
-                    "message": "Bootstrap Failed",
-                    "error": f"Bootstrap state is {bootstrap_status}",
-                },
+                "Bootstrap Failed",
+                f"Bootstrap state is {bootstrap_status}",
+                {},
             )
 
         root: Metadata[Root] = Metadata.from_dict(root_metadata[Root.type])
@@ -631,10 +629,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.BOOTSTRAP,
                 False,
-                {
-                    "message": "Bootstrap Failed",
-                    "error": "Metadata requires at least one valid signature",
-                },
+                "Bootstrap Failed",
+                "Metadata requires at least one valid signature",
+                {},
             )
 
         for signature in root.signatures.values():
@@ -643,10 +640,9 @@ class MetadataRepository:
                 return self._task_result(
                     TaskName.BOOTSTRAP,
                     False,
-                    {
-                        "message": "Bootstrap Failed",
-                        "error": "Bootstrap has invalid signature(s)",
-                    },
+                    "Bootstrap Failed",
+                    "Bootstrap has invalid signature(s)",
+                    {},
                 )
 
         # save settings
@@ -667,7 +663,9 @@ class MetadataRepository:
         return self._task_result(
             TaskName.BOOTSTRAP,
             True,
-            {"message": "Bootstrap Processed", "bootstrap": message},
+            "Bootstrap Processed",
+            None,
+            {"bootstrap": message},
         )
 
     def update_settings(
@@ -689,22 +687,19 @@ class MetadataRepository:
         tuf_settings = payload.get("settings")
         if tuf_settings is None:
             status = False
-            details = {
-                "message": "Update Settings Failed",
-                "error": "No 'settings' in the payload",
-            }
+            message = "Update Settings Failed"
+            error = "No 'settings' in the payload"
+            details = {}
         elif tuf_settings.get("expiration") is None:
             status = False
-            details = {
-                "message": "Update Settings Failed",
-                "error": "No 'expiration' in the payload",
-            }
+            message = "Update Settings Failed"
+            error = "No 'expiration' in the payload"
+            details = {}
         elif len(tuf_settings["expiration"]) < 1:
             status = False
-            details = {
-                "message": "Update Settings Failed",
-                "error": "No role provided for expiration policy change",
-            }
+            message = "Update Settings Failed"
+            error = "No role provided for expiration policy change"
+            details = {}
         else:
             logging.info("Updating settings")
             online_roles = Roles.online_roles()
@@ -722,13 +717,20 @@ class MetadataRepository:
                 updated_roles.append(role)
 
             status = True
+            message = "Update Settings Succeded"
+            error = None
             details = {
-                "message": "Update Settings Succeded",
                 "updated_roles": updated_roles,
                 "invalid_roles": invalid_roles,
             }
 
-        return self._task_result(TaskName.UPDATE_SETTINGS, status, details)
+        return self._task_result(
+            TaskName.UPDATE_SETTINGS,
+            status,
+            message,
+            error,
+            details,
+        )
 
     def publish_targets(
         self,
@@ -764,8 +766,9 @@ class MetadataRepository:
                     return self._task_result(
                         TaskName.PUBLISH_TARGETS,
                         True,
+                        "Publish Targets Processed",
+                        None,
                         {
-                            "message": "Publish Targets Processed",
                             "target_roles": None,
                         },
                     )
@@ -794,8 +797,9 @@ class MetadataRepository:
         return self._task_result(
             TaskName.PUBLISH_TARGETS,
             True,
+            "Publish Targets Processed",
+            None,
             {
-                "message": "Publish Targets Processed",
                 "target_roles": bins_targets,
             },
         )
@@ -817,10 +821,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.ADD_TARGETS,
                 False,
-                {
-                    "message": "Adding target(s) Failed",
-                    "error": "No 'targets' in the payload",
-                },
+                "Adding target(s) Failed",
+                "No 'targets' in the payload",
+                {},
             )
 
         # The task id will be used by `_send_publish_targets_task` (sub-task).
@@ -876,8 +879,9 @@ class MetadataRepository:
         return self._task_result(
             TaskName.ADD_TARGETS,
             True,
+            "Target(s) Added",
+            None,
             {
-                "message": "Target(s) Added",
                 "targets": add_targets,
                 "target_roles": update_roles,
             },
@@ -894,10 +898,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.REMOVE_TARGETS,
                 False,
-                {
-                    "message": "Removing target(s) Failed",
-                    "error": "No 'targets' in the payload",
-                },
+                "Removing target(s) Failed",
+                "No 'targets' in the payload",
+                {},
             )
         task_id = payload.get("task_id")
 
@@ -905,10 +908,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.REMOVE_TARGETS,
                 False,
-                {
-                    "message": "Removing target(s) Failed",
-                    "error": "At list one target is required",
-                },
+                "Removing target(s) Failed",
+                "At list one target is required",
+                {},
             )
 
         deleted_targets: List[str] = []
@@ -956,8 +958,9 @@ class MetadataRepository:
         return self._task_result(
             TaskName.REMOVE_TARGETS,
             True,
+            "Target(s) removed",
+            None,
             {
-                "message": "Target(s) removed",
                 "deleted_targets": deleted_targets,
                 "not_found_targets": not_found_targets,
             },
@@ -1154,8 +1157,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.METADATA_UPDATE,
                 True,
+                "Metadata Update Processed",
+                None,
                 {
-                    "message": "Metadata Update Processed",
                     "role": Root.type,
                     "update": (
                         f"Root v{new_root.signed.version} is "
@@ -1173,17 +1177,18 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.METADATA_UPDATE,
                 False,
-                {
-                    "message": "Metadata Update Failed",
-                    "error": f"Failed to verify the trust: {str(err)}",
-                },
+                "Metadata Update Failed",
+                f"Failed to verify the trust: {str(err)}",
+                {},
             )
 
         self._root_metadata_update_finalize(current_root, new_root)
         return self._task_result(
             TaskName.METADATA_UPDATE,
             True,
-            {"message": "Metadata Update Processed", "role": Root.type},
+            "Metadata Update Processed",
+            None,
+            {"role": Root.type},
         )
 
     def _root_metadata_update_finalize(
@@ -1252,10 +1257,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.METADATA_UPDATE,
                 False,
-                {
-                    "message": "Metadata Update Failed",
-                    "error": "Metadata Update requires a completed bootstrap",
-                },
+                "Metadata Update Failed",
+                "Metadata Update requires a completed bootstrap",
+                {},
             )
 
         metadata = payload.get("metadata")
@@ -1263,10 +1267,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.METADATA_UPDATE,
                 False,
-                {
-                    "message": "Metadata Update Failed",
-                    "error": "No 'metadata' in the payload",
-                },
+                "Metadata Update Failed",
+                "No 'metadata' in the payload",
+                {},
             )
 
         if Root.type in metadata:
@@ -1276,10 +1279,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.METADATA_UPDATE,
                 False,
-                {
-                    "message": "Metadata Update Failed",
-                    "error": "Unsupported Metadata type",
-                },
+                "Metadata Update Failed",
+                "Unsupported Metadata type",
+                {},
             )
 
     def metadata_rotation(
@@ -1373,17 +1375,19 @@ class MetadataRepository:
         def _result(status, error=None, bootstrap=None, update=None):
             details = {}
             if status:
-                details["message"] = "Signature Processed"
+                message = "Signature Processed"
             else:
-                details["message"] = "Signature Failed"
+                message = "Signature Failed"
             if error:
-                details["error"] = error
+                error = error
             elif bootstrap:
                 details["bootstrap"] = bootstrap
             elif update:
                 details["update"] = update
 
-            return self._task_result(TaskName.SIGN_METADATA, status, details)
+            return self._task_result(
+                TaskName.SIGN_METADATA, status, message, error, details
+            )
 
         signature = Signature.from_dict(payload["signature"])
         rolename = payload["role"]
@@ -1464,7 +1468,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.DELETE_SIGN_METADATA,
                 False,
-                {"message": msg, "error": "No role provided for deletion."},
+                msg,
+                "No role provided for deletion.",
+                {},
             )
 
         signing_status = self._settings.get_fresh(f"{role.upper()}_SIGNING")
@@ -1472,10 +1478,9 @@ class MetadataRepository:
             return self._task_result(
                 TaskName.DELETE_SIGN_METADATA,
                 False,
-                {
-                    "message": f"Deletion of {role} metadata failed.",
-                    "error": f"The {role} role is not in a signing process.",
-                },
+                f"Deletion of {role} metadata failed.",
+                f"The {role} role is not in a signing process.",
+                {},
             )
 
         self.write_repository_settings(f"{role.upper()}_SIGNING", None)
@@ -1490,8 +1495,9 @@ class MetadataRepository:
                 return self._task_result(
                     TaskName.DELETE_SIGN_METADATA,
                     True,
+                    msg,
+                    None,
                     {
-                        "message": msg,
                         "bootstrap": "Bootstrap process has been stopped",
                     },
                 )
@@ -1499,5 +1505,7 @@ class MetadataRepository:
         return self._task_result(
             TaskName.DELETE_SIGN_METADATA,
             True,
-            {"message": msg},
+            msg,
+            None,
+            {},
         )
