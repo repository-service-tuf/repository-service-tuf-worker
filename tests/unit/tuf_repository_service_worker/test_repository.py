@@ -664,9 +664,11 @@ class TestMetadataRepository:
             pretend.call(
                 state="RUNNING",
                 meta={
-                    "published_roles": ["bin-e"],
-                    "roles_to_publish": "['bin-e', 'bin-f']",
-                    "status": "Publishing",
+                    "details": {
+                        "published_roles": ["bin-e"],
+                        "roles_to_publish": "['bin-e', 'bin-f']",
+                    },
+                    "message": "Publishing",
                     "last_update": mocked_datetime.now(),
                     "exc_type": None,
                     "exc_message": None,
@@ -705,9 +707,11 @@ class TestMetadataRepository:
             pretend.call(
                 state=states.FAILURE,
                 meta={
-                    "published_roles": ["bin-e"],
-                    "roles_to_publish": "['bin-e', 'bin-f']",
-                    "status": "Publishing",
+                    "details": {
+                        "published_roles": ["bin-e"],
+                        "roles_to_publish": "['bin-e', 'bin-f']",
+                    },
+                    "message": "Publishing",
                     "last_update": mocked_datetime.now(),
                     "exc_type": "PermissionError",
                     "exc_message": ["failed to write in the storage"],
@@ -912,7 +916,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Update Settings Failed",
             "error": "No 'settings' in the payload",
-            "details": {},
+            "details": None,
         }
 
     def test_update_settings_no_expiration(self, test_repo, mocked_datetime):
@@ -923,7 +927,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Update Settings Failed",
             "error": "No 'expiration' in the payload",
-            "details": {},
+            "details": None,
         }
 
     def test_update_settings_no_role_in_expiration(
@@ -938,7 +942,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Update Settings Failed",
             "error": "No role provided for expiration policy change",
-            "details": {},
+            "details": None,
         }
 
     def test_update_settings_no_valid_role_in_expiration(
@@ -1138,7 +1142,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Bootstrap Failed",
             "error": "Metadata requires at least one valid signature",
-            "details": {},
+            "details": None,
         }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -1200,7 +1204,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Bootstrap Failed",
             "error": "Bootstrap has invalid signature(s)",
-            "details": {},
+            "details": None,
         }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -1325,7 +1329,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Bootstrap Failed",
             "error": "Bootstrap state is signing-task_id",
-            "details": {},
+            "details": None,
         }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -1349,7 +1353,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Bootstrap Failed",
             "error": "No 'settings' in the payload",
-            "details": {},
+            "details": None,
         }
         assert test_repo.write_repository_settings.calls == []
 
@@ -1369,7 +1373,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Bootstrap Failed",
             "error": "No 'metadata' in the payload",
-            "details": {},
+            "details": None,
         }
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
@@ -1397,9 +1401,9 @@ class TestMetadataRepository:
         test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
-        test_result = test_repo.publish_targets()
+        result = test_repo.publish_targets()
 
-        assert test_result == {
+        assert result == {
             "task": "publish_targets",
             "status": True,
             "last_update": mocked_datetime.now(),
@@ -1444,9 +1448,9 @@ class TestMetadataRepository:
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
         payload = {"bins_targets": None}
-        test_result = test_repo.publish_targets(payload)
+        result = test_repo.publish_targets(payload)
 
-        assert test_result == {
+        assert result == {
             "task": "publish_targets",
             "status": True,
             "last_update": mocked_datetime.now(),
@@ -1504,8 +1508,8 @@ class TestMetadataRepository:
             fake_crud_read_roles_with_unpublished_files,
         )
 
-        test_result = test_repo.publish_targets()
-        assert test_result == {
+        result = test_repo.publish_targets()
+        assert result == {
             "task": "publish_targets",
             "status": True,
             "last_update": mocked_datetime.now(),
@@ -1727,7 +1731,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Adding target(s) Failed",
             "error": "No 'targets' in the payload",
-            "details": {},
+            "details": None,
         }
 
     def test_add_targets_skip_publishing(
@@ -2081,7 +2085,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Removing target(s) Failed",
             "error": "No 'targets' in the payload",
-            "details": {},
+            "details": None,
         }
 
     def test_remove_targets_empty_targets(self, test_repo, mocked_datetime):
@@ -2095,7 +2099,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Removing target(s) Failed",
             "error": "At list one target is required",
-            "details": {},
+            "details": None,
         }
 
     def test__run_online_roles_bump_only_expired(
@@ -2761,7 +2765,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Failed",
             "error": "Failed to verify the trust: Version v3 instead v2",
-            "details": {},
+            "details": None,
         }
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
@@ -2923,7 +2927,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Failed",
             "error": "Unsupported Metadata type",
-            "details": {},
+            "details": None,
         }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -2950,7 +2954,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Failed",
             "error": "No 'metadata' in the payload",
-            "details": {},
+            "details": None,
         }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -2976,7 +2980,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Failed",
             "error": "Metadata Update requires a completed bootstrap",
-            "details": {},
+            "details": None,
         }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -3224,7 +3228,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Signature Failed",
             "error": f"No signatures pending for {payload['role']}",
-            "details": {},
+            "details": None,
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -3265,7 +3269,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Signature Failed",
             "error": "Expected 'root', got 'targets'",
-            "details": {},
+            "details": None,
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -3310,7 +3314,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Signature Failed",
             "error": "Invalid signature",
-            "details": {},
+            "details": None,
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -3407,7 +3411,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Signature Failed",
             "error": "Expected 'root', got 'foo'",
-            "details": {},
+            "details": None,
         }
 
     def test_sign_metadata__update__invalid_signature(
@@ -3460,7 +3464,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Signature Failed",
             "error": "Invalid signature",
-            "details": {},
+            "details": None,
         }
 
     def test_sign_metadata__update__invalid_threshold__trusted_and_new(
@@ -3754,12 +3758,14 @@ class TestMetadataRepository:
         )
 
         result = test_repo.delete_sign_metadata({"role": "root"})
-        msg = "Deletion of root metadata successful, signing process stopped"
+        message = (
+            "Deletion of root metadata successful, signing process stopped"
+        )
         assert result == {
             "task": "delete_sign_metadata",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": msg,
+            "message": message,
             "error": None,
             "details": {
                 "bootstrap": "Bootstrap process has been stopped",
@@ -3800,14 +3806,16 @@ class TestMetadataRepository:
         )
 
         result = test_repo.delete_sign_metadata({"role": "root"})
-        msg = "Deletion of root metadata successful, signing process stopped"
+        message = (
+            "Deletion of root metadata successful, signing process stopped"
+        )
         assert result == {
             "task": "delete_sign_metadata",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": msg,
+            "message": message,
             "error": None,
-            "details": {},
+            "details": None,
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -3840,14 +3848,16 @@ class TestMetadataRepository:
         )
 
         result = test_repo.delete_sign_metadata({"role": "targets"})
-        m = "Deletion of targets metadata successful, signing process stopped"
+        message = (
+            "Deletion of targets metadata successful, signing process stopped"
+        )
         assert result == {
             "task": "delete_sign_metadata",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": m,
+            "message": message,
             "error": None,
-            "details": {},
+            "details": None,
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("TARGETS_SIGNING"),
@@ -3882,7 +3892,7 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Deletion of root metadata failed.",
             "error": "The root role is not in a signing process.",
-            "details": {},
+            "details": None,
         }
         assert fake_settings.get_fresh.calls == [
             pretend.call("ROOT_SIGNING"),
@@ -3898,5 +3908,5 @@ class TestMetadataRepository:
             "last_update": mocked_datetime.now(),
             "message": "Deletion of metadata pending signatures failed",
             "error": "No role provided for deletion.",
-            "details": {},
+            "details": None,
         }
