@@ -29,6 +29,14 @@ repository\_service\_tuf\_worker.repository module
    :undoc-members:
    :show-inheritance:
 
+repository\_service\_tuf\_worker.signer module
+----------------------------------------------
+
+.. automodule:: repository_service_tuf_worker.signer
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
