@@ -52,6 +52,7 @@ jobs:
       with:
         context: .
         push: true
+        platforms: linux/amd64,linux/arm64
         tags: |
           ghcr.io/repository-service-tuf/repository-service-tuf-worker:${{ inputs.image_version }}
         build-args: |
