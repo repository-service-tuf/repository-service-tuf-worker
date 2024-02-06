@@ -10,7 +10,7 @@ import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from math import log
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Iterator, List, Literal, Optional
 
 import redis
 from celery.app.task import Task
@@ -18,7 +18,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import UnverifiedSignatureError
-from securesystemslib.signer import Signature
+from securesystemslib.signer import Key, Signature
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
@@ -27,6 +27,7 @@ from tuf.api.exceptions import (
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
     TOP_LEVEL_ROLE_NAMES,
+    DelegatedRole,
     Delegations,
     Metadata,
     MetaFile,
@@ -493,15 +494,15 @@ class MetadataRepository:
         self.write_repository_settings("TARGETS_ONLINE_KEY", True)
 
         if settings["roles"].get("bins"):
-            info = settings["roles"]["bins"]
+            bins = settings["roles"]["bins"]
             self.write_repository_settings(
-                "BINS_EXPIRATION", info["expiration"]
+                "BINS_EXPIRATION", bins["expiration"]
             )
             self.write_repository_settings("BINS_THRESHOLD", 1)
             self.write_repository_settings("BINS_NUM_KEYS", 1)
             self.write_repository_settings(
                 "NUMBER_OF_DELEGATED_BINS",
-                info["number_of_delegated_bins"],
+                bins["number_of_delegated_bins"],
             )
 
         else:
@@ -518,53 +519,93 @@ class MetadataRepository:
                     delegated_roles[deleg_name]["path_patterns"],
                 )
 
-    def _bootstrap_online_roles(self, root: Metadata[Root]):
+    def _setup_targets_delegations(
+        self,
+        online_pub_key: Key,
+        targets: Metadata[Targets],
+        custom_targets: Optional[Dict[str, Any]] = None,
+    ):
+        """Setup target delegations no matter if succinct hash bin or custom"""
+        if custom_targets:
+            # Using custom Target roles delegations with path prefixes.
+            targets.signed.delegations = Delegations({}, {})
+            for role_name, role_info in custom_targets.items():
+                keyid = online_pub_key.keyid
+                targets.signed.delegations.roles[role_name] = DelegatedRole(
+                    role_name, [keyid], 1, True, role_info["path_prefixes"]
+                )
+                targets.signed.add_key(online_pub_key, role_name)
+                custom_target = Metadata(Targets())
+                self._bump_expiry(custom_target, role_name)
+                self._sign(custom_target)
+                self._persist(custom_target, role_name)
+        else:
+            # Using succinct hash bin delegations.
+            # Calculate the bit length (Number of bits between 1 and 32)
+            # Calculate the bit length (Number of bits between 1 and 32)
+            bit_length = int(
+                log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"), 2)
+            )
+            # Succinct delegated roles (`bins`)
+            succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
+            targets.signed.delegations = Delegations(
+                keys={}, succinct_roles=succinct_roles
+            )
+            # Initialize all succinct delegated roles (`bins`), update expire,
+            # sign, add to `Snapshot` meta and persist in the backend storage
+            # service.
+            for delegated_name in succinct_roles.get_roles():
+                targets.signed.add_key(online_pub_key, delegated_name)
+                bins_role = Metadata(Targets())
+                self._bump_expiry(bins_role, BINS)
+                self._sign(bins_role)
+                self._persist(bins_role, delegated_name)
+
+    def _get_delegation_roles(
+        self, targets: Metadata[Targets]
+    ) -> Iterator[str]:
+        """Get all Targets delegation roles no matter if bins or custom."""
+        if targets.signed.delegations is None:
+            raise ValueError("Targets must have delegation, internal error")
+
+        if targets.signed.delegations.succinct_roles:
+            # Using succinct hash bin delegations.
+            for bin in targets.signed.delegations.succinct_roles.get_roles():
+                yield bin
+        else:
+            # Using custom Target roles delegations with path prefixes.
+            for custom_target_name in targets.signed.delegations.roles.keys():
+                yield custom_target_name
+
+    def _bootstrap_online_roles(
+        self,
+        root: Metadata[Root],
+        custom_targets: Optional[Dict[str, Any]] = None,
+    ):
         """
         Bootstrap the roles that uses the online key
         """
-        _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
-        public_key = root.signed.keys[_keyid]
-
         # Top level roles (`Targets`, `Timestamp``, `Snapshot`) initialization
         targets: Metadata[Targets] = Metadata(Targets())
         snapshot: Metadata[Snapshot] = Metadata(Snapshot())
         timestamp: Metadata[Timestamp] = Metadata(Timestamp())
 
-        # Calculate the bit length (Number of bits between 1 and 32)
-        bit_length = int(
-            log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"), 2)
-        )
-        # Succinct delegated roles (`bins`)
-        succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
-        targets.signed.delegations = Delegations(
-            keys={}, succinct_roles=succinct_roles
-        )
-        # Initialize all succinct delegated roles (`bins`), update expire,
-        # sign, add to `Snapshot` meta and persist in the backend storage
-        # service.
-        for delegated_name in succinct_roles.get_roles():
-            targets.signed.add_key(public_key, delegated_name)
-            bins_role = Metadata(Targets())
-            self._bump_expiry(bins_role, BINS)
-            self._sign(bins_role)
-            snapshot.signed.meta[f"{delegated_name}.json"] = MetaFile(
-                version=bins_role.signed.version
-            )
-            self._persist(bins_role, delegated_name)
+        _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
+        public_key = root.signed.keys[_keyid]
+        self._setup_targets_delegations(public_key, targets, custom_targets)
 
-        # Create all Target Roles in the database RSTUFTargetRoles
-        db_target_roles = [
-            targets_schema.RSTUFTargetRoleCreate(
-                rolename=target_role, version=1
+        db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
+        for role_name in self._get_delegation_roles(targets):
+            snapshot.signed.meta[f"{role_name}.json"] = MetaFile()
+
+            db_target_roles.append(
+                targets_schema.RSTUFTargetRoleCreate(
+                    rolename=role_name, version=1
+                )
             )
-            for target_role in succinct_roles.get_roles()
-        ]
+
         targets_crud.create_roles(self._db, db_target_roles)
-
-        # Update `Snapshot` meta with targets
-        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
-            version=targets.signed.version
-        )
+        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile()
 
         # Update expire, sign and persist the top level roles (`Targets`,
         # `Timestamp``, `Snapshot`) in the backend storage service.
@@ -595,13 +636,17 @@ class MetadataRepository:
         )
         return asdict(result)
 
-    def _bootstrap_finalize(self, root: Metadata[Root], task_id: str):
+    def _bootstrap_finalize(
+        self, root: Metadata[Root], task_id: str, settings: Dict[str, Any]
+    ):
         """
         Register the bootstrap finished.
         """
         self._persist(root, Root.type)
         self.write_repository_settings("ROOT_SIGNING", None)
-        self._bootstrap_online_roles(root)
+        self._bootstrap_online_roles(
+            root, settings["roles"].get("delegated_roles")
+        )
         self.write_repository_settings("BOOTSTRAP", task_id)
 
     def bootstrap(
@@ -661,13 +706,26 @@ class MetadataRepository:
                     details=None,
                 )
 
+        custom_targets = tuf_settings["roles"].get("delegated_roles")
+        if custom_targets:
+            if tuf_settings["services"].get("number_of_delegated_bins"):
+                return self._task_result(
+                    TaskName.BOOTSTRAP,
+                    message="Bootstrap Failed",
+                    error=(
+                        "Bootstrap cannot use both hash bin delegation and"
+                        " custom target delegations"
+                    ),
+                    details=None,
+                )
+
         # save settings
         self.save_settings(root, tuf_settings)
         task_id: str = payload["task_id"]
 
         signed = self._validate_threshold(root)
         if signed:
-            self._bootstrap_finalize(root, task_id)
+            self._bootstrap_finalize(root, task_id, tuf_settings)
             message = f"Bootstrap finished {task_id}"
             logging.info(message)
         else:
