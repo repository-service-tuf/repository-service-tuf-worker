@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from pretend import stub
@@ -11,6 +12,7 @@ from securesystemslib.signer import CryptoSigner, Key
 from repository_service_tuf_worker.interfaces import IKeyVault
 from repository_service_tuf_worker.signer import (
     RSTUF_ONLINE_KEY_URI_FIELD,
+    FileNameSigner,
     SignerStore,
 )
 
@@ -90,3 +92,45 @@ class TestSigner:
         signer = store.get(key)
 
         assert isinstance(signer, CryptoSigner)
+
+    def test_get_from_file_name_uri(self, key_metadata):
+        dir_ = _FILES / "pem"
+        uri = "fn:ed25519_private.pem"
+
+        key_metadata[RSTUF_ONLINE_KEY_URI_FIELD] = uri
+        fake_id = "fake_id"
+        key = Key.from_dict(fake_id, key_metadata)
+
+        fake_settings = stub()
+        store = SignerStore(fake_settings)
+
+        with patch.dict(
+            "os.environ", {"RSTUF_ONLINE_KEY_DIR": str(dir_)}, clear=True
+        ):
+            signer = store.get(key)
+
+        assert isinstance(signer, FileNameSigner)
+
+    def test_get_from_file_name_uri_no_filename(self):
+        uri = "fn:"
+        fake_settings = stub()
+        store = SignerStore(fake_settings)
+        fake_key = stub(
+            keyid="fake_id",
+            unrecognized_fields={RSTUF_ONLINE_KEY_URI_FIELD: uri},
+        )
+
+        with pytest.raises(ValueError):
+            store.get(fake_key)
+
+    def test_get_from_file_name_uri_no_envvar(self):
+        uri = "fn:foo.pem"
+        fake_settings = stub()
+        store = SignerStore(fake_settings)
+        fake_key = stub(
+            keyid="fake_id",
+            unrecognized_fields={RSTUF_ONLINE_KEY_URI_FIELD: uri},
+        )
+
+        with patch.dict("os.environ", {}, clear=True), pytest.raises(KeyError):
+            store.get(fake_key)
