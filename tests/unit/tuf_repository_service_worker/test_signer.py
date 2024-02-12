@@ -17,6 +17,20 @@ from repository_service_tuf_worker.signer import (
 _FILES = Path(__file__).parent.parent.parent / "files"
 
 
+@pytest.fixture()
+def key_metadata():
+    return {
+        "keytype": "ed25519",
+        "scheme": "ed25519",
+        "keyval": {
+            "public": (
+                "4f66dabebcf30628963786001984c0b7"
+                "5c175cdcf3bc4855933a2628f0cd0a0f"
+            )
+        },
+    }
+
+
 class TestSigner:
     def test_get_cached(self):
         fake_id = "fake_id"
@@ -63,21 +77,10 @@ class TestSigner:
         with pytest.raises(ValueError):
             store.get(fake_key)
 
-    def test_get_from_file_uri(self):
+    def test_get_from_file_uri(self, key_metadata):
         path = _FILES / "pem" / "ed25519_private.pem"
         uri = f"file:{path}?encrypted=false"
-
-        key_metadata = {
-            "keytype": "ed25519",
-            "scheme": "ed25519",
-            "keyval": {
-                "public": (
-                    "4f66dabebcf30628963786001984c0b7"
-                    "5c175cdcf3bc4855933a2628f0cd0a0f"
-                )
-            },
-            RSTUF_ONLINE_KEY_URI_FIELD: uri,
-        }
+        key_metadata[RSTUF_ONLINE_KEY_URI_FIELD] = uri
 
         fake_id = "fake_id"
         key = Key.from_dict(fake_id, key_metadata)
