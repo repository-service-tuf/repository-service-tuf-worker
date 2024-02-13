@@ -24,7 +24,7 @@ class FileNameSigner(CryptoSigner):
 
     Provide method to load **unencrypted** PKCS8/PEM private key from file.
 
-    File path is constructed by joining base path in envrionment variable
+    File path is constructed by joining base path in environment variable
     ``RSTUF_ONLINE_KEY_DIR`` with file in ``priv_key_uri``.
 
     NOTE: Make sure to use the secrets management service of your deployment
@@ -40,7 +40,7 @@ class FileNameSigner(CryptoSigner):
     Raises:
         KeyError: RSTUF_ONLINE_KEY_DIR environment variable not set
         OSError: file cannot be loaded
-        ValueError: uri has no filenmae, or private key cannot be decoded,
+        ValueError: uri has no file name, or private key cannot be decoded,
                 or type does not match public key
         cryptography.exceptions.UnsupportedAlgorithm: key type not supported
 
