@@ -84,7 +84,8 @@ class SignerStore:
     """Generic signer store."""
 
     def __init__(self, settings: Dynaconf):
-        self._settings = settings
+        # Cache KEYVAULT setting as fallback
+        self._vault = settings.get("KEYVAULT")
         self._signers: dict[str, Signer] = {}
 
     def get(self, key: Key) -> Signer:
@@ -101,12 +102,11 @@ class SignerStore:
                 self._signers[key.keyid] = Signer.from_priv_key_uri(uri, key)
 
             else:
-                vault = self._settings.get("KEYVAULT")
-                if not isinstance(vault, IKeyVault):
+                if not isinstance(self._vault, IKeyVault):
                     raise ValueError(
                         "RSTUF_KEYVAULT_BACKEND is required for online signing"
                     )
 
-                self._signers[key.keyid] = vault.get(key)
+                self._signers[key.keyid] = self._vault.get(key)
 
         return self._signers[key.keyid]
