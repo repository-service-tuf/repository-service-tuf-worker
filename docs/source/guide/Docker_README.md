@@ -232,6 +232,37 @@ service without a keyvault backend, but you need to configure one before the
 
   Example: ``RSTUF_LOCAL_KEYVAULT_KEYS=/run/secrets/ONLINE_KEY_1:/run/secrets/ONLINE_KEY_2``
 
+#### (Optional, *experimental*) `RSTUF_ONLINE_KEY_DIR`
+
+Directory path to online signing key. The setting is required, if the related
+public key metadata includes a field `x-rstuf-online-key-uri` with a value
+`fn:<file name>`. The full path is constructed by joining directory path
+and file name. The expected private key file format is unencrypted PKCS8/PEM.
+
+Make sure to use the secrets management service of your deployment platform to
+protect the private key!
+
+Replaces `RSTUF_KEYVAULT_BACKEND` and related settings.
+
+Example:
+-  `RSTUF_ONLINE_KEY_DIR=/run/secrets`
+- TUF root metadata (part):
+  ```
+  "keys": {
+   "c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc": {
+    "keytype": "ed25519",
+    "keyval": {
+     "public": "4f66dabebcf30628963786001984c0b75c175cdcf3bc4855933a2628f0cd0a0f"
+    },
+    "scheme": "ed25519",
+    "x-rstuf-online-key-uri": "fn:my_online_key"
+   }
+   ...
+  }
+- RSTUF worker expects related private key under  `/run/secrets/my_online_key`
+
+
+
 
 #### (Optional) `RSTUF_WORKER_ID`
 
