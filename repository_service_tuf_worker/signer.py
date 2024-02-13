@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -80,10 +81,32 @@ SIGNER_FOR_URI_SCHEME[CryptoSigner.FILE_URI_SCHEME] = CryptoSigner
 SIGNER_FOR_URI_SCHEME[FileNameSigner.SCHEME] = FileNameSigner
 
 
+@contextmanager
+def isolated_env(env: dict[str, str]):
+    """Temporarily replace environment."""
+    orig_env = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(env)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(orig_env)
+
+
 class SignerStore:
-    """Generic signer store."""
+    """Generic signer store.
+
+    Parses ambient signer settings and provides them in an isolated environment
+    under the expected names.
+    """
 
     def __init__(self, settings: Dynaconf):
+        # Cache known ambient settings
+        self._ambient_settings: dict[str, str] = {}
+        if key_dir := settings.get("ONLINE_KEY_DIR"):
+            self._ambient_settings[FileNameSigner.DIR_VAR] = key_dir
+
         # Cache KEYVAULT setting as fallback
         self._vault = settings.get("KEYVAULT")
         self._signers: dict[str, Signer] = {}
@@ -93,13 +116,18 @@ class SignerStore:
 
         - signer is loaded from the uri included in the passed public key
           (see SIGNER_FOR_URI_SCHEME for available uri schemes)
+        - additional signer settings can be provided "ambiently" (see __init__)
         - RSTUF_KEYVAULT_BACKEND is used as fallback, if no URI is included
 
         """
 
         if key.keyid not in self._signers:
             if uri := key.unrecognized_fields.get(RSTUF_ONLINE_KEY_URI_FIELD):
-                self._signers[key.keyid] = Signer.from_priv_key_uri(uri, key)
+                # (Re-)export ambient settings in isolated environment
+                with isolated_env(self._ambient_settings):
+                    signer = Signer.from_priv_key_uri(uri, key)
+
+                self._signers[key.keyid] = signer
 
             else:
                 if not isinstance(self._vault, IKeyVault):

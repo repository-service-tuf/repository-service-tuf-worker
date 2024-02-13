@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from dynaconf import Dynaconf
 from pretend import stub
 from securesystemslib.signer import CryptoSigner, Key
 
@@ -38,9 +39,9 @@ class TestSigner:
         fake_id = "fake_id"
         fake_signer = stub()
         fake_key = stub(keyid=fake_id)
-        fake_settings = stub()
 
-        store = SignerStore(fake_settings)
+        settings = Dynaconf()
+        store = SignerStore(settings)
         store._signers[fake_id] = fake_signer
 
         assert store.get(fake_key) == fake_signer
@@ -61,9 +62,9 @@ class TestSigner:
         fake_id = "fake_id"
         fake_signer = stub()
         fake_key = stub(keyid=fake_id, unrecognized_fields={})
-        fake_settings = stub(get=lambda x: FakeKeyVault())
 
-        store = SignerStore(fake_settings)
+        settings = Dynaconf(KEYVAULT=FakeKeyVault())
+        store = SignerStore(settings)
 
         assert not store._signers
         assert store.get(fake_key) == fake_signer
@@ -72,9 +73,9 @@ class TestSigner:
     def test_get_no_vault(self):
         fake_id = "fake_id"
         fake_key = stub(keyid=fake_id, unrecognized_fields={})
-        fake_settings = stub(get=lambda x: None)
 
-        store = SignerStore(fake_settings)
+        settings = Dynaconf()
+        store = SignerStore(settings)
 
         with pytest.raises(ValueError):
             store.get(fake_key)
@@ -87,8 +88,8 @@ class TestSigner:
         fake_id = "fake_id"
         key = Key.from_dict(fake_id, key_metadata)
 
-        fake_settings = stub()
-        store = SignerStore(fake_settings)
+        settings = Dynaconf()
+        store = SignerStore(settings)
         signer = store.get(key)
 
         assert isinstance(signer, CryptoSigner)
@@ -101,20 +102,16 @@ class TestSigner:
         fake_id = "fake_id"
         key = Key.from_dict(fake_id, key_metadata)
 
-        fake_settings = stub()
-        store = SignerStore(fake_settings)
-
-        with patch.dict(
-            "os.environ", {"RSTUF_ONLINE_KEY_DIR": str(dir_)}, clear=True
-        ):
-            signer = store.get(key)
+        settings = Dynaconf(ONLINE_KEY_DIR=str(dir_))
+        store = SignerStore(settings)
+        signer = store.get(key)
 
         assert isinstance(signer, FileNameSigner)
 
     def test_get_from_file_name_uri_no_filename(self):
         uri = "fn:"
-        fake_settings = stub()
-        store = SignerStore(fake_settings)
+        settings = Dynaconf()
+        store = SignerStore(settings)
         fake_key = stub(
             keyid="fake_id",
             unrecognized_fields={RSTUF_ONLINE_KEY_URI_FIELD: uri},
@@ -125,8 +122,8 @@ class TestSigner:
 
     def test_get_from_file_name_uri_no_envvar(self):
         uri = "fn:foo.pem"
-        fake_settings = stub()
-        store = SignerStore(fake_settings)
+        settings = Dynaconf()
+        store = SignerStore(settings)
         fake_key = stub(
             keyid="fake_id",
             unrecognized_fields={RSTUF_ONLINE_KEY_URI_FIELD: uri},
