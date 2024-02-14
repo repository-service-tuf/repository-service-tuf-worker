@@ -291,10 +291,14 @@ class MetadataRepository:
         Args:
             target_roles: List of roles to bump. If provided, 'bump_all' arg
                 will NOT be taken into account.
-            bump_all: Wheter to bump all bin target roles. If provided, then
-                'target_roles' arg is NOT taken into acount.
+            bump_all: Wheter to bump all delegated target roles. If provided,
+                then 'target_roles' arg is NOT taken into acount.
         """
         snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
+        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
+        bins_used = (
+            True if targets.signed.delegations.succinct_roles else False
+        )
 
         db_target_roles: List[targets_models.RSTUFTargetRoles] = []
         if target_roles:
@@ -304,11 +308,11 @@ class MetadataRepository:
 
             for db_role in db_target_roles:
                 rolename = db_role.rolename
-                bins_md: Metadata[Targets] = self._storage_backend.get(
+                delegation: Metadata[Targets] = self._storage_backend.get(
                     rolename
                 )
-                bins_md.signed.targets.clear()
-                bins_md.signed.targets = {
+                delegation.signed.targets.clear()
+                delegation.signed.targets = {
                     file.path: TargetFile.from_dict(file.info, file.path)
                     for file in db_role.target_files
                     if file.action == targets_schema.TargetAction.ADD
@@ -320,10 +324,10 @@ class MetadataRepository:
                     # one target file with action "REMOVE" and the CRUD
                     # will return None for this specific role.
                 }
-
+                deleg_name = BINS if bins_used else rolename
                 # update expiry, bump version and persist to the storage
-                self._bump_and_persist(bins_md, BINS, persist=False)
-                self._persist(bins_md, rolename)
+                self._bump_and_persist(delegation, deleg_name, persist=False)
+                self._persist(delegation, rolename)
                 # update targetfile in db
                 # note: It update only if is not published see the CRUD.
                 targets_crud.update_files_to_published(
@@ -331,34 +335,36 @@ class MetadataRepository:
                 )
 
                 snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                    version=bins_md.signed.version
+                    version=delegation.signed.version
                 )
 
-            bins = "".join(target_roles)
-            logging.info(f"Bumped all expired target 'bin' roles: {bins}")
+            roles = "".join(target_roles)
+            msg = f"Bumped all expired target delegation roles: {roles}"
+            logging.info(msg)
 
         elif bump_all:
             db_target_roles = targets_crud.read_all_roles(self._db)
             for db_role in db_target_roles:
                 rolename = db_role.rolename
-                bins_md: Metadata[Targets] = self._storage_backend.get(
+                delegation: Metadata[Targets] = self._storage_backend.get(
                     db_role.rolename
                 )
+                deleg_name = BINS if bins_used else rolename
                 # update expiry, bump version and persist to the storage
-                self._bump_and_persist(bins_md, BINS, persist=False)
-                self._persist(bins_md, db_role.rolename)
+                self._bump_and_persist(delegation, deleg_name, persist=False)
+                self._persist(delegation, db_role.rolename)
 
                 snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                    version=bins_md.signed.version
+                    version=delegation.signed.version
                 )
-            logging.info("Bumped all target 'bin' roles")
+
+            logging.info("Bumped all target delegation roles")
 
         if len(db_target_roles) > 0:
             targets_crud.update_roles_version(
                 self._db, [int(db_role.id) for db_role in db_target_roles]
             )
 
-        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
         snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
             version=targets.signed.version
         )
@@ -889,7 +895,7 @@ class MetadataRepository:
             )
         # The task id will be used by `_send_publish_targets_task` (sub-task).
         task_id = payload.get("task_id")
-        # Group target files by responsible 'bins' delegated roles.
+        # Group target files by responsible delegated role.
         # This will be used to by `_update_task` for updating task status.
         bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
@@ -974,7 +980,7 @@ class MetadataRepository:
         deleted_targets: List[str] = []
         not_found_targets: List[str] = []
 
-        # Group target files by responsible 'bins' delegated roles.
+        # Group target files by responsible delegated role.
         # This will be used to by `publish_targets`
         bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
@@ -1057,33 +1063,32 @@ class MetadataRepository:
                 snapshot_bump = True
 
         if force:
-            # Updating all bin target roles.
+            # Updating all delegated target roles.
             timestamp = self._update_timestamp(
                 self._update_snapshot(bump_all=True)
             )
             snapshot_bump = True
             logging.info("Targets and delegated Targets roles version bumped")
         else:
-            # Updating only those bins that have expired.
-            bin_roles: List[str] = []
-            targets_succinct_roles = targets.signed.delegations.succinct_roles
-            for bin in targets_succinct_roles.get_roles():
-                bin_role: Metadata[Targets] = self._storage_backend.get(bin)
-                if (bin_role.signed.expires - datetime.now()) < timedelta(
+            # Updating only those delegated roles that have expired.
+            delegated_roles: List[str] = []
+            for role in self._get_delegation_roles(targets):
+                role_md: Metadata[Targets] = self._storage_backend.get(role)
+                if (role_md.signed.expires - datetime.now()) < timedelta(
                     hours=self._hours_before_expire
                 ):
-                    bin_roles.append(bin)
+                    delegated_roles.append(role)
 
-            if len(bin_roles) > 0:
+            if len(delegated_roles) > 0:
                 timestamp = self._update_timestamp(
-                    self._update_snapshot(target_roles=bin_roles)
+                    self._update_snapshot(target_roles=delegated_roles)
                 )
                 snapshot_bump = True
-                bins = "".join(bin_roles)
-                logging.info(f"Bumped versions of expired bin roles: {bins}")
+                roles = "".join(delegated_roles)
+                logging.info(f"Bumped versions of expired roles: {roles}")
             else:
                 logging.debug(
-                    "[scheduled bump] All bin roles have more than "
+                    "[scheduled bump] All delegated roles have more than "
                     f"{self._hours_before_expire} hour(s) to expire, "
                     "skipping"
                 )
@@ -1137,7 +1142,7 @@ class MetadataRepository:
 
     def bump_online_roles(self, force: Optional[bool] = False) -> bool:
         """
-        Bump online roles (Snapshot, Timestamp, Targets and BINS).
+        Bump online roles (Snapshot, Timestamp, Targets and delegated roles).
 
         Args:
             force: force target roles bump if they don't match the hours before
@@ -1164,8 +1169,8 @@ class MetadataRepository:
             # the error because another task didn't lock it.
             if status_lock_targets is False:
                 logging.error(
-                    "The task to bump Timestamp, Snapshot, and BINS exceeded "
-                    f"the timeout of {self._timeout} seconds."
+                    "The task to bump all online roles exceeded the timeout "
+                    f"of {self._timeout} seconds."
                 )
                 raise redis.exceptions.LockError(
                     f"RSTUF: Task exceed `LOCK_TIMEOUT` ({self._timeout} "

@@ -369,7 +369,10 @@ class TestMetadataRepository:
             )
         )
         mocked_targets = pretend.stub(
-            signed=pretend.stub(version=targets_version)
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=True),
+            )
         )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda rolename: mocked_snapshot
@@ -422,7 +425,10 @@ class TestMetadataRepository:
             signed=pretend.stub(targets={"k": "v"}, version=bins_e_version)
         )
         mocked_targets = pretend.stub(
-            signed=pretend.stub(version=targets_version)
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=True),
+            )
         )
 
         def get(rolename: str):
@@ -512,8 +518,8 @@ class TestMetadataRepository:
         ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Roles.SNAPSHOT.value),
-            pretend.call("bins-e"),
             pretend.call(repository.Roles.TARGETS.value),
+            pretend.call("bins-e"),
         ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(
@@ -523,6 +529,142 @@ class TestMetadataRepository:
         ]
         assert test_repo._persist.calls == [
             pretend.call(mocked_bins_md, "bins-e"),
+        ]
+
+    def test__update_snapshot_specific_targets_custom_delegation_used(
+        self, test_repo, monkeypatch
+    ):
+        test_repo._db = pretend.stub()
+        repository.TargetFile.from_dict = pretend.call_recorder(
+            lambda *a: a[0]
+        )
+        snapshot_version = 3
+        foo_project_version = 4
+        second_project_version = 4
+        targets_version = 3
+        # Test that only "second_project" is updated. "foo_project" doesn't
+        # require update.
+        mocked_snapshot = pretend.stub(
+            signed=pretend.stub(
+                meta={
+                    "foo_project.json": foo_project_version,
+                    "second_project.json": second_project_version,
+                },
+                version=snapshot_version,
+            )
+        )
+        mocked_delegation_md = pretend.stub(
+            signed=pretend.stub(
+                targets={"k": "v"},
+                version=second_project_version,
+            )
+        )
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=None),
+            )
+        )
+
+        def get(rolename: str):
+            if rolename == Snapshot.type:
+                return mocked_snapshot
+            elif rolename == Targets.type:
+                return mocked_targets
+            else:
+                return mocked_delegation_md
+
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda rolename: get(rolename)
+        )
+        fake_delegation = pretend.stub(
+            rolename="second_project",
+            target_files=[
+                pretend.stub(
+                    path="k1",
+                    info="f1",
+                    action=repository.targets_schema.TargetAction.ADD,
+                ),
+                pretend.stub(
+                    path="k2",
+                    info="f2",
+                    action=repository.targets_schema.TargetAction.REMOVE,
+                ),
+            ],
+            id=5,
+        )
+        fake_delegations = [fake_delegation]
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_roles_joint_files",
+            pretend.call_recorder(lambda *a: fake_delegations),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_files_to_published",
+            pretend.call_recorder(lambda *a: None),
+        )
+        repository.MetaFile = pretend.call_recorder(lambda **kw: kw["version"])
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_roles_version",
+            pretend.call_recorder(lambda *a: None),
+        )
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            fake__bump_and_persist
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        targets = ["second_project"]
+        result = test_repo._update_snapshot(targets)
+
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
+        assert mocked_snapshot.signed.meta == {
+            "foo_project.json": foo_project_version,
+            "second_project.json": second_project_version + 1,
+            "targets.json": targets_version,
+        }
+        assert mocked_delegation_md.signed.targets == {"k1": "f1"}
+        assert repository.targets_crud.read_roles_joint_files.calls == [
+            pretend.call(test_repo._db, targets)
+        ]
+        assert repository.TargetFile.from_dict.calls == [
+            pretend.call("f1", "k1"),
+        ]
+        assert repository.targets_crud.update_files_to_published.calls == [
+            pretend.call(
+                test_repo._db,
+                [file.path for file in fake_delegation.target_files],
+            )
+        ]
+        assert repository.MetaFile.calls == [
+            pretend.call(version=mocked_delegation_md.signed.version),
+            pretend.call(version=mocked_targets.signed.version),
+        ]
+        assert repository.targets_crud.update_roles_version.calls == [
+            pretend.call(
+                test_repo._db, [int(deleg.id) for deleg in fake_delegations]
+            )
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(repository.Roles.SNAPSHOT.value),
+            pretend.call(repository.Roles.TARGETS.value),
+            pretend.call("second_project"),
+        ]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(
+                mocked_delegation_md, "second_project", persist=False
+            ),
+            pretend.call(mocked_snapshot, repository.Roles.SNAPSHOT.value),
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(mocked_delegation_md, "second_project"),
         ]
 
     def test__update_snapshot_bump_all(self, test_repo, monkeypatch):
@@ -543,7 +685,10 @@ class TestMetadataRepository:
             ),
         }
         mocked_targets = pretend.stub(
-            signed=pretend.stub(version=targets_version)
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=True),
+            )
         )
 
         def get(rolename: str):
@@ -600,9 +745,9 @@ class TestMetadataRepository:
         ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Snapshot.type),
+            pretend.call(Targets.type),
             pretend.call("bins-e"),
             pretend.call("bins-f"),
-            pretend.call(Targets.type),
         ]
         assert test_repo._persist.calls == [
             pretend.call(mocked_bins["bins-e"], "bins-e"),
@@ -614,6 +759,111 @@ class TestMetadataRepository:
         assert repository.MetaFile.calls == [
             pretend.call(version=mocked_bins["bins-e"].signed.version),
             pretend.call(version=mocked_bins["bins-f"].signed.version),
+            pretend.call(version=mocked_targets.signed.version),
+        ]
+
+    def test__update_snapshot_bump_all_custom_delegation(
+        self, test_repo, monkeypatch
+    ):
+        snapshot_version = 3
+        targets_version = 4
+        mocked_snapshot = pretend.stub(
+            signed=pretend.stub(
+                meta={"project_1.json": 2, "project_2.json": 6},
+                version=snapshot_version,
+            )
+        )
+        mocked_delegations = {
+            "project_1": pretend.stub(
+                signed=pretend.stub(targets={"k": "v"}, version=2)
+            ),
+            "project_2": pretend.stub(
+                signed=pretend.stub(targets={"k": "v"}, version=6)
+            ),
+        }
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=True),
+            )
+        )
+
+        def get(rolename: str):
+            if rolename == Snapshot.type:
+                return mocked_snapshot
+            elif rolename == Targets.type:
+                return mocked_targets
+            else:
+                return mocked_delegations[rolename]
+
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda rolename: get(rolename)
+        )
+        fake_bins = [
+            pretend.stub(rolename="project_1", id=3),
+            pretend.stub(rolename="project_2", id=4),
+        ]
+        fake_read_all_roles = pretend.call_recorder(lambda *a: fake_bins)
+        test_repo._db = pretend.stub()
+        repository.MetaFile = pretend.call_recorder(lambda **kw: kw["version"])
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_all_roles",
+            fake_read_all_roles,
+        )
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            fake__bump_and_persist
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        fake_update_roles_version = pretend.call_recorder(lambda *a: None)
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_roles_version",
+            fake_update_roles_version,
+        )
+        result = test_repo._update_snapshot(bump_all=True)
+
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
+        assert mocked_snapshot.signed.meta == {
+            "project_1.json": mocked_delegations["project_1"].signed.version,
+            "project_2.json": mocked_delegations["project_2"].signed.version,
+            "targets.json": mocked_targets.signed.version,
+        }
+        assert fake_read_all_roles.calls == [pretend.call(test_repo._db)]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(
+                mocked_delegations["project_1"], "bins", persist=False
+            ),
+            pretend.call(
+                mocked_delegations["project_2"], "bins", persist=False
+            ),
+            pretend.call(mocked_snapshot, "snapshot"),
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Snapshot.type),
+            pretend.call(Targets.type),
+            pretend.call("project_1"),
+            pretend.call("project_2"),
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(mocked_delegations["project_1"], "project_1"),
+            pretend.call(mocked_delegations["project_2"], "project_2"),
+        ]
+        assert fake_update_roles_version.calls == [
+            pretend.call(test_repo._db, [3, 4])
+        ]
+        assert repository.MetaFile.calls == [
+            pretend.call(
+                version=mocked_delegations["project_1"].signed.version
+            ),
+            pretend.call(
+                version=mocked_delegations["project_2"].signed.version
+            ),
             pretend.call(version=mocked_targets.signed.version),
         ]
 
@@ -2343,11 +2593,6 @@ class TestMetadataRepository:
         caplog.set_level(repository.logging.INFO)
         fake_targets = pretend.stub(
             signed=pretend.stub(
-                delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
-                    )
-                ),
                 expires=mocked_datetime.now(),
                 version=1,
             )
@@ -2372,6 +2617,15 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
+
+        def fake_delegation_roles() -> Iterator:
+            bins = ["bin-a"]
+            for bin in bins:
+                yield bin
+
+        test_repo._get_delegation_roles = pretend.call_recorder(
+            lambda *a: fake_delegation_roles()
+        )
         test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
             lambda **kw: "fake_snapshot"
@@ -2390,6 +2644,9 @@ class TestMetadataRepository:
             pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
+        assert test_repo._get_delegation_roles.calls == [
+            pretend.call(fake_targets)
+        ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(fake_targets, Targets.type),
         ]
@@ -2400,7 +2657,7 @@ class TestMetadataRepository:
             pretend.call("fake_snapshot")
         ]
         assert "Bumped version of 'Targets' role" == caplog.messages[0]
-        msg_2 = "Bumped versions of expired bin roles: bin-a"
+        msg_2 = "Bumped versions of expired roles: bin-a"
         assert msg_2 == caplog.messages[1]
         assert "Snapshot version bumped: 79" in caplog.messages[2]
         assert "Timestamp version bumped: 87" in caplog.messages[3]
@@ -2600,7 +2857,7 @@ class TestMetadataRepository:
         ]
         msg_1 = "No configuration found for TARGETS_ONLINE_KEY"
         assert msg_1 == caplog.messages[0]
-        msg_2 = "All bin roles have more than 1 hour(s) to expire, skipping"
+        msg_2 = "All delegated roles have more than 1 hour(s) to expire"
         assert msg_2 in caplog.messages[1]
         assert "Snapshot version bumped:" not in caplog.messages
         assert "Timestamp version bumped:" not in caplog.messages
