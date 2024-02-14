@@ -97,6 +97,10 @@ def isolated_env(env: dict[str, str]):
 # List of Dyanconf settings needed in the signer environment
 _AMBIENT_SETTING_NAMES = [
     "ONLINE_KEY_DIR",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_ENDPOINT_URL",
+    "AWS_DEFAULT_REGION",
 ]
 
 
