@@ -62,10 +62,6 @@ class Roles(enum.Enum):
     TIMESTAMP = Timestamp.type
     BINS = "bins"
 
-    @staticmethod
-    def online_roles() -> List[str]:
-        return [Targets.type, Snapshot.type, Timestamp.type, "bins"]
-
 
 ALL_REPOSITORY_ROLES_NAMES = [rolename.value for rolename in Roles]
 OFFLINE_KEYS = {
@@ -777,19 +773,24 @@ class MetadataRepository:
             details = None
         else:
             logging.info("Updating settings")
-            online_roles = Roles.online_roles()
             updated_roles: List[str] = []
             invalid_roles: List[str] = []
             for role in tuf_settings["expiration"]:
-                if role not in online_roles:
-                    invalid_roles.append(role)
-                    continue
+                expiration_str = f"{role.upper()}_EXPIRATION"
 
-                self.write_repository_settings(
-                    f"{role.upper()}_EXPIRATION",
-                    tuf_settings["expiration"][role],
-                )
-                updated_roles.append(role)
+                curr_expiration = self._settings.get_fresh(expiration_str)
+                if curr_expiration is not None:
+                    # This means this role has been added before and it's a
+                    # valid role.
+                    self.write_repository_settings(
+                        expiration_str,
+                        tuf_settings["expiration"][role],
+                    )
+                    updated_roles.append(role)
+                else:
+                    # curr_expiration = None => the role have not been added
+                    # before which makes it invalid.
+                    invalid_roles.append(role)
 
             message = "Update Settings Succeded"
             error = None

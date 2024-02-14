@@ -1286,7 +1286,7 @@ class TestMetadataRepository:
 
             call_id += 1
 
-    def test_update_settings(self, test_repo, mocked_datetime):
+    def test_update_settings(self, test_repo, mocked_datetime, monkeypatch):
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -1295,6 +1295,15 @@ class TestMetadataRepository:
         TIMESTAMP_EXP = 20
         BINS_EXP = 5
         BINS = repository.Roles.BINS.value
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: 30)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
 
         payload = {
             "settings": {
@@ -1327,6 +1336,12 @@ class TestMetadataRepository:
             pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
             pretend.call(TIMESTAMP_CONFIG_NAME, TIMESTAMP_EXP),
             pretend.call(BINS_CONFIG_NAME, BINS_EXP),
+        ]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call(f"{Targets.type.upper()}_EXPIRATION"),
+            pretend.call(f"{Snapshot.type.upper()}_EXPIRATION"),
+            pretend.call(f"{Timestamp.type.upper()}_EXPIRATION"),
+            pretend.call(f"{BINS.upper()}_EXPIRATION"),
         ]
 
     def test_update_settings_no_settings(self, test_repo, mocked_datetime):
@@ -1389,13 +1404,31 @@ class TestMetadataRepository:
         }
 
     def test_update_settings_valid_and_invalid_roles(
-        self, test_repo, mocked_datetime
+        self, test_repo, mocked_datetime, monkeypatch
     ):
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
         TARGETS_EXP = 100
         SNAPSHOT_EXP = 50
+
+        def _get_fresh(expiration_str: str):
+            if expiration_str == "TARGETS_EXPIRATION":
+                return TARGETS_EXP
+            elif expiration_str == "SNAPSHOT_EXPIRATION":
+                return SNAPSHOT_EXP
+            else:
+                return None
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: _get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
         payload = {
             "settings": {
                 "expiration": {
@@ -1419,6 +1452,12 @@ class TestMetadataRepository:
                 "updated_roles": ["targets", "snapshot"],
             },
         }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call(f"{Targets.type.upper()}_EXPIRATION"),
+            pretend.call(f"{Snapshot.type.upper()}_EXPIRATION"),
+            pretend.call("FOO_EXPIRATION"),
+            pretend.call("BAR_EXPIRATION"),
+        ]
         assert test_repo.write_repository_settings.calls == [
             pretend.call(f"{Targets.type.upper()}_EXPIRATION", TARGETS_EXP),
             pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
