@@ -995,7 +995,7 @@ class TestMetadataRepository:
             }
         }
 
-        result = test_repo.save_settings(fake_root_md, payload_settings)
+        result = test_repo.save_settings(fake_root_md, payload)
         assert result is None
         assert test_repo.write_repository_settings.calls == [
             pretend.call("ROOT_EXPIRATION", 365),
@@ -1205,6 +1205,16 @@ class TestMetadataRepository:
             test_result.append(role_name)
 
         assert test_result == expected_result
+
+    def test__get_delegation_roles_no_delegation(self, test_repo):
+        targets: Metadata[Targets] = Metadata(Targets())
+        result = []
+        with pytest.raises(ValueError) as e:
+            for delegated_role in test_repo._get_delegation_roles(targets):
+                result.append(delegated_role)
+
+        assert len(result) == 0
+        assert "Targets must have delegation, internal error" in str(e)
 
     def test__bootstrap_online_roles(self, test_repo, monkeypatch):
         fake_root_md = pretend.stub(
