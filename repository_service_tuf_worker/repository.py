@@ -710,7 +710,7 @@ class MetadataRepository:
 
         custom_targets = tuf_settings["roles"].get("delegated_roles")
         if custom_targets:
-            if tuf_settings["services"].get("number_of_delegated_bins"):
+            if tuf_settings["roles"].get("bins"):
                 return self._task_result(
                     TaskName.BOOTSTRAP,
                     message="Bootstrap Failed",

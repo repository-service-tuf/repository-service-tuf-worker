@@ -985,7 +985,7 @@ class TestMetadataRepository:
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
-        payload_settings = {
+        payload = {
             "roles": {
                 "root": {"expiration": 365},
                 "targets": {"expiration": 365},
@@ -1534,7 +1534,15 @@ class TestMetadataRepository:
         test_repo._bootstrap_finalize = pretend.call_recorder(lambda *a: None)
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1607,7 +1615,15 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1669,7 +1685,15 @@ class TestMetadataRepository:
         test_repo._validate_signature = pretend.call_recorder(lambda *a: False)
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1719,10 +1743,23 @@ class TestMetadataRepository:
 
         payload = {
             "settings": {
-                "services": {"number_of_delegated_bins": 2},
-                "custom_targets": {
-                    "RSTUF": {"expiration": 30, "path_prefixes": "project/a"},
-                },
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                    "delegated_roles": {
+                        "foo": {
+                            "expiration": 30,
+                            "path_patterns": ["project/f"],
+                        },
+                        "bar": {
+                            "expiration": 60,
+                            "path_patterns": ["project/b"],
+                        },
+                    },
+                }
             },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
@@ -1793,7 +1830,15 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1849,7 +1894,15 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
