@@ -371,15 +371,18 @@ class MetadataRepository:
 
         return snapshot.signed.version
 
-    def _get_path_succinct_role(self, target_path: str) -> str:
+    def _get_role_for_target_path(self, target_path: str) -> str:
         """
         Return role name by target file path
         """
-        bin_role: Metadata[Targets] = self._storage_backend.get(Targets.type)
-        bin_succinct_roles = bin_role.signed.delegations.succinct_roles
-        bins_name = bin_succinct_roles.get_role_for_target(target_path)
-
-        return bins_name
+        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
+        delegations = targets.signed.delegations
+        # Note: there could be more than one matching custom delegated role,
+        # for this target path, but we get the first match. If we want to get
+        # the most specific one we need to use _preorder_depth_first_walk
+        # of the ngclient Updater class in python-tuf.
+        role_name, _ = next(delegations.get_roles_for_target(target_path))
+        return role_name
 
     def _update_task(
         self,
@@ -897,7 +900,7 @@ class MetadataRepository:
         # This will be used to by `_update_task` for updating task status.
         bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
-            bins_name = self._get_path_succinct_role(target["path"])
+            delegated_role = self._get_role_for_target_path(target["path"])
             db_target_file = targets_crud.read_file_by_path(
                 self._db, target.get("path")
             )
@@ -911,7 +914,7 @@ class MetadataRepository:
                         action=targets_schema.TargetAction.ADD,
                     ),
                     target_role=targets_crud.read_role_by_rolename(
-                        self._db, bins_name
+                        self._db, delegated_role
                     ),
                 )
             else:
@@ -922,10 +925,10 @@ class MetadataRepository:
                     target.get("info"),
                 )
 
-            if bins_name not in bin_targets:
-                bin_targets[bins_name] = []
+            if delegated_role not in bin_targets:
+                bin_targets[delegated_role] = []
 
-            bin_targets[bins_name].append(db_target_file)
+            bin_targets[delegated_role].append(db_target_file)
 
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
@@ -982,7 +985,7 @@ class MetadataRepository:
         # This will be used to by `publish_targets`
         bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
-            bins_name = self._get_path_succinct_role(target)
+            delegated_role = self._get_role_for_target_path(target)
             db_target = targets_crud.read_file_by_path(self._db, target)
             if db_target is None or (
                 db_target.action == targets_schema.TargetAction.REMOVE
@@ -997,10 +1000,10 @@ class MetadataRepository:
                 )
                 deleted_targets.append(target)
 
-                if bins_name not in bin_targets:
-                    bin_targets[bins_name] = []
+                if delegated_role not in bin_targets:
+                    bin_targets[delegated_role] = []
 
-                bin_targets[bins_name].append(db_target)
+                bin_targets[delegated_role].append(db_target)
 
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)

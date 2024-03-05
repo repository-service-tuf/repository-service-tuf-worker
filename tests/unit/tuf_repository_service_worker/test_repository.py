@@ -867,14 +867,12 @@ class TestMetadataRepository:
             pretend.call(version=mocked_targets.signed.version),
         ]
 
-    def test__get_path_succinct_role(self, test_repo):
+    def test__get_role_for_target_path(self, test_repo):
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_role_for_target=pretend.call_recorder(
-                            lambda *a: "bin-e"
-                        )
+                    get_roles_for_target=pretend.call_recorder(
+                        lambda a: iter([("bins-e", False)])
                     )
                 ),
             )
@@ -882,13 +880,13 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_targets
         )
-        result = test_repo._get_path_succinct_role("v0.0.1/test_path.tar.gz")
+        result = test_repo._get_role_for_target_path("v0.0.1/test_path.tar.gz")
 
-        assert result == "bin-e"
-        assert (
-            fake_targets.signed.delegations.succinct_roles.get_role_for_target.calls  # noqa
-            == [pretend.call("v0.0.1/test_path.tar.gz")]
-        )
+        assert result == "bins-e"
+        delegations = fake_targets.signed.delegations
+        assert delegations.get_roles_for_target.calls == [
+            pretend.call("v0.0.1/test_path.tar.gz")
+        ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type)
         ]
@@ -2113,7 +2111,7 @@ class TestMetadataRepository:
 
     def test_add_targets(self, test_repo, monkeypatch, mocked_datetime):
         test_repo._db = pretend.stub()
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -2199,7 +2197,7 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_role_by_rolename.calls == [
             pretend.call(test_repo._db, "bins-e")
         ]
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz")
         ]
         assert test_repo._send_publish_targets_task.calls == [
@@ -2213,7 +2211,7 @@ class TestMetadataRepository:
 
     def test_add_targets_exists(self, test_repo, monkeypatch, mocked_datetime):
         test_repo._db = pretend.stub()
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -2269,7 +2267,7 @@ class TestMetadataRepository:
                 "target_roles": ["bins-e"],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz")
         ]
         assert test_repo._send_publish_targets_task.calls == [
@@ -2322,7 +2320,7 @@ class TestMetadataRepository:
         self, test_repo, monkeypatch, mocked_datetime
     ):
         test_repo._db = pretend.stub()
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -2406,7 +2404,7 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_role_by_rolename.calls == [
             pretend.call(test_repo._db, "bins-e")
         ]
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz")
         ]
         assert test_repo._update_task.calls == [
@@ -2414,7 +2412,7 @@ class TestMetadataRepository:
         ]
 
     def test_remove_targets(self, test_repo, monkeypatch, mocked_datetime):
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
         fake_db_target = pretend.stub(action="REMOVE", published=False)
@@ -2459,7 +2457,7 @@ class TestMetadataRepository:
                 "not_found_targets": [],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz"),
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2494,7 +2492,7 @@ class TestMetadataRepository:
     def test_remove_targets_skip_publishing(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
         fake_db_target = pretend.stub(action="REMOVE", published=False)
@@ -2537,7 +2535,7 @@ class TestMetadataRepository:
                 "not_found_targets": [],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz"),
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2569,7 +2567,7 @@ class TestMetadataRepository:
     def test_remove_targets_all_none(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bin-e"
         )
 
@@ -2600,7 +2598,7 @@ class TestMetadataRepository:
                 ],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file2.tar.gz"),
             pretend.call("file3.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2614,7 +2612,7 @@ class TestMetadataRepository:
     def test_remove_targets_action_remove_published_true(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bin-e"
         )
 
@@ -2647,7 +2645,7 @@ class TestMetadataRepository:
                 ],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file2.tar.gz"),
             pretend.call("file3.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
