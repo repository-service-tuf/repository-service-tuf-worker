@@ -986,13 +986,11 @@ class TestMetadataRepository:
             lambda *a: None
         )
         payload = {
-            "roles": {
-                "root": {"expiration": 365},
-                "targets": {"expiration": 365},
-                "snapshot": {"expiration": 1},
-                "timestamp": {"expiration": 1},
-                "bins": {"expiration": 30, "number_of_delegated_bins": 4},
-            }
+            "root": {"expiration": 365},
+            "targets": {"expiration": 365},
+            "snapshot": {"expiration": 1},
+            "timestamp": {"expiration": 1},
+            "bins": {"expiration": 30, "number_of_delegated_bins": 4},
         }
 
         result = test_repo.save_settings(fake_root_md, payload)
@@ -1029,16 +1027,14 @@ class TestMetadataRepository:
             lambda *a: None
         )
         payload_settings = {
-            "roles": {
-                "root": {"expiration": 365},
-                "targets": {"expiration": 365},
-                "snapshot": {"expiration": 1},
-                "timestamp": {"expiration": 1},
-                "delegated_roles": {
-                    "foo": {"expiration": 30, "path_patterns": ["project/f"]},
-                    "bar": {"expiration": 60, "path_patterns": ["project/b"]},
-                },
-            }
+            "root": {"expiration": 365},
+            "targets": {"expiration": 365},
+            "snapshot": {"expiration": 1},
+            "timestamp": {"expiration": 1},
+            "delegated_roles": {
+                "foo": {"expiration": 30, "path_patterns": ["project/f"]},
+                "bar": {"expiration": 60, "path_patterns": ["project/b"]},
+            },
         }
 
         result = test_repo.save_settings(fake_root_md, payload_settings)
@@ -1086,8 +1082,8 @@ class TestMetadataRepository:
         )
 
         custom_targets = {
-            "role1": {"expiration": 30, "path_prefixes": "role1/"},
-            "role2": {"expiration": 300, "path_prefixes": "role2/"},
+            "role1": {"expiration": 30, "path_patterns": "role1/"},
+            "role2": {"expiration": 300, "path_patterns": "role2/"},
         }
 
         result = test_repo._setup_targets_delegations(
@@ -1482,10 +1478,9 @@ class TestMetadataRepository:
             lambda *a: None
         )
         fake_roles = pretend.stub(get=pretend.call_recorder(lambda a: None))
-        fake_settings = {"roles": fake_roles}
 
         result = test_repo._bootstrap_finalize(
-            "fake_root", "task_id", fake_settings
+            "fake_root", "task_id", fake_roles
         )
 
         assert result is None
@@ -1574,10 +1569,12 @@ class TestMetadataRepository:
             pretend.call(fake_root_md)
         ]
         assert test_repo.save_settings.calls == [
-            pretend.call(fake_root_md, payload["settings"])
+            pretend.call(fake_root_md, payload["settings"]["roles"])
         ]
         assert test_repo._bootstrap_finalize.calls == [
-            pretend.call(fake_root_md, payload["task_id"], payload["settings"])
+            pretend.call(
+                fake_root_md, payload["task_id"], payload["settings"]["roles"]
+            )
         ]
 
     def test_bootstrap_no_signatures(
@@ -1870,7 +1867,7 @@ class TestMetadataRepository:
             pretend.call(fake_root_md)
         ]
         assert test_repo.save_settings.calls == [
-            pretend.call(fake_root_md, payload["settings"])
+            pretend.call(fake_root_md, payload["settings"]["roles"])
         ]
         assert test_repo._bootstrap_finalize.calls == []
         assert test_repo.write_repository_settings.calls == [

@@ -466,7 +466,7 @@ class MetadataRepository:
             acks_late=True,
         )
 
-    def save_settings(self, root: Metadata[Root], settings: Dict[str, Any]):
+    def save_settings(self, root: Metadata[Root], roles_info: Dict[str, Any]):
         """
         Save settings to the repository settings.
 
@@ -487,7 +487,7 @@ class MetadataRepository:
 
             self.write_repository_settings(
                 f"{role_upp}_EXPIRATION",
-                settings["roles"][role]["expiration"],
+                roles_info[role]["expiration"],
             )
             self.write_repository_settings(f"{role_upp}_THRESHOLD", threshold)
             self.write_repository_settings(f"{role_upp}_NUM_KEYS", num_of_keys)
@@ -495,8 +495,8 @@ class MetadataRepository:
         # For now targets always uses online key.
         self.write_repository_settings("TARGETS_ONLINE_KEY", True)
 
-        if settings["roles"].get("bins"):
-            bins = settings["roles"]["bins"]
+        if roles_info.get("bins"):
+            bins = roles_info["bins"]
             self.write_repository_settings(
                 "BINS_EXPIRATION", bins["expiration"]
             )
@@ -508,7 +508,7 @@ class MetadataRepository:
             )
 
         else:
-            delegated_roles = settings["roles"]["delegated_roles"]
+            delegated_roles = roles_info["delegated_roles"]
             for deleg_name, deleg_info in delegated_roles.items():
                 name = deleg_name.upper()
                 self.write_repository_settings(
@@ -534,7 +534,7 @@ class MetadataRepository:
             for role_name, role_info in custom_targets.items():
                 keyid = online_pub_key.keyid
                 targets.signed.delegations.roles[role_name] = DelegatedRole(
-                    role_name, [keyid], 1, True, role_info["path_prefixes"]
+                    role_name, [keyid], 1, True, role_info["path_patterns"]
                 )
                 targets.signed.add_key(online_pub_key, role_name)
                 custom_target = Metadata(Targets())
@@ -639,16 +639,14 @@ class MetadataRepository:
         return asdict(result)
 
     def _bootstrap_finalize(
-        self, root: Metadata[Root], task_id: str, settings: Dict[str, Any]
+        self, root: Metadata[Root], task_id: str, roles_info: Dict[str, Any]
     ):
         """
         Register the bootstrap finished.
         """
         self._persist(root, Root.type)
         self.write_repository_settings("ROOT_SIGNING", None)
-        self._bootstrap_online_roles(
-            root, settings["roles"].get("delegated_roles")
-        )
+        self._bootstrap_online_roles(root, roles_info.get("delegated_roles"))
         self.write_repository_settings("BOOTSTRAP", task_id)
 
     def bootstrap(
@@ -708,26 +706,25 @@ class MetadataRepository:
                     details=None,
                 )
 
-        custom_targets = tuf_settings["roles"].get("delegated_roles")
-        if custom_targets:
-            if tuf_settings["roles"].get("bins"):
-                return self._task_result(
-                    TaskName.BOOTSTRAP,
-                    message="Bootstrap Failed",
-                    error=(
-                        "Bootstrap cannot use both hash bin delegation and"
-                        " custom target delegations"
-                    ),
-                    details=None,
-                )
+        roles_info: Dict[str, Any] = tuf_settings["roles"]
+        if roles_info.get("delegated_roles") and roles_info.get("bins"):
+            return self._task_result(
+                TaskName.BOOTSTRAP,
+                message="Bootstrap Failed",
+                error=(
+                    "Bootstrap cannot use both hash bin delegation and"
+                    " custom target delegations"
+                ),
+                details=None,
+            )
 
         # save settings
-        self.save_settings(root, tuf_settings)
+        self.save_settings(root, roles_info)
         task_id: str = payload["task_id"]
 
         signed = self._validate_threshold(root)
         if signed:
-            self._bootstrap_finalize(root, task_id, tuf_settings)
+            self._bootstrap_finalize(root, task_id, roles_info)
             message = f"Bootstrap finished {task_id}"
             logging.info(message)
         else:
