@@ -40,10 +40,10 @@ class AWSS3(IStorage):
 
     @classmethod
     def configure(cls, settings: Dynaconf) -> "AWSS3":
-        access_key = parse_if_secret(settings.AWSS3_STORAGE_ACCESS_KEY)
-        secret_access_key = parse_if_secret(settings.AWSS3_STORAGE_SECRET_KEY)
-        region = settings.get("AWSS3_STORAGE_REGION")
-        endpoint = settings.get("AWSS3_STORAGE_ENDPOINT_URL")
+        access_key = parse_if_secret(settings.AWS_ACCESS_KEY_ID)
+        secret_access_key = parse_if_secret(settings.AWS_SECRET_ACCESS_KEY)
+        region = settings.get("AWS_DEFAULT_REGION")
+        endpoint = settings.get("AWS_ENDPOINT_URL")
 
         s3_session = boto3.Session(
             aws_access_key_id=access_key,
@@ -58,7 +58,7 @@ class AWSS3(IStorage):
             endpoint_url=endpoint,
         )
         buckets = [bucket.name for bucket in s3_resource.buckets.all()]
-        bucket_name = settings.AWSS3_STORAGE_BUCKET
+        bucket_name = settings.AWS_STORAGE_BUCKET
         if bucket_name not in buckets:
             raise ValueError(f"Bucket '{bucket_name}' not found.")
 
@@ -78,23 +78,23 @@ class AWSS3(IStorage):
     def settings(cls) -> List[ServiceSettings]:
         return [
             ServiceSettings(
-                names=["AWSS3_STORAGE_BUCKET"],
+                names=["AWS_STORAGE_BUCKET"],
                 required=True,
             ),
             ServiceSettings(
-                names=["AWSS3_STORAGE_ACCESS_KEY"],
+                names=["AWS_ACCESS_KEY_ID"],
                 required=True,
             ),
             ServiceSettings(
-                names=["AWSS3_STORAGE_SECRET_KEY"],
+                names=["AWS_SECRET_ACCESS_KEY"],
                 required=True,
             ),
             ServiceSettings(
-                names=["AWSS3_STORAGE_REGION"],
+                names=["AWS_DEFAULT_REGION"],
                 required=False,
             ),
             ServiceSettings(
-                names=["AWSS3_STORAGE_ENDPOINT_URL"],
+                names=["AWS_ENDPOINT_URL"],
                 required=False,
             ),
         ]
