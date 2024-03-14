@@ -25,20 +25,20 @@ class FileNameSigner(CryptoSigner):
     Provide method to load **unencrypted** PKCS8/PEM private key from file.
 
     File path is constructed by joining base path in environment variable
-    ``RSTUF_ONLINE_KEY_DIR`` with file in ``priv_key_uri``.
+    ``ONLINE_KEY_DIR`` with file in ``priv_key_uri``.
 
     NOTE: Make sure to use the secrets management service of your deployment
     platform to protect your private key!
 
     Example::
 
-        RSTUF_ONLINE_KEY_DIR (env) "/run/secrets"
+        ONLINE_KEY_DIR (env) "/run/secrets"
         priv_key_uri (arg): "fn:foo"
 
         File path: "/run/secrets/foo"
 
     Raises:
-        KeyError: RSTUF_ONLINE_KEY_DIR environment variable not set
+        KeyError: ONLINE_KEY_DIR environment variable not set
         OSError: file cannot be loaded
         ValueError: uri has no file name, or private key cannot be decoded,
                 or type does not match public key
@@ -47,7 +47,7 @@ class FileNameSigner(CryptoSigner):
     """
 
     SCHEME = "fn"
-    DIR_VAR = "RSTUF_ONLINE_KEY_DIR"
+    DIR_VAR = "ONLINE_KEY_DIR"
 
     @classmethod
     def from_priv_key_uri(
@@ -94,6 +94,16 @@ def isolated_env(env: dict[str, str]):
         os.environ.update(orig_env)
 
 
+# List of Dyanconf settings needed in the signer environment
+_AMBIENT_SETTING_NAMES = [
+    "ONLINE_KEY_DIR",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_ENDPOINT_URL",
+    "AWS_DEFAULT_REGION",
+]
+
+
 class SignerStore:
     """Generic signer store.
 
@@ -104,8 +114,9 @@ class SignerStore:
     def __init__(self, settings: Dynaconf):
         # Cache known ambient settings
         self._ambient_settings: dict[str, str] = {}
-        if key_dir := settings.get("ONLINE_KEY_DIR"):
-            self._ambient_settings[FileNameSigner.DIR_VAR] = key_dir
+        for name in _AMBIENT_SETTING_NAMES:
+            if value := settings.get(name):
+                self._ambient_settings[name] = value
 
         # Cache KEYVAULT setting as fallback
         self._vault = settings.get("KEYVAULT")

@@ -46,9 +46,9 @@ class TestAWSS3Service:
     def test_configure(self, mocked_boto3):
         test_settings = pretend.stub(
             get=pretend.call_recorder(lambda *a: None),
-            AWSS3_STORAGE_BUCKET="bucket",
-            AWSS3_STORAGE_ACCESS_KEY="access_key",
-            AWSS3_STORAGE_SECRET_KEY="secret_key",
+            AWS_STORAGE_BUCKET="bucket",
+            AWS_ACCESS_KEY_ID="access_key",
+            AWS_SECRET_ACCESS_KEY="secret_key",
         )
 
         service = awss3.AWSS3.configure(test_settings)
@@ -91,15 +91,15 @@ class TestAWSS3Service:
 
     def test_configure_bucket_not_found(self, mocked_boto3):
         def _fake_get(key: str) -> Optional[str]:
-            if key == "AWSS3_STORAGE_REGION":
+            if key == "AWS_DEFAULT_REGION":
                 return "region"
             return None
 
         test_settings = pretend.stub(
             get=pretend.call_recorder(lambda a: _fake_get(a)),
-            AWSS3_STORAGE_BUCKET="nonexistent-bucket",
-            AWSS3_STORAGE_ACCESS_KEY="access_key",
-            AWSS3_STORAGE_SECRET_KEY="secret_key",
+            AWS_STORAGE_BUCKET="nonexistent-bucket",
+            AWS_ACCESS_KEY_ID="access_key",
+            AWS_SECRET_ACCESS_KEY="secret_key",
         )
 
         service = None
@@ -137,23 +137,23 @@ class TestAWSS3Service:
 
         assert service_settings == [
             awss3.ServiceSettings(
-                names=["AWSS3_STORAGE_BUCKET"],
+                names=["AWS_STORAGE_BUCKET"],
                 required=True,
             ),
             awss3.ServiceSettings(
-                names=["AWSS3_STORAGE_ACCESS_KEY"],
+                names=["AWS_ACCESS_KEY_ID"],
                 required=True,
             ),
             awss3.ServiceSettings(
-                names=["AWSS3_STORAGE_SECRET_KEY"],
+                names=["AWS_SECRET_ACCESS_KEY"],
                 required=True,
             ),
             awss3.ServiceSettings(
-                names=["AWSS3_STORAGE_REGION"],
+                names=["AWS_DEFAULT_REGION"],
                 required=False,
             ),
             awss3.ServiceSettings(
-                names=["AWSS3_STORAGE_ENDPOINT_URL"],
+                names=["AWS_ENDPOINT_URL"],
                 required=False,
             ),
         ]
@@ -390,9 +390,9 @@ class TestAWSS3Service:
     def test_put(self, mocked_boto3):
         test_settings = pretend.stub(
             get=pretend.call_recorder(lambda *a: None),
-            AWSS3_STORAGE_BUCKET="bucket",
-            AWSS3_STORAGE_ACCESS_KEY="access_key",
-            AWSS3_STORAGE_SECRET_KEY="secret_key",
+            AWS_STORAGE_BUCKET="bucket",
+            AWS_ACCESS_KEY_ID="access_key",
+            AWS_SECRET_ACCESS_KEY="secret_key",
         )
 
         service = awss3.AWSS3.configure(test_settings)
@@ -410,9 +410,9 @@ class TestAWSS3Service:
     def test_put_ClientErro(self, mocked_boto3):
         test_settings = pretend.stub(
             get=pretend.call_recorder(lambda *a: None),
-            AWSS3_STORAGE_BUCKET="bucket",
-            AWSS3_STORAGE_ACCESS_KEY="access_key",
-            AWSS3_STORAGE_SECRET_KEY="secret_key",
+            AWS_STORAGE_BUCKET="bucket",
+            AWS_ACCESS_KEY_ID="access_key",
+            AWS_SECRET_ACCESS_KEY="secret_key",
         )
         service = awss3.AWSS3.configure(test_settings)
 
