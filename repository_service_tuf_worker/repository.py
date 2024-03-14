@@ -320,9 +320,11 @@ class MetadataRepository:
                     # one target file with action "REMOVE" and the CRUD
                     # will return None for this specific role.
                 }
-                deleg_name = BINS if bins_used else rolename
+                delegation_name = BINS if bins_used else rolename
                 # update expiry, bump version and persist to the storage
-                self._bump_and_persist(delegation, deleg_name, persist=False)
+                self._bump_and_persist(
+                    delegation, delegation_name, persist=False
+                )
                 self._persist(delegation, rolename)
                 # update targetfile in db
                 # note: It update only if is not published see the CRUD.
@@ -345,9 +347,11 @@ class MetadataRepository:
                 delegation: Metadata[Targets] = self._storage_backend.get(
                     db_role.rolename
                 )
-                deleg_name = BINS if bins_used else rolename
+                delegation_name = BINS if bins_used else rolename
                 # update expiry, bump version and persist to the storage
-                self._bump_and_persist(delegation, deleg_name, persist=False)
+                self._bump_and_persist(
+                    delegation, delegation_name, persist=False
+                )
                 self._persist(delegation, db_role.rolename)
 
                 snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
