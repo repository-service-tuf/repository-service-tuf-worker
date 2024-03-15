@@ -573,7 +573,10 @@ class MetadataRepository:
     def _get_delegation_roles(
         self, targets: Metadata[Targets]
     ) -> Iterator[str]:
-        """Get all Targets delegation roles no matter if bins or custom."""
+        """Get all Targets delegation roles no matter if bins or custom.
+
+        Raises ValueError if targets.signed.delegation is not initialized.
+        """
         if targets.signed.delegations is None:
             raise ValueError("Targets must have delegation, internal error")
 
