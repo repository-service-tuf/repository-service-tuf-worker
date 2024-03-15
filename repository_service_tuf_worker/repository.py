@@ -26,6 +26,7 @@ from tuf.api.exceptions import (
 )
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
+    TOP_LEVEL_ROLE_NAMES,
     Delegations,
     Metadata,
     MetaFile,
@@ -471,34 +472,51 @@ class MetadataRepository:
             settings: payload settings
         """
         logging.info("Saving settings")
-        for role in Roles:
-            rolename = role.value.upper()
+        sorted_roles = sorted(list(TOP_LEVEL_ROLE_NAMES))
+        for role in sorted_roles:
+            role_upp = role.upper()
             threshold = 1
             num_of_keys = 1
-            if rolename == Roles.ROOT.value.upper():
+            if role == Root.type:
                 # get treshold and number of keys from given root metadata
-                threshold = root.signed.roles[role.value].threshold
+                threshold = root.signed.roles[role].threshold
                 num_of_keys = len(root.signatures)
 
             self.write_repository_settings(
-                f"{rolename}_EXPIRATION",
-                settings["expiration"][role.value],
+                f"{role_upp}_EXPIRATION",
+                settings["roles"][role]["expiration"],
             )
-            self.write_repository_settings(f"{rolename}_THRESHOLD", threshold)
-            self.write_repository_settings(f"{rolename}_NUM_KEYS", num_of_keys)
+            self.write_repository_settings(f"{role_upp}_THRESHOLD", threshold)
+            self.write_repository_settings(f"{role_upp}_NUM_KEYS", num_of_keys)
 
-        self.write_repository_settings(
-            "NUMBER_OF_DELEGATED_BINS",
-            settings["services"]["number_of_delegated_bins"],
-        )
+        # For now targets always uses online key.
+        self.write_repository_settings("TARGETS_ONLINE_KEY", True)
 
-        self.write_repository_settings(
-            "TARGETS_BASE_URL", settings["services"]["targets_base_url"]
-        )
+        if settings["roles"].get("bins"):
+            info = settings["roles"]["bins"]
+            self.write_repository_settings(
+                "BINS_EXPIRATION", info["expiration"]
+            )
+            self.write_repository_settings("BINS_THRESHOLD", 1)
+            self.write_repository_settings("BINS_NUM_KEYS", 1)
+            self.write_repository_settings(
+                "NUMBER_OF_DELEGATED_BINS",
+                info["number_of_delegated_bins"],
+            )
 
-        self.write_repository_settings(
-            "TARGETS_ONLINE_KEY", settings["services"]["targets_online_key"]
-        )
+        else:
+            delegated_roles = settings["roles"]["delegated_roles"]
+            for deleg_name, deleg_info in delegated_roles.items():
+                name = deleg_name.upper()
+                self.write_repository_settings(
+                    f"{name}_EXPIRATION", deleg_info["expiration"]
+                )
+                self.write_repository_settings(f"{name}_THRESHOLD", 1)
+                self.write_repository_settings(f"{name}_NUM_KEYS", 1)
+                self.write_repository_settings(
+                    f"{name}_PATH_PATTERNS",
+                    delegated_roles[deleg_name]["path_patterns"],
+                )
 
     def _bootstrap_online_roles(self, root: Metadata[Root]):
         """

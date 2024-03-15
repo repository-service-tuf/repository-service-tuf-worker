@@ -719,7 +719,7 @@ class TestMetadataRepository:
             ),
         ]
 
-    def test_save_settings(self, test_repo):
+    def test_save_settings_bins(self, test_repo):
         fake_root_md = pretend.stub(
             type="root",
             signatures=[{"keyid": "sig1"}, {"keyid": "sig2"}],
@@ -731,18 +731,13 @@ class TestMetadataRepository:
             lambda *a: None
         )
         payload_settings = {
-            "expiration": {
-                "root": 365,
-                "targets": 365,
-                "snapshot": 1,
-                "timestamp": 1,
-                "bins": 1,
-            },
-            "services": {
-                "targets_base_url": "http://www.example.com/repository/",
-                "number_of_delegated_bins": 4,
-                "targets_online_key": True,
-            },
+            "roles": {
+                "root": {"expiration": 365},
+                "targets": {"expiration": 365},
+                "snapshot": {"expiration": 1},
+                "timestamp": {"expiration": 1},
+                "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+            }
         }
 
         result = test_repo.save_settings(fake_root_md, payload_settings)
@@ -751,23 +746,70 @@ class TestMetadataRepository:
             pretend.call("ROOT_EXPIRATION", 365),
             pretend.call("ROOT_THRESHOLD", 1),
             pretend.call("ROOT_NUM_KEYS", 2),
-            pretend.call("TARGETS_EXPIRATION", 365),
-            pretend.call("TARGETS_THRESHOLD", 1),
-            pretend.call("TARGETS_NUM_KEYS", 1),
             pretend.call("SNAPSHOT_EXPIRATION", 1),
             pretend.call("SNAPSHOT_THRESHOLD", 1),
             pretend.call("SNAPSHOT_NUM_KEYS", 1),
+            pretend.call("TARGETS_EXPIRATION", 365),
+            pretend.call("TARGETS_THRESHOLD", 1),
+            pretend.call("TARGETS_NUM_KEYS", 1),
             pretend.call("TIMESTAMP_EXPIRATION", 1),
             pretend.call("TIMESTAMP_THRESHOLD", 1),
             pretend.call("TIMESTAMP_NUM_KEYS", 1),
-            pretend.call("BINS_EXPIRATION", 1),
+            pretend.call("TARGETS_ONLINE_KEY", True),
+            pretend.call("BINS_EXPIRATION", 30),
             pretend.call("BINS_THRESHOLD", 1),
             pretend.call("BINS_NUM_KEYS", 1),
             pretend.call("NUMBER_OF_DELEGATED_BINS", 4),
-            pretend.call(
-                "TARGETS_BASE_URL", "http://www.example.com/repository/"
+        ]
+
+    def test_save_settings_custom_targets(self, test_repo):
+        fake_root_md = pretend.stub(
+            type="root",
+            signatures=[{"keyid": "sig1"}, {"keyid": "sig2"}],
+            signed=pretend.stub(
+                roles={"root": pretend.stub(threshold=1)},
             ),
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        payload_settings = {
+            "roles": {
+                "root": {"expiration": 365},
+                "targets": {"expiration": 365},
+                "snapshot": {"expiration": 1},
+                "timestamp": {"expiration": 1},
+                "delegated_roles": {
+                    "foo": {"expiration": 30, "path_patterns": ["project/f"]},
+                    "bar": {"expiration": 60, "path_patterns": ["project/b"]},
+                },
+            }
+        }
+
+        result = test_repo.save_settings(fake_root_md, payload_settings)
+        assert result is None
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ROOT_EXPIRATION", 365),
+            pretend.call("ROOT_THRESHOLD", 1),
+            pretend.call("ROOT_NUM_KEYS", 2),
+            pretend.call("SNAPSHOT_EXPIRATION", 1),
+            pretend.call("SNAPSHOT_THRESHOLD", 1),
+            pretend.call("SNAPSHOT_NUM_KEYS", 1),
+            pretend.call("TARGETS_EXPIRATION", 365),
+            pretend.call("TARGETS_THRESHOLD", 1),
+            pretend.call("TARGETS_NUM_KEYS", 1),
+            pretend.call("TIMESTAMP_EXPIRATION", 1),
+            pretend.call("TIMESTAMP_THRESHOLD", 1),
+            pretend.call("TIMESTAMP_NUM_KEYS", 1),
             pretend.call("TARGETS_ONLINE_KEY", True),
+            pretend.call("FOO_EXPIRATION", 30),
+            pretend.call("FOO_THRESHOLD", 1),
+            pretend.call("FOO_NUM_KEYS", 1),
+            pretend.call("FOO_PATH_PATTERNS", ["project/f"]),
+            pretend.call("BAR_EXPIRATION", 60),
+            pretend.call("BAR_THRESHOLD", 1),
+            pretend.call("BAR_NUM_KEYS", 1),
+            pretend.call("BAR_PATH_PATTERNS", ["project/b"]),
         ]
 
     def test__bootstrap_online_roles(self, test_repo, monkeypatch):

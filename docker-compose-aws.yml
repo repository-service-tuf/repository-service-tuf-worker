@@ -61,12 +61,12 @@ services:
     environment:
       - DATA_DIR=./data
       - RSTUF_STORAGE_BACKEND=AWSS3
-      - RSTUF_AWSS3_STORAGE_BUCKET=tuf-metadata
-      - RSTUF_AWSS3_STORAGE_ACCESS_KEY=access_key
-      - RSTUF_AWSS3_STORAGE_SECRET_KEY=secret_key
+      - RSTUF_AWS_STORAGE_BUCKET=tuf-metadata
+      - RSTUF_AWS_ACCESS_KEY_ID=access_key
+      - RSTUF_AWS_SECRET_ACCESS_KEY=secret_key
       # region and endpoint_url are required by localstack
-      - RSTUF_AWSS3_STORAGE_REGION=us-east-1
-      - RSTUF_AWSS3_STORAGE_ENDPOINT_URL=http://localstack:4566
+      - RSTUF_AWS_DEFAULT_REGION=us-east-1
+      - RSTUF_AWS_ENDPOINT_URL=http://localstack:4566
       - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
       - RSTUF_LOCAL_KEYVAULT_PATH=/opt/repository-service-tuf-worker/tests/files/key_storage
       - RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass:online-rsa.key,strongPass,rsa
