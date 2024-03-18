@@ -390,7 +390,7 @@ class MetadataRepository:
 
     def _update_task(
         self,
-        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
+        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
         update_state: Task.update_state,
         subtask: Optional[AsyncResult] = None,
     ):
@@ -399,11 +399,13 @@ class MetadataRepository:
         published in the latest Snapshot. It runs every 3 seconds until the
         task is finished.
         """
-        logging.debug(f"Waiting roles to be published {list(bin_targets)}")
+        logging.debug(
+            f"Waiting roles to be published {list(roles_to_targets.keys())}"
+        )
 
         def _update_state(
             state: states,
-            bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
+            roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
             completed_roles: List[str],
             exc_type: Optional[str] = None,
             exc_message: Optional[List[str]] = None,
@@ -413,7 +415,7 @@ class MetadataRepository:
                 meta={
                     "details": {
                         "published_roles": completed_roles,
-                        "roles_to_publish": f"{list(bin_targets.keys())}",
+                        "roles_to_publish": f"{list(roles_to_targets.keys())}",
                     },
                     "message": "Publishing",
                     "last_update": datetime.now(),
@@ -424,7 +426,7 @@ class MetadataRepository:
 
         while True:
             completed_roles: List[str] = []
-            for role_name, targets in bin_targets.items():
+            for role_name, targets in roles_to_targets.items():
                 for target in targets:
                     self._db.refresh(target)
                     if target.published is True:
@@ -438,7 +440,7 @@ class MetadataRepository:
                 exc_message = list(subtask.result.args)
                 _update_state(
                     states.FAILURE,
-                    bin_targets,
+                    roles_to_targets,
                     completed_roles,
                     exc_type=exc_type,
                     exc_message=exc_message,
@@ -448,14 +450,14 @@ class MetadataRepository:
                     f"{exc_type} {exc_message}"
                 )
 
-            if sorted(completed_roles) != sorted(list(bin_targets)):
-                _update_state("RUNNING", bin_targets, completed_roles)
+            if sorted(completed_roles) != sorted(list(roles_to_targets)):
+                _update_state("RUNNING", roles_to_targets, completed_roles)
                 time.sleep(3)
             else:
                 break
 
     def _send_publish_targets_task(
-        self, task_id: str, bins_targets: Optional[List[str]]
+        self, task_id: str, delegated_targets: Optional[List[str]]
     ):  # pragma: no cover
         """
         Send a new task to the `rstuf_internals` queue to publish targets.
@@ -466,7 +468,7 @@ class MetadataRepository:
         return repository_service_tuf_worker.apply_async(
             kwargs={
                 "action": "publish_targets",
-                "payload": {"bin_targets": bins_targets},
+                "payload": {"delegated_targets": delegated_targets},
             },
             task_id=f"publish_targets-{task_id}",
             queue="rstuf_internals",
@@ -831,16 +833,18 @@ class MetadataRepository:
         try:
             with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
                 # get all delegated role names with unpublished targets
-                if payload is None or payload.get("bins_targets") is None:
+                if payload is None or payload.get("delegated_targets") is None:
                     db_roles = targets_crud.read_roles_with_unpublished_files(
                         self._db
                     )
                     if db_roles is None:
-                        bins_targets = []
+                        delegated_targets = []
                     else:
-                        bins_targets = [bins_role[0] for bins_role in db_roles]
+                        delegated_targets = [
+                            targets_role[0] for targets_role in db_roles
+                        ]
 
-                if len(bins_targets) == 0:
+                if len(delegated_targets) == 0:
                     logging.debug(
                         "No new targets in delegated target roles. Finishing"
                     )
@@ -852,7 +856,7 @@ class MetadataRepository:
                     )
 
                 self._update_timestamp(
-                    self._update_snapshot(bins_targets),
+                    self._update_snapshot(delegated_targets),
                 )
 
             # context lock finished
@@ -877,7 +881,7 @@ class MetadataRepository:
             message="Publish Targets Processed",
             error=None,
             details={
-                "target_roles": bins_targets,
+                "target_roles": delegated_targets,
             },
         )
 
@@ -905,7 +909,7 @@ class MetadataRepository:
         task_id = payload.get("task_id")
         # Group target files by responsible delegated role.
         # This will be used to by `_update_task` for updating task status.
-        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
+        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
             delegated_role = self._get_role_for_target_path(target["path"])
             db_target_file = targets_crud.read_file_by_path(
@@ -932,23 +936,23 @@ class MetadataRepository:
                     target.get("info"),
                 )
 
-            if delegated_role not in bin_targets:
-                bin_targets[delegated_role] = []
+            if delegated_role not in roles_to_targets:
+                roles_to_targets[delegated_role] = []
 
-            bin_targets[delegated_role].append(db_target_file)
+            roles_to_targets[delegated_role].append(db_target_file)
 
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
         subtask = None
         if publish_targets is True:
             subtask = self._send_publish_targets_task(
-                task_id, [bins_role for bins_role in bin_targets]
+                task_id, [t_role for t_role in roles_to_targets]
             )
 
-        self._update_task(bin_targets, update_state, subtask)
+        self._update_task(roles_to_targets, update_state, subtask)
 
         add_targets = [target.get("path") for target in targets]
-        update_roles = [t_role for t_role in bin_targets]
+        update_roles = [t_role for t_role in roles_to_targets]
 
         logging.debug(f"Added targets: {add_targets} on Roles {update_roles}")
         return self._task_result(
@@ -990,7 +994,7 @@ class MetadataRepository:
 
         # Group target files by responsible delegated role.
         # This will be used to by `publish_targets`
-        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
+        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
             delegated_role = self._get_role_for_target_path(target)
             db_target = targets_crud.read_file_by_path(self._db, target)
@@ -1007,20 +1011,20 @@ class MetadataRepository:
                 )
                 deleted_targets.append(target)
 
-                if delegated_role not in bin_targets:
-                    bin_targets[delegated_role] = []
+                if delegated_role not in roles_to_targets:
+                    roles_to_targets[delegated_role] = []
 
-                bin_targets[delegated_role].append(db_target)
+                roles_to_targets[delegated_role].append(db_target)
 
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
         subtask = None
         if len(deleted_targets) > 0 and publish_targets is True:
             subtask = self._send_publish_targets_task(
-                task_id, [t_role for t_role in bin_targets]
+                task_id, [t_role for t_role in roles_to_targets]
             )
 
-        self._update_task(bin_targets, update_state, subtask)
+        self._update_task(roles_to_targets, update_state, subtask)
 
         logging.debug(
             f"Delete targets: {deleted_targets}. "

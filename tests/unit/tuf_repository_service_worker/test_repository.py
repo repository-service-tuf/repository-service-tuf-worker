@@ -2006,7 +2006,7 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_timestamp.calls == [pretend.call(3)]
 
-    def test_publish_targets_payload_bins_targets_empty(
+    def test_publish_targets_payload_delegated_targets_empty(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         @contextmanager
@@ -2029,7 +2029,7 @@ class TestMetadataRepository:
         test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
-        payload = {"bins_targets": None}
+        payload = {"delegated_targets": None}
         result = test_repo.publish_targets(payload)
 
         assert result == {
