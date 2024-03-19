@@ -891,6 +891,30 @@ class TestMetadataRepository:
             pretend.call(Targets.type)
         ]
 
+    def test__get_role_for_target_path_no_role_for_target(self, test_repo):
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    get_roles_for_target=pretend.call_recorder(
+                        lambda a: iter([])
+                    )
+                ),
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda *a: fake_targets
+        )
+        result = test_repo._get_role_for_target_path("v0.0.1/test_path.tar.gz")
+
+        assert result is None
+        delegations = fake_targets.signed.delegations
+        assert delegations.get_roles_for_target.calls == [
+            pretend.call("v0.0.1/test_path.tar.gz")
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Targets.type)
+        ]
+
     def test__update_task(self, test_repo, mocked_datetime):
         test_repo._db = pretend.stub(
             refresh=pretend.call_recorder(lambda *a: None)
@@ -2169,7 +2193,8 @@ class TestMetadataRepository:
             "message": "Target(s) Added",
             "error": None,
             "details": {
-                "targets": ["file1.tar.gz"],
+                "added_targets": ["file1.tar.gz"],
+                "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
         }
@@ -2263,7 +2288,8 @@ class TestMetadataRepository:
             "message": "Target(s) Added",
             "error": None,
             "details": {
-                "targets": ["file1.tar.gz"],
+                "added_targets": ["file1.tar.gz"],
+                "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
         }
@@ -2376,7 +2402,8 @@ class TestMetadataRepository:
             "message": "Target(s) Added",
             "error": None,
             "details": {
-                "targets": ["file1.tar.gz"],
+                "added_targets": ["file1.tar.gz"],
+                "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
         }
@@ -2409,6 +2436,84 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_task.calls == [
             pretend.call({"bins-e": [fake_db_target]}, fake_update_state, None)
+        ]
+
+    def test_add_targets_invalid_path(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        test_repo._db = pretend.stub()
+        test_repo._get_role_for_target_path = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        def fake_target(key):
+            if key == "path":
+                return "fake_target1.tar.gz"
+            if key == "info":
+                return {"k": "v"}
+
+        fake_db_target = pretend.stub(get=pretend.call_recorder(fake_target))
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_file_by_path",
+            pretend.call_recorder(lambda *a: None),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "create_file",
+            pretend.call_recorder(lambda *a, **kw: fake_db_target),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_by_rolename",
+            pretend.call_recorder(lambda *a: "bins-e"),
+        )
+        test_repo._send_publish_targets_task = pretend.call_recorder(
+            lambda *a: "fake_subtask"
+        )
+        test_repo._update_task = pretend.call_recorder(lambda *a: True)
+
+        payload = {
+            "targets": [
+                {
+                    "info": {
+                        "length": 11342,
+                        "hashes": {
+                            "blake2b-256": "716f6e863f744b9ac22c97ec7b76ea5"
+                        },
+                        "custom": {"task_id": "12345"},
+                    },
+                    "path": "file1.tar.gz",
+                },
+            ],
+            "task_id": "fake_task_id_xyz",
+        }
+
+        fake_update_state = pretend.stub()
+        result = test_repo.add_targets(payload, update_state=fake_update_state)
+
+        assert result == {
+            "task": "add_targets",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Target(s) Added",
+            "error": None,
+            "details": {
+                "added_targets": [],
+                "invalid_paths": ["file1.tar.gz"],
+                "target_roles": [],
+            },
+        }
+        assert repository.targets_crud.read_file_by_path.calls == []
+        assert repository.targets_crud.create_file.calls == []
+        assert repository.targets_crud.read_role_by_rolename.calls == []
+        assert test_repo._get_role_for_target_path.calls == [
+            pretend.call("file1.tar.gz")
+        ]
+        assert test_repo._send_publish_targets_task.calls == []
+        assert test_repo._update_task.calls == [
+            pretend.call({}, fake_update_state, None)
         ]
 
     def test_remove_targets(self, test_repo, monkeypatch, mocked_datetime):
@@ -2484,6 +2589,72 @@ class TestMetadataRepository:
                         fake_db_target_removed,
                     ]
                 },
+                fake_update_state,
+                "fake_subtask",
+            )
+        ]
+
+    def test_remove_targets_deleted_and_not_found_targets(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        get_role_for_target_path_generator = iter(("first_role", None))
+        test_repo._get_role_for_target_path = pretend.call_recorder(
+            lambda *a: next(get_role_for_target_path_generator)
+        )
+        fake_db_target = pretend.stub(action="REMOVE", published=False)
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_file_by_path",
+            pretend.call_recorder(lambda *a: fake_db_target),
+        )
+        fake_db_target_removed = pretend.stub()
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_file_action_to_remove",
+            pretend.call_recorder(lambda *a: fake_db_target_removed),
+        )
+
+        payload = {
+            "targets": ["file1.tar.gz", "non-existent"],
+            "task_id": "fake_task_id_xyz",
+        }
+        test_repo._send_publish_targets_task = pretend.call_recorder(
+            lambda *a: "fake_subtask"
+        )
+        test_repo._update_task = pretend.call_recorder(lambda *a: None)
+
+        fake_update_state = pretend.stub()
+        result = test_repo.remove_targets(
+            payload, update_state=fake_update_state
+        )
+
+        assert result == {
+            "task": "remove_targets",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Target(s) removed",
+            "error": None,
+            "details": {
+                "deleted_targets": ["file1.tar.gz"],
+                "not_found_targets": ["non-existent"],
+            },
+        }
+        assert test_repo._get_role_for_target_path.calls == [
+            pretend.call("file1.tar.gz"),
+            pretend.call("non-existent"),
+        ]
+        assert repository.targets_crud.read_file_by_path.calls == [
+            pretend.call(test_repo._db, "file1.tar.gz"),
+        ]
+        assert test_repo._send_publish_targets_task.calls == [
+            pretend.call("fake_task_id_xyz", ["first_role"])
+        ]
+        assert repository.targets_crud.update_file_action_to_remove.calls == [
+            pretend.call(test_repo._db, fake_db_target),
+        ]
+        assert test_repo._update_task.calls == [
+            pretend.call(
+                {"first_role": [fake_db_target_removed]},
                 fake_update_state,
                 "fake_subtask",
             )

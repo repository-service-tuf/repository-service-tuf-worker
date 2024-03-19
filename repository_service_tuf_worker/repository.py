@@ -375,7 +375,7 @@ class MetadataRepository:
 
         return snapshot.signed.version
 
-    def _get_role_for_target_path(self, target_path: str) -> str:
+    def _get_role_for_target_path(self, target_path: str) -> Optional[str]:
         """
         Return role name by target file path
         """
@@ -385,7 +385,11 @@ class MetadataRepository:
         # for this target path, but we get the first match. If we want to get
         # the most specific one we need to use _preorder_depth_first_walk
         # of the ngclient Updater class in python-tuf.
-        role_name, _ = next(delegations.get_roles_for_target(target_path))
+        try:
+            role_name, _ = next(delegations.get_roles_for_target(target_path))
+        except StopIteration:
+            return None
+
         return role_name
 
     def _update_task(
@@ -833,6 +837,7 @@ class MetadataRepository:
         try:
             with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
                 # get all delegated role names with unpublished targets
+                delegated_targets = []
                 if payload is None or payload.get("delegated_targets") is None:
                     db_roles = targets_crud.read_roles_with_unpublished_files(
                         self._db
@@ -907,11 +912,17 @@ class MetadataRepository:
             )
         # The task id will be used by `_send_publish_targets_task` (sub-task).
         task_id = payload.get("task_id")
+        added_targets: List[str] = []
+        invalid_paths: List[str] = []
         # Group target files by responsible delegated role.
         # This will be used to by `_update_task` for updating task status.
         roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
             delegated_role = self._get_role_for_target_path(target["path"])
+            if delegated_role is None:
+                invalid_paths.append(target["path"])
+                continue
+
             db_target_file = targets_crud.read_file_by_path(
                 self._db, target.get("path")
             )
@@ -936,6 +947,7 @@ class MetadataRepository:
                     target.get("info"),
                 )
 
+            added_targets.append(target["path"])
             if delegated_role not in roles_to_targets:
                 roles_to_targets[delegated_role] = []
 
@@ -944,24 +956,26 @@ class MetadataRepository:
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
         subtask = None
-        if publish_targets is True:
+        if publish_targets is True and len(added_targets) > 0:
             subtask = self._send_publish_targets_task(
                 task_id, [t_role for t_role in roles_to_targets]
             )
 
         self._update_task(roles_to_targets, update_state, subtask)
 
-        add_targets = [target.get("path") for target in targets]
-        update_roles = [t_role for t_role in roles_to_targets]
+        updated_roles = [t_role for t_role in roles_to_targets]
 
-        logging.debug(f"Added targets: {add_targets} on Roles {update_roles}")
+        logging.debug(
+            f"Added targets: {added_targets} on Roles {updated_roles}"
+        )
         return self._task_result(
             task=TaskName.ADD_TARGETS,
             message="Target(s) Added",
             error=None,
             details={
-                "targets": add_targets,
-                "target_roles": update_roles,
+                "added_targets": added_targets,
+                "invalid_paths": invalid_paths,
+                "target_roles": updated_roles,
             },
         )
 
@@ -997,6 +1011,10 @@ class MetadataRepository:
         roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
             delegated_role = self._get_role_for_target_path(target)
+            if delegated_role is None:
+                not_found_targets.append(target)
+                continue
+
             db_target = targets_crud.read_file_by_path(self._db, target)
             if db_target is None or (
                 db_target.action == targets_schema.TargetAction.REMOVE
