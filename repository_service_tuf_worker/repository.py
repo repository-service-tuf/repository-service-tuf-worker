@@ -837,7 +837,6 @@ class MetadataRepository:
         try:
             with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
                 # get all delegated role names with unpublished targets
-                delegated_targets = []
                 if payload is None or payload.get("delegated_targets") is None:
                     db_roles = targets_crud.read_roles_with_unpublished_files(
                         self._db
@@ -848,6 +847,10 @@ class MetadataRepository:
                         delegated_targets = [
                             targets_role[0] for targets_role in db_roles
                         ]
+                else:
+                    delegated_targets: List[str] = payload.get(
+                        "delegated_targets"
+                    )
 
                 if len(delegated_targets) == 0:
                     logging.debug(

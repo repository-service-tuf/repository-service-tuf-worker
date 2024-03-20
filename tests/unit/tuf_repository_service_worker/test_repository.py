@@ -2030,7 +2030,43 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_timestamp.calls == [pretend.call(3)]
 
-    def test_publish_targets_payload_delegated_targets_empty(
+    def test_publish_targets_payload_delegated_targets(
+        self, test_repo, mocked_datetime
+    ):
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
+
+        test_repo._db = pretend.stub()
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+
+        test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
+
+        payload = {"delegated_targets": ["bins-0", "bins-e"]}
+        result = test_repo.publish_targets(payload)
+
+        assert result == {
+            "task": "publish_targets",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Publish Targets Processed",
+            "error": None,
+            "details": {
+                "target_roles": ["bins-0", "bins-e"],
+            },
+        }
+        assert test_repo._redis.lock.calls == [
+            pretend.call(repository.LOCK_TARGETS, timeout=60.0),
+        ]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(["bins-0", "bins-e"])
+        ]
+        assert test_repo._update_timestamp.calls == [pretend.call(3)]
+
+    def test_publish_targets_payload_with_delegated_targets_empty(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         @contextmanager
