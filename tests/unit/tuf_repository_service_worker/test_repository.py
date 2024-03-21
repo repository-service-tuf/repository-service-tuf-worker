@@ -1075,6 +1075,9 @@ class TestMetadataRepository:
             pretend.call("TIMESTAMP_THRESHOLD", 1),
             pretend.call("TIMESTAMP_NUM_KEYS", 1),
             pretend.call("TARGETS_ONLINE_KEY", True),
+            pretend.call(
+                "DELEGATED_ROLES", payload_settings["delegated_roles"]
+            ),
             pretend.call("FOO_EXPIRATION", 30),
             pretend.call("FOO_THRESHOLD", 1),
             pretend.call("FOO_NUM_KEYS", 1),
@@ -1491,7 +1494,7 @@ class TestMetadataRepository:
             pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
         ]
 
-    def test__bootstrap_finalize(self, test_repo):
+    def test__bootstrap_finalize(self, test_repo, monkeypatch):
         test_repo._persist = pretend.call_recorder(lambda *a: None)
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
@@ -1499,13 +1502,21 @@ class TestMetadataRepository:
         test_repo._bootstrap_online_roles = pretend.call_recorder(
             lambda *a: None
         )
-        fake_roles = pretend.stub(get=pretend.call_recorder(lambda a: None))
-
-        result = test_repo._bootstrap_finalize(
-            "fake_root", "task_id", fake_roles
+        fake_delegated_roles = pretend.stub()
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_delegated_roles)
         )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        result = test_repo._bootstrap_finalize("fake_root", "task_id")
 
         assert result is None
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("DELEGATED_ROLES")
+        ]
         assert test_repo._persist.calls == [
             pretend.call("fake_root", repository.Root.type)
         ]
@@ -1513,9 +1524,8 @@ class TestMetadataRepository:
             pretend.call("ROOT_SIGNING", None),
             pretend.call("BOOTSTRAP", "task_id"),
         ]
-        assert fake_roles.get.calls == [pretend.call("delegated_roles")]
         assert test_repo._bootstrap_online_roles.calls == [
-            pretend.call("fake_root", None)
+            pretend.call("fake_root", fake_delegated_roles)
         ]
 
     def test_bootstrap(self, monkeypatch, test_repo, mocked_datetime):
@@ -1594,9 +1604,7 @@ class TestMetadataRepository:
             pretend.call(fake_root_md, payload["settings"]["roles"])
         ]
         assert test_repo._bootstrap_finalize.calls == [
-            pretend.call(
-                fake_root_md, payload["task_id"], payload["settings"]["roles"]
-            )
+            pretend.call(fake_root_md, payload["task_id"])
         ]
 
     def test_bootstrap_no_signatures(
