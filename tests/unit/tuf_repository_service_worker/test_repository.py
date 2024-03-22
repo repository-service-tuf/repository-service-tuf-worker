@@ -5,6 +5,8 @@
 
 import datetime
 from contextlib import contextmanager
+from math import log
+from typing import Iterator
 
 import pretend
 import pytest
@@ -12,10 +14,13 @@ from celery.exceptions import ChordError
 from celery.result import states
 from securesystemslib.exceptions import StorageError
 from tuf.api.metadata import (
+    DelegatedRole,
+    Delegations,
     Metadata,
     MetaFile,
     Root,
     Snapshot,
+    SuccinctRoles,
     Targets,
     Timestamp,
 )
@@ -364,7 +369,10 @@ class TestMetadataRepository:
             )
         )
         mocked_targets = pretend.stub(
-            signed=pretend.stub(version=targets_version)
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=True),
+            )
         )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda rolename: mocked_snapshot
@@ -417,7 +425,10 @@ class TestMetadataRepository:
             signed=pretend.stub(targets={"k": "v"}, version=bins_e_version)
         )
         mocked_targets = pretend.stub(
-            signed=pretend.stub(version=targets_version)
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=True),
+            )
         )
 
         def get(rolename: str):
@@ -507,8 +518,8 @@ class TestMetadataRepository:
         ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Roles.SNAPSHOT.value),
-            pretend.call("bins-e"),
             pretend.call(repository.Roles.TARGETS.value),
+            pretend.call("bins-e"),
         ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(
@@ -518,6 +529,142 @@ class TestMetadataRepository:
         ]
         assert test_repo._persist.calls == [
             pretend.call(mocked_bins_md, "bins-e"),
+        ]
+
+    def test__update_snapshot_specific_targets_custom_delegation_used(
+        self, test_repo, monkeypatch
+    ):
+        test_repo._db = pretend.stub()
+        repository.TargetFile.from_dict = pretend.call_recorder(
+            lambda *a: a[0]
+        )
+        snapshot_version = 3
+        foo_project_version = 4
+        second_project_version = 4
+        targets_version = 3
+        # Test that only "second_project" is updated. "foo_project" doesn't
+        # require update.
+        mocked_snapshot = pretend.stub(
+            signed=pretend.stub(
+                meta={
+                    "foo_project.json": foo_project_version,
+                    "second_project.json": second_project_version,
+                },
+                version=snapshot_version,
+            )
+        )
+        mocked_delegation_md = pretend.stub(
+            signed=pretend.stub(
+                targets={"k": "v"},
+                version=second_project_version,
+            )
+        )
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=None),
+            )
+        )
+
+        def get(rolename: str):
+            if rolename == Snapshot.type:
+                return mocked_snapshot
+            elif rolename == Targets.type:
+                return mocked_targets
+            else:
+                return mocked_delegation_md
+
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda rolename: get(rolename)
+        )
+        fake_delegation = pretend.stub(
+            rolename="second_project",
+            target_files=[
+                pretend.stub(
+                    path="k1",
+                    info="f1",
+                    action=repository.targets_schema.TargetAction.ADD,
+                ),
+                pretend.stub(
+                    path="k2",
+                    info="f2",
+                    action=repository.targets_schema.TargetAction.REMOVE,
+                ),
+            ],
+            id=5,
+        )
+        fake_delegations = [fake_delegation]
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_roles_joint_files",
+            pretend.call_recorder(lambda *a: fake_delegations),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_files_to_published",
+            pretend.call_recorder(lambda *a: None),
+        )
+        repository.MetaFile = pretend.call_recorder(lambda **kw: kw["version"])
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_roles_version",
+            pretend.call_recorder(lambda *a: None),
+        )
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            fake__bump_and_persist
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        targets = ["second_project"]
+        result = test_repo._update_snapshot(targets)
+
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
+        assert mocked_snapshot.signed.meta == {
+            "foo_project.json": foo_project_version,
+            "second_project.json": second_project_version + 1,
+            "targets.json": targets_version,
+        }
+        assert mocked_delegation_md.signed.targets == {"k1": "f1"}
+        assert repository.targets_crud.read_roles_joint_files.calls == [
+            pretend.call(test_repo._db, targets)
+        ]
+        assert repository.TargetFile.from_dict.calls == [
+            pretend.call("f1", "k1"),
+        ]
+        assert repository.targets_crud.update_files_to_published.calls == [
+            pretend.call(
+                test_repo._db,
+                [file.path for file in fake_delegation.target_files],
+            )
+        ]
+        assert repository.MetaFile.calls == [
+            pretend.call(version=mocked_delegation_md.signed.version),
+            pretend.call(version=mocked_targets.signed.version),
+        ]
+        assert repository.targets_crud.update_roles_version.calls == [
+            pretend.call(
+                test_repo._db, [int(deleg.id) for deleg in fake_delegations]
+            )
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(repository.Roles.SNAPSHOT.value),
+            pretend.call(repository.Roles.TARGETS.value),
+            pretend.call("second_project"),
+        ]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(
+                mocked_delegation_md, "second_project", persist=False
+            ),
+            pretend.call(mocked_snapshot, repository.Roles.SNAPSHOT.value),
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(mocked_delegation_md, "second_project"),
         ]
 
     def test__update_snapshot_bump_all(self, test_repo, monkeypatch):
@@ -538,7 +685,10 @@ class TestMetadataRepository:
             ),
         }
         mocked_targets = pretend.stub(
-            signed=pretend.stub(version=targets_version)
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=True),
+            )
         )
 
         def get(rolename: str):
@@ -595,9 +745,9 @@ class TestMetadataRepository:
         ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Snapshot.type),
+            pretend.call(Targets.type),
             pretend.call("bins-e"),
             pretend.call("bins-f"),
-            pretend.call(Targets.type),
         ]
         assert test_repo._persist.calls == [
             pretend.call(mocked_bins["bins-e"], "bins-e"),
@@ -612,14 +762,117 @@ class TestMetadataRepository:
             pretend.call(version=mocked_targets.signed.version),
         ]
 
-    def test__get_path_succinct_role(self, test_repo):
+    def test__update_snapshot_bump_all_custom_delegation(
+        self, test_repo, monkeypatch
+    ):
+        snapshot_version = 3
+        targets_version = 4
+        mocked_snapshot = pretend.stub(
+            signed=pretend.stub(
+                meta={"project_1.json": 2, "project_2.json": 6},
+                version=snapshot_version,
+            )
+        )
+        mocked_delegations = {
+            "project_1": pretend.stub(
+                signed=pretend.stub(targets={"k": "v"}, version=2)
+            ),
+            "project_2": pretend.stub(
+                signed=pretend.stub(targets={"k": "v"}, version=6)
+            ),
+        }
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(
+                version=targets_version,
+                delegations=pretend.stub(succinct_roles=True),
+            )
+        )
+
+        def get(rolename: str):
+            if rolename == Snapshot.type:
+                return mocked_snapshot
+            elif rolename == Targets.type:
+                return mocked_targets
+            else:
+                return mocked_delegations[rolename]
+
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda rolename: get(rolename)
+        )
+        fake_bins = [
+            pretend.stub(rolename="project_1", id=3),
+            pretend.stub(rolename="project_2", id=4),
+        ]
+        fake_read_all_roles = pretend.call_recorder(lambda *a: fake_bins)
+        test_repo._db = pretend.stub()
+        repository.MetaFile = pretend.call_recorder(lambda **kw: kw["version"])
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_all_roles",
+            fake_read_all_roles,
+        )
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            fake__bump_and_persist
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        fake_update_roles_version = pretend.call_recorder(lambda *a: None)
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_roles_version",
+            fake_update_roles_version,
+        )
+        result = test_repo._update_snapshot(bump_all=True)
+
+        assert result == snapshot_version + 1
+        assert mocked_snapshot.signed.version == snapshot_version + 1
+        assert mocked_snapshot.signed.meta == {
+            "project_1.json": mocked_delegations["project_1"].signed.version,
+            "project_2.json": mocked_delegations["project_2"].signed.version,
+            "targets.json": mocked_targets.signed.version,
+        }
+        assert fake_read_all_roles.calls == [pretend.call(test_repo._db)]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(
+                mocked_delegations["project_1"], "bins", persist=False
+            ),
+            pretend.call(
+                mocked_delegations["project_2"], "bins", persist=False
+            ),
+            pretend.call(mocked_snapshot, "snapshot"),
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Snapshot.type),
+            pretend.call(Targets.type),
+            pretend.call("project_1"),
+            pretend.call("project_2"),
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(mocked_delegations["project_1"], "project_1"),
+            pretend.call(mocked_delegations["project_2"], "project_2"),
+        ]
+        assert fake_update_roles_version.calls == [
+            pretend.call(test_repo._db, [3, 4])
+        ]
+        assert repository.MetaFile.calls == [
+            pretend.call(
+                version=mocked_delegations["project_1"].signed.version
+            ),
+            pretend.call(
+                version=mocked_delegations["project_2"].signed.version
+            ),
+            pretend.call(version=mocked_targets.signed.version),
+        ]
+
+    def test__get_role_for_target_path(self, test_repo):
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_role_for_target=pretend.call_recorder(
-                            lambda *a: "bin-e"
-                        )
+                    get_roles_for_target=pretend.call_recorder(
+                        lambda a: iter([("bins-e", False)])
                     )
                 ),
             )
@@ -627,13 +880,37 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_targets
         )
-        result = test_repo._get_path_succinct_role("v0.0.1/test_path.tar.gz")
+        result = test_repo._get_role_for_target_path("v0.0.1/test_path.tar.gz")
 
-        assert result == "bin-e"
-        assert (
-            fake_targets.signed.delegations.succinct_roles.get_role_for_target.calls  # noqa
-            == [pretend.call("v0.0.1/test_path.tar.gz")]
+        assert result == "bins-e"
+        delegations = fake_targets.signed.delegations
+        assert delegations.get_roles_for_target.calls == [
+            pretend.call("v0.0.1/test_path.tar.gz")
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Targets.type)
+        ]
+
+    def test__get_role_for_target_path_no_role_for_target(self, test_repo):
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    get_roles_for_target=pretend.call_recorder(
+                        lambda a: iter([])
+                    )
+                ),
+            )
         )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda *a: fake_targets
+        )
+        result = test_repo._get_role_for_target_path("v0.0.1/test_path.tar.gz")
+
+        assert result is None
+        delegations = fake_targets.signed.delegations
+        assert delegations.get_roles_for_target.calls == [
+            pretend.call("v0.0.1/test_path.tar.gz")
+        ]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type)
         ]
@@ -730,17 +1007,15 @@ class TestMetadataRepository:
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
-        payload_settings = {
-            "roles": {
-                "root": {"expiration": 365},
-                "targets": {"expiration": 365},
-                "snapshot": {"expiration": 1},
-                "timestamp": {"expiration": 1},
-                "bins": {"expiration": 30, "number_of_delegated_bins": 4},
-            }
+        payload = {
+            "root": {"expiration": 365},
+            "targets": {"expiration": 365},
+            "snapshot": {"expiration": 1},
+            "timestamp": {"expiration": 1},
+            "bins": {"expiration": 30, "number_of_delegated_bins": 4},
         }
 
-        result = test_repo.save_settings(fake_root_md, payload_settings)
+        result = test_repo.save_settings(fake_root_md, payload)
         assert result is None
         assert test_repo.write_repository_settings.calls == [
             pretend.call("ROOT_EXPIRATION", 365),
@@ -774,16 +1049,14 @@ class TestMetadataRepository:
             lambda *a: None
         )
         payload_settings = {
-            "roles": {
-                "root": {"expiration": 365},
-                "targets": {"expiration": 365},
-                "snapshot": {"expiration": 1},
-                "timestamp": {"expiration": 1},
-                "delegated_roles": {
-                    "foo": {"expiration": 30, "path_patterns": ["project/f"]},
-                    "bar": {"expiration": 60, "path_patterns": ["project/b"]},
-                },
-            }
+            "root": {"expiration": 365},
+            "targets": {"expiration": 365},
+            "snapshot": {"expiration": 1},
+            "timestamp": {"expiration": 1},
+            "delegated_roles": {
+                "foo": {"expiration": 30, "path_patterns": ["project/f"]},
+                "bar": {"expiration": 60, "path_patterns": ["project/b"]},
+            },
         }
 
         result = test_repo.save_settings(fake_root_md, payload_settings)
@@ -802,6 +1075,9 @@ class TestMetadataRepository:
             pretend.call("TIMESTAMP_THRESHOLD", 1),
             pretend.call("TIMESTAMP_NUM_KEYS", 1),
             pretend.call("TARGETS_ONLINE_KEY", True),
+            pretend.call(
+                "DELEGATED_ROLES", payload_settings["delegated_roles"]
+            ),
             pretend.call("FOO_EXPIRATION", 30),
             pretend.call("FOO_THRESHOLD", 1),
             pretend.call("FOO_NUM_KEYS", 1),
@@ -812,6 +1088,155 @@ class TestMetadataRepository:
             pretend.call("BAR_PATH_PATTERNS", ["project/b"]),
         ]
 
+    def test__setup_targets_delegations_custom_targets(self, test_repo):
+        fake_pub_online_key = pretend.stub(
+            key_dict={"keyid": "id", "keytype": "rsa"}, keyid="id"
+        )
+
+        repository.Targets.add_key = pretend.call_recorder(lambda *a: None)
+
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(roles={}),
+                add_key=pretend.call_recorder(lambda *a: None),
+            )
+        )
+
+        custom_targets = {
+            "role1": {"expiration": 30, "path_patterns": "role1/"},
+            "role2": {"expiration": 300, "path_patterns": "role2/"},
+        }
+
+        result = test_repo._setup_targets_delegations(
+            fake_pub_online_key, fake_targets, custom_targets
+        )
+        assert result is None
+        assert fake_targets.signed.add_key.calls == [
+            pretend.call(fake_pub_online_key, "role1"),
+            pretend.call(fake_pub_online_key, "role2"),
+        ]
+        call_id = 0
+        for role_name in custom_targets.keys():
+            call = test_repo._bump_expiry.calls[call_id]
+            assert len(call.args) == 2
+            assert isinstance(call.args[0], repository.Metadata)
+            assert call.args[1] == role_name
+
+            call = test_repo._sign.calls[call_id]
+            assert len(call.args) == 1
+            assert isinstance(call.args[0], repository.Metadata)
+
+            call = test_repo._persist.calls[call_id]
+            assert len(call.args) == 2
+            assert isinstance(call.args[0], repository.Metadata)
+            assert call.args[1] == role_name
+
+            call_id += 1
+
+    def test__setup_targets_delegations_hash_bins_delegations(
+        self, test_repo, monkeypatch
+    ):
+        fake_pub_online_key = pretend.stub(
+            key_dict={"keyid": "id", "keytype": "rsa"}, keyid="id"
+        )
+        repository.Targets.add_key = pretend.call_recorder(lambda *a: None)
+
+        get_fresh_resp = 2
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: get_fresh_resp)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=None,
+                add_key=pretend.call_recorder(lambda *a: None),
+            )
+        )
+
+        result = test_repo._setup_targets_delegations(
+            fake_pub_online_key,
+            fake_targets,
+        )
+        assert result is None
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("NUMBER_OF_DELEGATED_BINS")
+        ]
+        for idx, call in enumerate(repository.Targets.add_key.calls):
+            assert call.args[1] == fake_pub_online_key
+            assert call.args[2] == f"bins-{idx}"
+
+        bit_length = log(get_fresh_resp, 2)
+        call_id = 0
+        while call_id < bit_length:
+            call = test_repo._bump_expiry.calls[call_id]
+            assert len(call.args) == 2
+            assert isinstance(call.args[0], repository.Metadata)
+            assert call.args[1] == repository.BINS
+
+            call = test_repo._sign.calls[call_id]
+            assert len(call.args) == 1
+            assert isinstance(call.args[0], repository.Metadata)
+
+            call = test_repo._persist.calls[call_id]
+            assert len(call.args) == 2
+            assert isinstance(call.args[0], repository.Metadata)
+            assert call.args[1] == f"{repository.BINS}-{call_id}"
+
+            call_id += 1
+
+    def test__get_delegation_roles_succinct_roles(self, test_repo):
+        targets: Metadata[Targets] = Metadata(Targets())
+        succinct_roles = SuccinctRoles([], 1, 1, repository.BINS)
+        targets.signed.delegations = Delegations(
+            keys={}, succinct_roles=succinct_roles
+        )
+
+        expected_result = ["bins-0", "bins-1"]
+        test_result = []
+        for role_name in test_repo._get_delegation_roles(targets):
+            test_result.append(role_name)
+
+        assert test_result == expected_result
+
+    def test__get_delegation_roles_custom_targets(self, test_repo):
+        targets: Metadata[Targets] = Metadata(Targets())
+        targets.signed.delegations = Delegations(
+            keys={},
+            roles={
+                "role1": DelegatedRole("role1", [], 1, 1, "role1/"),
+                "role2": DelegatedRole("role2", [], 1, 1, "role2/"),
+            },
+        )
+
+        expected_result = ["role1", "role2"]
+        test_result = []
+        for role_name in test_repo._get_delegation_roles(targets):
+            test_result.append(role_name)
+
+        assert test_result == expected_result
+
+    def test__get_delegation_roles_no_delegation(self, test_repo):
+        targets: Metadata[Targets] = Metadata(Targets())
+        result = []
+        with pytest.raises(ValueError) as e:
+            for delegated_role in test_repo._get_delegation_roles(targets):
+                result.append(delegated_role)
+
+        assert len(result) == 0
+        assert "Targets must have delegation, internal error" in str(e)
+
     def test__bootstrap_online_roles(self, test_repo, monkeypatch):
         fake_root_md = pretend.stub(
             type="root",
@@ -820,15 +1245,20 @@ class TestMetadataRepository:
                 keys={"online_key_id": "online_public_key"},
             ),
         )
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: 2)
+        test_repo._setup_targets_delegations = pretend.call_recorder(
+            lambda *a: None
         )
-        monkeypatch.setattr(
-            repository,
-            "get_repository_settings",
-            lambda *a, **kw: fake_settings,
+
+        def fake_delegation_roles() -> Iterator:
+            bins = ["bins-0", "bins-1"]
+            for bin in bins:
+                yield bin
+
+        test_repo._get_delegation_roles = pretend.call_recorder(
+            lambda *a: fake_delegation_roles()
         )
-        repository.Targets.add_key = pretend.call_recorder(lambda *a: None)
+        repository.MetaFile = pretend.call_recorder(lambda: "name")
+
         monkeypatch.setattr(
             repository.targets_crud,
             "create_roles",
@@ -841,6 +1271,15 @@ class TestMetadataRepository:
 
         result = test_repo._bootstrap_online_roles(fake_root_md)
         assert result is None
+        assert len(test_repo._setup_targets_delegations.calls) == 1
+        call = test_repo._setup_targets_delegations.calls[0]
+        assert call.args[0] == "online_public_key"
+        assert isinstance(call.args[1], Metadata)
+        assert call.args[2] is None
+
+        for call in test_repo._get_delegation_roles.calls:
+            assert isinstance(call.args[0], Metadata)
+
         assert repository.targets_crud.create_roles.calls == [
             pretend.call(
                 "db_session",
@@ -854,56 +1293,31 @@ class TestMetadataRepository:
                 ],
             )
         ]
-        for idx, call in enumerate(repository.Targets.add_key.calls):
-            assert call.args[1] == "online_public_key"
-            assert call.args[2] == f"bins-{idx}"
         # Special checks as calls use metadata object instances
-
         # Assert that calls contain two args and 'role' argument is a
         # 'Metadata'.
-        for call in test_repo._bump_expiry.calls:
+        call_id = 0
+        for md_cls in [Targets, Snapshot, Timestamp]:
+            call = test_repo._bump_expiry.calls[call_id]
             assert len(call.args) == 2
             assert isinstance(call.args[0], repository.Metadata)
-        # Assert the test_repo._bump_expiry calls role_name argument
-        _bump_expiry_role_names = [
-            call.args[1] for call in test_repo._bump_expiry.calls
-        ]
-        assert _bump_expiry_role_names == [
-            "bins",
-            "bins",
-            "targets",
-            "snapshot",
-            "timestamp",
-        ]
+            assert isinstance(call.args[0].signed, md_cls)
+            assert call.args[1] == md_cls.type
 
-        # Assert that calls use two args and 'role' argument is a 'Metadata'
-        # type or a pretend.sub()
-        for call in test_repo._persist.calls:
-            assert len(call.args) == 2
-            assert isinstance(
-                call.args[0], (repository.Metadata, pretend.stub)
-            )
-        # Assert the test_repo._persist calls role_name argument
-        _persist_persist_role_names = [
-            call.args[1] for call in test_repo._persist.calls
-        ]
-        assert _persist_persist_role_names == [
-            "bins-0",
-            "bins-1",
-            "targets",
-            "snapshot",
-            "timestamp",
-        ]
-
-        # The role argument is an instance we cannot check the object itself
-        # object itself
-        for call in test_repo._sign.calls:
+            call = test_repo._sign.calls[call_id]
             assert len(call.args) == 1
             assert isinstance(call.args[0], repository.Metadata)
-        # Assert the number of calls test_repos._sign
-        assert len(test_repo._sign.calls) == len(test_repo._persist.calls)
+            assert isinstance(call.args[0].signed, md_cls)
 
-    def test_update_settings(self, test_repo, mocked_datetime):
+            call = test_repo._persist.calls[call_id]
+            assert len(call.args) == 2
+            assert isinstance(call.args[0], repository.Metadata)
+            assert isinstance(call.args[0].signed, md_cls)
+            assert call.args[1] == md_cls.type
+
+            call_id += 1
+
+    def test_update_settings(self, test_repo, mocked_datetime, monkeypatch):
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
@@ -912,6 +1326,15 @@ class TestMetadataRepository:
         TIMESTAMP_EXP = 20
         BINS_EXP = 5
         BINS = repository.Roles.BINS.value
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: 30)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
 
         payload = {
             "settings": {
@@ -944,6 +1367,12 @@ class TestMetadataRepository:
             pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
             pretend.call(TIMESTAMP_CONFIG_NAME, TIMESTAMP_EXP),
             pretend.call(BINS_CONFIG_NAME, BINS_EXP),
+        ]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call(f"{Targets.type.upper()}_EXPIRATION"),
+            pretend.call(f"{Snapshot.type.upper()}_EXPIRATION"),
+            pretend.call(f"{Timestamp.type.upper()}_EXPIRATION"),
+            pretend.call(f"{BINS.upper()}_EXPIRATION"),
         ]
 
     def test_update_settings_no_settings(self, test_repo, mocked_datetime):
@@ -1006,13 +1435,31 @@ class TestMetadataRepository:
         }
 
     def test_update_settings_valid_and_invalid_roles(
-        self, test_repo, mocked_datetime
+        self, test_repo, mocked_datetime, monkeypatch
     ):
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
         TARGETS_EXP = 100
         SNAPSHOT_EXP = 50
+
+        def _get_fresh(expiration_str: str):
+            if expiration_str == "TARGETS_EXPIRATION":
+                return TARGETS_EXP
+            elif expiration_str == "SNAPSHOT_EXPIRATION":
+                return SNAPSHOT_EXP
+            else:
+                return None
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: _get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
         payload = {
             "settings": {
                 "expiration": {
@@ -1036,12 +1483,18 @@ class TestMetadataRepository:
                 "updated_roles": ["targets", "snapshot"],
             },
         }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call(f"{Targets.type.upper()}_EXPIRATION"),
+            pretend.call(f"{Snapshot.type.upper()}_EXPIRATION"),
+            pretend.call("FOO_EXPIRATION"),
+            pretend.call("BAR_EXPIRATION"),
+        ]
         assert test_repo.write_repository_settings.calls == [
             pretend.call(f"{Targets.type.upper()}_EXPIRATION", TARGETS_EXP),
             pretend.call(f"{Snapshot.type.upper()}_EXPIRATION", SNAPSHOT_EXP),
         ]
 
-    def test__bootstrap_finalize(self, test_repo):
+    def test__bootstrap_finalize(self, test_repo, monkeypatch):
         test_repo._persist = pretend.call_recorder(lambda *a: None)
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
@@ -1049,10 +1502,21 @@ class TestMetadataRepository:
         test_repo._bootstrap_online_roles = pretend.call_recorder(
             lambda *a: None
         )
-
+        fake_delegated_roles = pretend.stub()
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_delegated_roles)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         result = test_repo._bootstrap_finalize("fake_root", "task_id")
 
         assert result is None
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("DELEGATED_ROLES")
+        ]
         assert test_repo._persist.calls == [
             pretend.call("fake_root", repository.Root.type)
         ]
@@ -1061,7 +1525,7 @@ class TestMetadataRepository:
             pretend.call("BOOTSTRAP", "task_id"),
         ]
         assert test_repo._bootstrap_online_roles.calls == [
-            pretend.call("fake_root")
+            pretend.call("fake_root", fake_delegated_roles)
         ]
 
     def test_bootstrap(self, monkeypatch, test_repo, mocked_datetime):
@@ -1097,7 +1561,15 @@ class TestMetadataRepository:
         test_repo._bootstrap_finalize = pretend.call_recorder(lambda *a: None)
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1129,7 +1601,7 @@ class TestMetadataRepository:
             pretend.call(fake_root_md)
         ]
         assert test_repo.save_settings.calls == [
-            pretend.call(fake_root_md, payload["settings"])
+            pretend.call(fake_root_md, payload["settings"]["roles"])
         ]
         assert test_repo._bootstrap_finalize.calls == [
             pretend.call(fake_root_md, payload["task_id"])
@@ -1170,7 +1642,15 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1232,7 +1712,15 @@ class TestMetadataRepository:
         test_repo._validate_signature = pretend.call_recorder(lambda *a: False)
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1259,6 +1747,74 @@ class TestMetadataRepository:
         ]
         assert test_repo.write_repository_settings.calls == [
             pretend.call("BOOTSTRAP", None),
+        ]
+
+    def test_bootstrap_with_custom_targets_and_hash_bin_delegation(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_root_md = pretend.stub(
+            signatures={"keyid1": "sig1", "key2": "sig2"},
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_root_md
+        )
+        test_repo._validate_signature = pretend.call_recorder(lambda *a: True)
+
+        payload = {
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                    "delegated_roles": {
+                        "foo": {
+                            "expiration": 30,
+                            "path_patterns": ["project/f"],
+                        },
+                        "bar": {
+                            "expiration": 60,
+                            "path_patterns": ["project/b"],
+                        },
+                    },
+                }
+            },
+            "metadata": {
+                "root": {"md_k1": "md_v1"},
+            },
+            "task_id": "fake_task_id",
+        }
+
+        result = test_repo.bootstrap(payload)
+        assert result == {
+            "task": repository.TaskName.BOOTSTRAP,
+            "status": False,
+            "message": "Bootstrap Failed",
+            "error": (
+                "Bootstrap cannot use both hash bin delegation and"
+                " custom target delegations"
+            ),
+            "details": None,
+            "last_update": mocked_datetime.now(),
+        }
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call(payload["metadata"]["root"])
+        ]
+        assert test_repo._validate_signature.calls == [
+            pretend.call(fake_root_md, "sig1"),
+            pretend.call(fake_root_md, "sig2"),
         ]
 
     def test_bootstrap_distributed_async_sign(
@@ -1301,7 +1857,15 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1333,7 +1897,7 @@ class TestMetadataRepository:
             pretend.call(fake_root_md)
         ]
         assert test_repo.save_settings.calls == [
-            pretend.call(fake_root_md, payload["settings"])
+            pretend.call(fake_root_md, payload["settings"]["roles"])
         ]
         assert test_repo._bootstrap_finalize.calls == []
         assert test_repo.write_repository_settings.calls == [
@@ -1357,7 +1921,15 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "settings": {"services": {"number_of_delegated_bins": 2}},
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
             "metadata": {
                 "root": {"md_k1": "md_v1"},
             },
@@ -1466,7 +2038,43 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_timestamp.calls == [pretend.call(3)]
 
-    def test_publish_targets_payload_bins_targets_empty(
+    def test_publish_targets_payload_delegated_targets(
+        self, test_repo, mocked_datetime
+    ):
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
+
+        test_repo._db = pretend.stub()
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+
+        test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
+
+        payload = {"delegated_targets": ["bins-0", "bins-e"]}
+        result = test_repo.publish_targets(payload)
+
+        assert result == {
+            "task": "publish_targets",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Publish Targets Processed",
+            "error": None,
+            "details": {
+                "target_roles": ["bins-0", "bins-e"],
+            },
+        }
+        assert test_repo._redis.lock.calls == [
+            pretend.call(repository.LOCK_TARGETS, timeout=60.0),
+        ]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(["bins-0", "bins-e"])
+        ]
+        assert test_repo._update_timestamp.calls == [pretend.call(3)]
+
+    def test_publish_targets_payload_with_delegated_targets_empty(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         @contextmanager
@@ -1489,7 +2097,7 @@ class TestMetadataRepository:
         test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
-        payload = {"bins_targets": None}
+        payload = {"delegated_targets": None}
         result = test_repo.publish_targets(payload)
 
         assert result == {
@@ -1571,7 +2179,7 @@ class TestMetadataRepository:
 
     def test_add_targets(self, test_repo, monkeypatch, mocked_datetime):
         test_repo._db = pretend.stub()
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -1629,7 +2237,8 @@ class TestMetadataRepository:
             "message": "Target(s) Added",
             "error": None,
             "details": {
-                "targets": ["file1.tar.gz"],
+                "added_targets": ["file1.tar.gz"],
+                "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
         }
@@ -1657,7 +2266,7 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_role_by_rolename.calls == [
             pretend.call(test_repo._db, "bins-e")
         ]
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz")
         ]
         assert test_repo._send_publish_targets_task.calls == [
@@ -1671,7 +2280,7 @@ class TestMetadataRepository:
 
     def test_add_targets_exists(self, test_repo, monkeypatch, mocked_datetime):
         test_repo._db = pretend.stub()
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -1723,11 +2332,12 @@ class TestMetadataRepository:
             "message": "Target(s) Added",
             "error": None,
             "details": {
-                "targets": ["file1.tar.gz"],
+                "added_targets": ["file1.tar.gz"],
+                "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz")
         ]
         assert test_repo._send_publish_targets_task.calls == [
@@ -1780,7 +2390,7 @@ class TestMetadataRepository:
         self, test_repo, monkeypatch, mocked_datetime
     ):
         test_repo._db = pretend.stub()
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -1836,7 +2446,8 @@ class TestMetadataRepository:
             "message": "Target(s) Added",
             "error": None,
             "details": {
-                "targets": ["file1.tar.gz"],
+                "added_targets": ["file1.tar.gz"],
+                "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
         }
@@ -1864,15 +2475,93 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_role_by_rolename.calls == [
             pretend.call(test_repo._db, "bins-e")
         ]
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz")
         ]
         assert test_repo._update_task.calls == [
             pretend.call({"bins-e": [fake_db_target]}, fake_update_state, None)
         ]
 
+    def test_add_targets_invalid_path(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        test_repo._db = pretend.stub()
+        test_repo._get_role_for_target_path = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        def fake_target(key):
+            if key == "path":
+                return "fake_target1.tar.gz"
+            if key == "info":
+                return {"k": "v"}
+
+        fake_db_target = pretend.stub(get=pretend.call_recorder(fake_target))
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_file_by_path",
+            pretend.call_recorder(lambda *a: None),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "create_file",
+            pretend.call_recorder(lambda *a, **kw: fake_db_target),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_by_rolename",
+            pretend.call_recorder(lambda *a: "bins-e"),
+        )
+        test_repo._send_publish_targets_task = pretend.call_recorder(
+            lambda *a: "fake_subtask"
+        )
+        test_repo._update_task = pretend.call_recorder(lambda *a: True)
+
+        payload = {
+            "targets": [
+                {
+                    "info": {
+                        "length": 11342,
+                        "hashes": {
+                            "blake2b-256": "716f6e863f744b9ac22c97ec7b76ea5"
+                        },
+                        "custom": {"task_id": "12345"},
+                    },
+                    "path": "file1.tar.gz",
+                },
+            ],
+            "task_id": "fake_task_id_xyz",
+        }
+
+        fake_update_state = pretend.stub()
+        result = test_repo.add_targets(payload, update_state=fake_update_state)
+
+        assert result == {
+            "task": "add_targets",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Target(s) Added",
+            "error": None,
+            "details": {
+                "added_targets": [],
+                "invalid_paths": ["file1.tar.gz"],
+                "target_roles": [],
+            },
+        }
+        assert repository.targets_crud.read_file_by_path.calls == []
+        assert repository.targets_crud.create_file.calls == []
+        assert repository.targets_crud.read_role_by_rolename.calls == []
+        assert test_repo._get_role_for_target_path.calls == [
+            pretend.call("file1.tar.gz")
+        ]
+        assert test_repo._send_publish_targets_task.calls == []
+        assert test_repo._update_task.calls == [
+            pretend.call({}, fake_update_state, None)
+        ]
+
     def test_remove_targets(self, test_repo, monkeypatch, mocked_datetime):
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
         fake_db_target = pretend.stub(action="REMOVE", published=False)
@@ -1917,7 +2606,7 @@ class TestMetadataRepository:
                 "not_found_targets": [],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz"),
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -1949,10 +2638,76 @@ class TestMetadataRepository:
             )
         ]
 
+    def test_remove_targets_deleted_and_not_found_targets(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        get_role_for_target_path_generator = iter(("first_role", None))
+        test_repo._get_role_for_target_path = pretend.call_recorder(
+            lambda *a: next(get_role_for_target_path_generator)
+        )
+        fake_db_target = pretend.stub(action="REMOVE", published=False)
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_file_by_path",
+            pretend.call_recorder(lambda *a: fake_db_target),
+        )
+        fake_db_target_removed = pretend.stub()
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_file_action_to_remove",
+            pretend.call_recorder(lambda *a: fake_db_target_removed),
+        )
+
+        payload = {
+            "targets": ["file1.tar.gz", "non-existent"],
+            "task_id": "fake_task_id_xyz",
+        }
+        test_repo._send_publish_targets_task = pretend.call_recorder(
+            lambda *a: "fake_subtask"
+        )
+        test_repo._update_task = pretend.call_recorder(lambda *a: None)
+
+        fake_update_state = pretend.stub()
+        result = test_repo.remove_targets(
+            payload, update_state=fake_update_state
+        )
+
+        assert result == {
+            "task": "remove_targets",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Target(s) removed",
+            "error": None,
+            "details": {
+                "deleted_targets": ["file1.tar.gz"],
+                "not_found_targets": ["non-existent"],
+            },
+        }
+        assert test_repo._get_role_for_target_path.calls == [
+            pretend.call("file1.tar.gz"),
+            pretend.call("non-existent"),
+        ]
+        assert repository.targets_crud.read_file_by_path.calls == [
+            pretend.call(test_repo._db, "file1.tar.gz"),
+        ]
+        assert test_repo._send_publish_targets_task.calls == [
+            pretend.call("fake_task_id_xyz", ["first_role"])
+        ]
+        assert repository.targets_crud.update_file_action_to_remove.calls == [
+            pretend.call(test_repo._db, fake_db_target),
+        ]
+        assert test_repo._update_task.calls == [
+            pretend.call(
+                {"first_role": [fake_db_target_removed]},
+                fake_update_state,
+                "fake_subtask",
+            )
+        ]
+
     def test_remove_targets_skip_publishing(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
         fake_db_target = pretend.stub(action="REMOVE", published=False)
@@ -1995,7 +2750,7 @@ class TestMetadataRepository:
                 "not_found_targets": [],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file1.tar.gz"),
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2027,7 +2782,7 @@ class TestMetadataRepository:
     def test_remove_targets_all_none(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bin-e"
         )
 
@@ -2058,7 +2813,7 @@ class TestMetadataRepository:
                 ],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file2.tar.gz"),
             pretend.call("file3.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2072,7 +2827,7 @@ class TestMetadataRepository:
     def test_remove_targets_action_remove_published_true(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_path_succinct_role = pretend.call_recorder(
+        test_repo._get_role_for_target_path = pretend.call_recorder(
             lambda *a: "bin-e"
         )
 
@@ -2105,7 +2860,7 @@ class TestMetadataRepository:
                 ],
             },
         }
-        assert test_repo._get_path_succinct_role.calls == [
+        assert test_repo._get_role_for_target_path.calls == [
             pretend.call("file2.tar.gz"),
             pretend.call("file3.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2150,11 +2905,6 @@ class TestMetadataRepository:
         caplog.set_level(repository.logging.INFO)
         fake_targets = pretend.stub(
             signed=pretend.stub(
-                delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
-                    )
-                ),
                 expires=mocked_datetime.now(),
                 version=1,
             )
@@ -2179,6 +2929,15 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
+
+        def fake_delegation_roles() -> Iterator:
+            bins = ["bin-a"]
+            for bin in bins:
+                yield bin
+
+        test_repo._get_delegation_roles = pretend.call_recorder(
+            lambda *a: fake_delegation_roles()
+        )
         test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
             lambda **kw: "fake_snapshot"
@@ -2197,6 +2956,9 @@ class TestMetadataRepository:
             pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
+        assert test_repo._get_delegation_roles.calls == [
+            pretend.call(fake_targets)
+        ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(fake_targets, Targets.type),
         ]
@@ -2207,7 +2969,7 @@ class TestMetadataRepository:
             pretend.call("fake_snapshot")
         ]
         assert "Bumped version of 'Targets' role" == caplog.messages[0]
-        msg_2 = "Bumped versions of expired bin roles: bin-a"
+        msg_2 = "Bumped versions of expired roles: bin-a"
         assert msg_2 == caplog.messages[1]
         assert "Snapshot version bumped: 79" in caplog.messages[2]
         assert "Timestamp version bumped: 87" in caplog.messages[3]
@@ -2407,7 +3169,7 @@ class TestMetadataRepository:
         ]
         msg_1 = "No configuration found for TARGETS_ONLINE_KEY"
         assert msg_1 == caplog.messages[0]
-        msg_2 = "All bin roles have more than 1 hour(s) to expire, skipping"
+        msg_2 = "All delegated roles have more than 1 hour(s) to expire"
         assert msg_2 in caplog.messages[1]
         assert "Snapshot version bumped:" not in caplog.messages
         assert "Timestamp version bumped:" not in caplog.messages

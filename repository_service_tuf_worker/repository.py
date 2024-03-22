@@ -10,7 +10,7 @@ import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from math import log
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Iterator, List, Literal, Optional
 
 import redis
 from celery.app.task import Task
@@ -18,7 +18,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import UnverifiedSignatureError
-from securesystemslib.signer import Signature
+from securesystemslib.signer import Key, Signature
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
@@ -27,6 +27,7 @@ from tuf.api.exceptions import (
 from tuf.api.metadata import (  # noqa
     SPECIFICATION_VERSION,
     TOP_LEVEL_ROLE_NAMES,
+    DelegatedRole,
     Delegations,
     Metadata,
     MetaFile,
@@ -60,10 +61,6 @@ class Roles(enum.Enum):
     SNAPSHOT = Snapshot.type
     TIMESTAMP = Timestamp.type
     BINS = "bins"
-
-    @staticmethod
-    def online_roles() -> List[str]:
-        return [Targets.type, Snapshot.type, Timestamp.type, "bins"]
 
 
 ALL_REPOSITORY_ROLES_NAMES = [rolename.value for rolename in Roles]
@@ -290,10 +287,14 @@ class MetadataRepository:
         Args:
             target_roles: List of roles to bump. If provided, 'bump_all' arg
                 will NOT be taken into account.
-            bump_all: Wheter to bump all bin target roles. If provided, then
-                'target_roles' arg is NOT taken into acount.
+            bump_all: Wheter to bump all delegated target roles. If provided,
+                then 'target_roles' arg is NOT taken into acount.
         """
         snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
+        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
+        bins_used = (
+            True if targets.signed.delegations.succinct_roles else False
+        )
 
         db_target_roles: List[targets_models.RSTUFTargetRoles] = []
         if target_roles:
@@ -303,11 +304,11 @@ class MetadataRepository:
 
             for db_role in db_target_roles:
                 rolename = db_role.rolename
-                bins_md: Metadata[Targets] = self._storage_backend.get(
+                delegation: Metadata[Targets] = self._storage_backend.get(
                     rolename
                 )
-                bins_md.signed.targets.clear()
-                bins_md.signed.targets = {
+                delegation.signed.targets.clear()
+                delegation.signed.targets = {
                     file.path: TargetFile.from_dict(file.info, file.path)
                     for file in db_role.target_files
                     if file.action == targets_schema.TargetAction.ADD
@@ -319,10 +320,12 @@ class MetadataRepository:
                     # one target file with action "REMOVE" and the CRUD
                     # will return None for this specific role.
                 }
-
+                delegation_name = BINS if bins_used else rolename
                 # update expiry, bump version and persist to the storage
-                self._bump_and_persist(bins_md, BINS, persist=False)
-                self._persist(bins_md, rolename)
+                self._bump_and_persist(
+                    delegation, delegation_name, persist=False
+                )
+                self._persist(delegation, rolename)
                 # update targetfile in db
                 # note: It update only if is not published see the CRUD.
                 targets_crud.update_files_to_published(
@@ -330,34 +333,38 @@ class MetadataRepository:
                 )
 
                 snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                    version=bins_md.signed.version
+                    version=delegation.signed.version
                 )
 
-            bins = "".join(target_roles)
-            logging.info(f"Bumped all expired target 'bin' roles: {bins}")
+            roles = "".join(target_roles)
+            msg = f"Bumped all expired target delegation roles: {roles}"
+            logging.info(msg)
 
         elif bump_all:
             db_target_roles = targets_crud.read_all_roles(self._db)
             for db_role in db_target_roles:
                 rolename = db_role.rolename
-                bins_md: Metadata[Targets] = self._storage_backend.get(
+                delegation: Metadata[Targets] = self._storage_backend.get(
                     db_role.rolename
                 )
+                delegation_name = BINS if bins_used else rolename
                 # update expiry, bump version and persist to the storage
-                self._bump_and_persist(bins_md, BINS, persist=False)
-                self._persist(bins_md, db_role.rolename)
+                self._bump_and_persist(
+                    delegation, delegation_name, persist=False
+                )
+                self._persist(delegation, db_role.rolename)
 
                 snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                    version=bins_md.signed.version
+                    version=delegation.signed.version
                 )
-            logging.info("Bumped all target 'bin' roles")
+
+            logging.info("Bumped all target delegation roles")
 
         if len(db_target_roles) > 0:
             targets_crud.update_roles_version(
                 self._db, [int(db_role.id) for db_role in db_target_roles]
             )
 
-        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
         snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
             version=targets.signed.version
         )
@@ -368,19 +375,26 @@ class MetadataRepository:
 
         return snapshot.signed.version
 
-    def _get_path_succinct_role(self, target_path: str) -> str:
+    def _get_role_for_target_path(self, target_path: str) -> Optional[str]:
         """
         Return role name by target file path
         """
-        bin_role: Metadata[Targets] = self._storage_backend.get(Targets.type)
-        bin_succinct_roles = bin_role.signed.delegations.succinct_roles
-        bins_name = bin_succinct_roles.get_role_for_target(target_path)
+        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
+        delegations = targets.signed.delegations
+        # Note: there could be more than one matching custom delegated role,
+        # for this target path, but we get the first match. If we want to get
+        # the most specific one we need to use _preorder_depth_first_walk
+        # of the ngclient Updater class in python-tuf.
+        try:
+            role_name, _ = next(delegations.get_roles_for_target(target_path))
+        except StopIteration:
+            return None
 
-        return bins_name
+        return role_name
 
     def _update_task(
         self,
-        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
+        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
         update_state: Task.update_state,
         subtask: Optional[AsyncResult] = None,
     ):
@@ -389,11 +403,13 @@ class MetadataRepository:
         published in the latest Snapshot. It runs every 3 seconds until the
         task is finished.
         """
-        logging.debug(f"Waiting roles to be published {list(bin_targets)}")
+        logging.debug(
+            f"Waiting roles to be published {list(roles_to_targets.keys())}"
+        )
 
         def _update_state(
             state: states,
-            bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
+            roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
             completed_roles: List[str],
             exc_type: Optional[str] = None,
             exc_message: Optional[List[str]] = None,
@@ -403,7 +419,7 @@ class MetadataRepository:
                 meta={
                     "details": {
                         "published_roles": completed_roles,
-                        "roles_to_publish": f"{list(bin_targets.keys())}",
+                        "roles_to_publish": f"{list(roles_to_targets.keys())}",
                     },
                     "message": "Publishing",
                     "last_update": datetime.now(),
@@ -414,7 +430,7 @@ class MetadataRepository:
 
         while True:
             completed_roles: List[str] = []
-            for role_name, targets in bin_targets.items():
+            for role_name, targets in roles_to_targets.items():
                 for target in targets:
                     self._db.refresh(target)
                     if target.published is True:
@@ -428,7 +444,7 @@ class MetadataRepository:
                 exc_message = list(subtask.result.args)
                 _update_state(
                     states.FAILURE,
-                    bin_targets,
+                    roles_to_targets,
                     completed_roles,
                     exc_type=exc_type,
                     exc_message=exc_message,
@@ -438,14 +454,14 @@ class MetadataRepository:
                     f"{exc_type} {exc_message}"
                 )
 
-            if sorted(completed_roles) != sorted(list(bin_targets)):
-                _update_state("RUNNING", bin_targets, completed_roles)
+            if sorted(completed_roles) != sorted(list(roles_to_targets)):
+                _update_state("RUNNING", roles_to_targets, completed_roles)
                 time.sleep(3)
             else:
                 break
 
     def _send_publish_targets_task(
-        self, task_id: str, bins_targets: Optional[List[str]]
+        self, task_id: str, delegated_targets: Optional[List[str]]
     ):  # pragma: no cover
         """
         Send a new task to the `rstuf_internals` queue to publish targets.
@@ -456,14 +472,14 @@ class MetadataRepository:
         return repository_service_tuf_worker.apply_async(
             kwargs={
                 "action": "publish_targets",
-                "payload": {"bin_targets": bins_targets},
+                "payload": {"delegated_targets": delegated_targets},
             },
             task_id=f"publish_targets-{task_id}",
             queue="rstuf_internals",
             acks_late=True,
         )
 
-    def save_settings(self, root: Metadata[Root], settings: Dict[str, Any]):
+    def save_settings(self, root: Metadata[Root], roles_info: Dict[str, Any]):
         """
         Save settings to the repository settings.
 
@@ -484,7 +500,7 @@ class MetadataRepository:
 
             self.write_repository_settings(
                 f"{role_upp}_EXPIRATION",
-                settings["roles"][role]["expiration"],
+                roles_info[role]["expiration"],
             )
             self.write_repository_settings(f"{role_upp}_THRESHOLD", threshold)
             self.write_repository_settings(f"{role_upp}_NUM_KEYS", num_of_keys)
@@ -492,20 +508,21 @@ class MetadataRepository:
         # For now targets always uses online key.
         self.write_repository_settings("TARGETS_ONLINE_KEY", True)
 
-        if settings["roles"].get("bins"):
-            info = settings["roles"]["bins"]
+        if roles_info.get("bins"):
+            bins = roles_info["bins"]
             self.write_repository_settings(
-                "BINS_EXPIRATION", info["expiration"]
+                "BINS_EXPIRATION", bins["expiration"]
             )
             self.write_repository_settings("BINS_THRESHOLD", 1)
             self.write_repository_settings("BINS_NUM_KEYS", 1)
             self.write_repository_settings(
                 "NUMBER_OF_DELEGATED_BINS",
-                info["number_of_delegated_bins"],
+                bins["number_of_delegated_bins"],
             )
 
         else:
-            delegated_roles = settings["roles"]["delegated_roles"]
+            delegated_roles = roles_info["delegated_roles"]
+            self.write_repository_settings("DELEGATED_ROLES", delegated_roles)
             for deleg_name, deleg_info in delegated_roles.items():
                 name = deleg_name.upper()
                 self.write_repository_settings(
@@ -518,53 +535,96 @@ class MetadataRepository:
                     delegated_roles[deleg_name]["path_patterns"],
                 )
 
-    def _bootstrap_online_roles(self, root: Metadata[Root]):
+    def _setup_targets_delegations(
+        self,
+        online_pub_key: Key,
+        targets: Metadata[Targets],
+        custom_targets: Optional[Dict[str, Any]] = None,
+    ):
+        """Setup target delegations no matter if succinct hash bin or custom"""
+        if custom_targets:
+            # Using custom Target roles delegations with path prefixes.
+            targets.signed.delegations = Delegations({}, {})
+            for role_name, role_info in custom_targets.items():
+                keyid = online_pub_key.keyid
+                targets.signed.delegations.roles[role_name] = DelegatedRole(
+                    role_name, [keyid], 1, True, role_info["path_patterns"]
+                )
+                targets.signed.add_key(online_pub_key, role_name)
+                custom_target = Metadata(Targets())
+                self._bump_expiry(custom_target, role_name)
+                self._sign(custom_target)
+                self._persist(custom_target, role_name)
+        else:
+            # Using succinct hash bin delegations.
+            # Calculate the bit length (Number of bits between 1 and 32)
+            # Calculate the bit length (Number of bits between 1 and 32)
+            bit_length = int(
+                log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"), 2)
+            )
+            # Succinct delegated roles (`bins`)
+            succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
+            targets.signed.delegations = Delegations(
+                keys={}, succinct_roles=succinct_roles
+            )
+            # Initialize all succinct delegated roles (`bins`), update expire,
+            # sign, add to `Snapshot` meta and persist in the backend storage
+            # service.
+            for delegated_name in succinct_roles.get_roles():
+                targets.signed.add_key(online_pub_key, delegated_name)
+                bins_role = Metadata(Targets())
+                self._bump_expiry(bins_role, BINS)
+                self._sign(bins_role)
+                self._persist(bins_role, delegated_name)
+
+    def _get_delegation_roles(
+        self, targets: Metadata[Targets]
+    ) -> Iterator[str]:
+        """Get all Targets delegation roles no matter if bins or custom.
+
+        Raises ValueError if targets.signed.delegation is not initialized.
+        """
+        if targets.signed.delegations is None:
+            raise ValueError("Targets must have delegation, internal error")
+
+        if targets.signed.delegations.succinct_roles:
+            # Using succinct hash bin delegations.
+            for bin in targets.signed.delegations.succinct_roles.get_roles():
+                yield bin
+        else:
+            # Using custom Target roles delegations with path prefixes.
+            for custom_target_name in targets.signed.delegations.roles.keys():
+                yield custom_target_name
+
+    def _bootstrap_online_roles(
+        self,
+        root: Metadata[Root],
+        custom_targets: Optional[Dict[str, Any]] = None,
+    ):
         """
         Bootstrap the roles that uses the online key
         """
-        _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
-        public_key = root.signed.keys[_keyid]
-
         # Top level roles (`Targets`, `Timestamp``, `Snapshot`) initialization
         targets: Metadata[Targets] = Metadata(Targets())
         snapshot: Metadata[Snapshot] = Metadata(Snapshot())
         timestamp: Metadata[Timestamp] = Metadata(Timestamp())
 
-        # Calculate the bit length (Number of bits between 1 and 32)
-        bit_length = int(
-            log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"), 2)
-        )
-        # Succinct delegated roles (`bins`)
-        succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
-        targets.signed.delegations = Delegations(
-            keys={}, succinct_roles=succinct_roles
-        )
-        # Initialize all succinct delegated roles (`bins`), update expire,
-        # sign, add to `Snapshot` meta and persist in the backend storage
-        # service.
-        for delegated_name in succinct_roles.get_roles():
-            targets.signed.add_key(public_key, delegated_name)
-            bins_role = Metadata(Targets())
-            self._bump_expiry(bins_role, BINS)
-            self._sign(bins_role)
-            snapshot.signed.meta[f"{delegated_name}.json"] = MetaFile(
-                version=bins_role.signed.version
-            )
-            self._persist(bins_role, delegated_name)
+        _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
+        public_key = root.signed.keys[_keyid]
+        self._setup_targets_delegations(public_key, targets, custom_targets)
 
-        # Create all Target Roles in the database RSTUFTargetRoles
-        db_target_roles = [
-            targets_schema.RSTUFTargetRoleCreate(
-                rolename=target_role, version=1
+        db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
+        for role_name in self._get_delegation_roles(targets):
+            snapshot.signed.meta[f"{role_name}.json"] = MetaFile()
+
+            db_target_roles.append(
+                targets_schema.RSTUFTargetRoleCreate(
+                    rolename=role_name, version=1
+                )
             )
-            for target_role in succinct_roles.get_roles()
-        ]
+
         targets_crud.create_roles(self._db, db_target_roles)
-
-        # Update `Snapshot` meta with targets
-        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
-            version=targets.signed.version
-        )
+        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile()
 
         # Update expire, sign and persist the top level roles (`Targets`,
         # `Timestamp``, `Snapshot`) in the backend storage service.
@@ -599,9 +659,12 @@ class MetadataRepository:
         """
         Register the bootstrap finished.
         """
+        delegated_roles: Dict[str, Any] = self._settings.get_fresh(
+            "DELEGATED_ROLES"
+        )
         self._persist(root, Root.type)
         self.write_repository_settings("ROOT_SIGNING", None)
-        self._bootstrap_online_roles(root)
+        self._bootstrap_online_roles(root, delegated_roles)
         self.write_repository_settings("BOOTSTRAP", task_id)
 
     def bootstrap(
@@ -661,8 +724,20 @@ class MetadataRepository:
                     details=None,
                 )
 
+        roles_info: Dict[str, Any] = tuf_settings["roles"]
+        if roles_info.get("delegated_roles") and roles_info.get("bins"):
+            return self._task_result(
+                TaskName.BOOTSTRAP,
+                message="Bootstrap Failed",
+                error=(
+                    "Bootstrap cannot use both hash bin delegation and"
+                    " custom target delegations"
+                ),
+                details=None,
+            )
+
         # save settings
-        self.save_settings(root, tuf_settings)
+        self.save_settings(root, roles_info)
         task_id: str = payload["task_id"]
 
         signed = self._validate_threshold(root)
@@ -713,19 +788,24 @@ class MetadataRepository:
             details = None
         else:
             logging.info("Updating settings")
-            online_roles = Roles.online_roles()
             updated_roles: List[str] = []
             invalid_roles: List[str] = []
             for role in tuf_settings["expiration"]:
-                if role not in online_roles:
-                    invalid_roles.append(role)
-                    continue
+                expiration_str = f"{role.upper()}_EXPIRATION"
 
-                self.write_repository_settings(
-                    f"{role.upper()}_EXPIRATION",
-                    tuf_settings["expiration"][role],
-                )
-                updated_roles.append(role)
+                curr_expiration = self._settings.get_fresh(expiration_str)
+                if curr_expiration is not None:
+                    # This means this role has been added before and it's a
+                    # valid role.
+                    self.write_repository_settings(
+                        expiration_str,
+                        tuf_settings["expiration"][role],
+                    )
+                    updated_roles.append(role)
+                else:
+                    # curr_expiration = None => the role have not been added
+                    # before which makes it invalid.
+                    invalid_roles.append(role)
 
             message = "Update Settings Succeded"
             error = None
@@ -759,16 +839,22 @@ class MetadataRepository:
         try:
             with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
                 # get all delegated role names with unpublished targets
-                if payload is None or payload.get("bins_targets") is None:
+                if payload is None or payload.get("delegated_targets") is None:
                     db_roles = targets_crud.read_roles_with_unpublished_files(
                         self._db
                     )
                     if db_roles is None:
-                        bins_targets = []
+                        delegated_targets = []
                     else:
-                        bins_targets = [bins_role[0] for bins_role in db_roles]
+                        delegated_targets = [
+                            targets_role[0] for targets_role in db_roles
+                        ]
+                else:
+                    delegated_targets: List[str] = payload.get(
+                        "delegated_targets"
+                    )
 
-                if len(bins_targets) == 0:
+                if len(delegated_targets) == 0:
                     logging.debug(
                         "No new targets in delegated target roles. Finishing"
                     )
@@ -780,7 +866,7 @@ class MetadataRepository:
                     )
 
                 self._update_timestamp(
-                    self._update_snapshot(bins_targets),
+                    self._update_snapshot(delegated_targets),
                 )
 
             # context lock finished
@@ -805,7 +891,7 @@ class MetadataRepository:
             message="Publish Targets Processed",
             error=None,
             details={
-                "target_roles": bins_targets,
+                "target_roles": delegated_targets,
             },
         )
 
@@ -831,11 +917,17 @@ class MetadataRepository:
             )
         # The task id will be used by `_send_publish_targets_task` (sub-task).
         task_id = payload.get("task_id")
-        # Group target files by responsible 'bins' delegated roles.
+        added_targets: List[str] = []
+        invalid_paths: List[str] = []
+        # Group target files by responsible delegated role.
         # This will be used to by `_update_task` for updating task status.
-        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
+        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
-            bins_name = self._get_path_succinct_role(target["path"])
+            delegated_role = self._get_role_for_target_path(target["path"])
+            if delegated_role is None:
+                invalid_paths.append(target["path"])
+                continue
+
             db_target_file = targets_crud.read_file_by_path(
                 self._db, target.get("path")
             )
@@ -849,7 +941,7 @@ class MetadataRepository:
                         action=targets_schema.TargetAction.ADD,
                     ),
                     target_role=targets_crud.read_role_by_rolename(
-                        self._db, bins_name
+                        self._db, delegated_role
                     ),
                 )
             else:
@@ -860,32 +952,35 @@ class MetadataRepository:
                     target.get("info"),
                 )
 
-            if bins_name not in bin_targets:
-                bin_targets[bins_name] = []
+            added_targets.append(target["path"])
+            if delegated_role not in roles_to_targets:
+                roles_to_targets[delegated_role] = []
 
-            bin_targets[bins_name].append(db_target_file)
+            roles_to_targets[delegated_role].append(db_target_file)
 
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
         subtask = None
-        if publish_targets is True:
+        if publish_targets is True and len(added_targets) > 0:
             subtask = self._send_publish_targets_task(
-                task_id, [bins_role for bins_role in bin_targets]
+                task_id, [t_role for t_role in roles_to_targets]
             )
 
-        self._update_task(bin_targets, update_state, subtask)
+        self._update_task(roles_to_targets, update_state, subtask)
 
-        add_targets = [target.get("path") for target in targets]
-        update_roles = [t_role for t_role in bin_targets]
+        updated_roles = [t_role for t_role in roles_to_targets]
 
-        logging.debug(f"Added targets: {add_targets} on Roles {update_roles}")
+        logging.debug(
+            f"Added targets: {added_targets} on Roles {updated_roles}"
+        )
         return self._task_result(
             task=TaskName.ADD_TARGETS,
             message="Target(s) Added",
             error=None,
             details={
-                "targets": add_targets,
-                "target_roles": update_roles,
+                "added_targets": added_targets,
+                "invalid_paths": invalid_paths,
+                "target_roles": updated_roles,
             },
         )
 
@@ -916,11 +1011,15 @@ class MetadataRepository:
         deleted_targets: List[str] = []
         not_found_targets: List[str] = []
 
-        # Group target files by responsible 'bins' delegated roles.
+        # Group target files by responsible delegated role.
         # This will be used to by `publish_targets`
-        bin_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
+        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
         for target in targets:
-            bins_name = self._get_path_succinct_role(target)
+            delegated_role = self._get_role_for_target_path(target)
+            if delegated_role is None:
+                not_found_targets.append(target)
+                continue
+
             db_target = targets_crud.read_file_by_path(self._db, target)
             if db_target is None or (
                 db_target.action == targets_schema.TargetAction.REMOVE
@@ -935,20 +1034,20 @@ class MetadataRepository:
                 )
                 deleted_targets.append(target)
 
-                if bins_name not in bin_targets:
-                    bin_targets[bins_name] = []
+                if delegated_role not in roles_to_targets:
+                    roles_to_targets[delegated_role] = []
 
-                bin_targets[bins_name].append(db_target)
+                roles_to_targets[delegated_role].append(db_target)
 
         # If publish_targets doesn't exists it will be True by default.
         publish_targets = payload.get("publish_targets", True)
         subtask = None
         if len(deleted_targets) > 0 and publish_targets is True:
             subtask = self._send_publish_targets_task(
-                task_id, [t_role for t_role in bin_targets]
+                task_id, [t_role for t_role in roles_to_targets]
             )
 
-        self._update_task(bin_targets, update_state, subtask)
+        self._update_task(roles_to_targets, update_state, subtask)
 
         logging.debug(
             f"Delete targets: {deleted_targets}. "
@@ -999,33 +1098,32 @@ class MetadataRepository:
                 snapshot_bump = True
 
         if force:
-            # Updating all bin target roles.
+            # Updating all delegated target roles.
             timestamp = self._update_timestamp(
                 self._update_snapshot(bump_all=True)
             )
             snapshot_bump = True
             logging.info("Targets and delegated Targets roles version bumped")
         else:
-            # Updating only those bins that have expired.
-            bin_roles: List[str] = []
-            targets_succinct_roles = targets.signed.delegations.succinct_roles
-            for bin in targets_succinct_roles.get_roles():
-                bin_role: Metadata[Targets] = self._storage_backend.get(bin)
-                if (bin_role.signed.expires - datetime.now()) < timedelta(
+            # Updating only those delegated roles that have expired.
+            delegated_roles: List[str] = []
+            for role in self._get_delegation_roles(targets):
+                role_md: Metadata[Targets] = self._storage_backend.get(role)
+                if (role_md.signed.expires - datetime.now()) < timedelta(
                     hours=self._hours_before_expire
                 ):
-                    bin_roles.append(bin)
+                    delegated_roles.append(role)
 
-            if len(bin_roles) > 0:
+            if len(delegated_roles) > 0:
                 timestamp = self._update_timestamp(
-                    self._update_snapshot(target_roles=bin_roles)
+                    self._update_snapshot(target_roles=delegated_roles)
                 )
                 snapshot_bump = True
-                bins = "".join(bin_roles)
-                logging.info(f"Bumped versions of expired bin roles: {bins}")
+                roles = "".join(delegated_roles)
+                logging.info(f"Bumped versions of expired roles: {roles}")
             else:
                 logging.debug(
-                    "[scheduled bump] All bin roles have more than "
+                    "[scheduled bump] All delegated roles have more than "
                     f"{self._hours_before_expire} hour(s) to expire, "
                     "skipping"
                 )
@@ -1079,7 +1177,7 @@ class MetadataRepository:
 
     def bump_online_roles(self, force: Optional[bool] = False) -> bool:
         """
-        Bump online roles (Snapshot, Timestamp, Targets and BINS).
+        Bump online roles (Snapshot, Timestamp, Targets and delegated roles).
 
         Args:
             force: force target roles bump if they don't match the hours before
@@ -1106,8 +1204,8 @@ class MetadataRepository:
             # the error because another task didn't lock it.
             if status_lock_targets is False:
                 logging.error(
-                    "The task to bump Timestamp, Snapshot, and BINS exceeded "
-                    f"the timeout of {self._timeout} seconds."
+                    "The task to bump all online roles exceeded the timeout "
+                    f"of {self._timeout} seconds."
                 )
                 raise redis.exceptions.LockError(
                     f"RSTUF: Task exceed `LOCK_TIMEOUT` ({self._timeout} "
