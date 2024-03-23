@@ -375,9 +375,11 @@ class TestMetadataRepository:
             )
         )
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: mocked_snapshot
-            if rolename == Snapshot.type
-            else mocked_targets
+            lambda rolename: (
+                mocked_snapshot
+                if rolename == Snapshot.type
+                else mocked_targets
+            )
         )
 
         def fake__bump_and_persist(md, role, **kw):
@@ -2917,9 +2919,9 @@ class TestMetadataRepository:
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: fake_targets
-            if rolename == Targets.type
-            else fake_bins
+            lambda rolename: (
+                fake_targets if rolename == Targets.type else fake_bins
+            )
         )
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda a: True)
@@ -3047,9 +3049,9 @@ class TestMetadataRepository:
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: fake_targets
-            if rolename == Targets.type
-            else fake_bins
+            lambda rolename: (
+                fake_targets if rolename == Targets.type else fake_bins
+            )
         )
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: False)
@@ -3106,9 +3108,9 @@ class TestMetadataRepository:
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: fake_targets
-            if rolename == Targets.type
-            else fake_bins
+            lambda rolename: (
+                fake_targets if rolename == Targets.type else fake_bins
+            )
         )
         test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
@@ -3157,9 +3159,9 @@ class TestMetadataRepository:
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: fake_targets
-            if rolename == Targets.type
-            else fake_bins
+            lambda rolename: (
+                fake_targets if rolename == Targets.type else fake_bins
+            )
         )
 
         test_repo._run_online_roles_bump()
