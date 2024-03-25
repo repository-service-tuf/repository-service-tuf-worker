@@ -1,6 +1,8 @@
 #!/bin/bash -x
 
 CLI_VERSION=$1
+PYTEST_GROUP=$2
+SLOW=$3
 # Install required dependencies for Functional Tests
 apt update
 apt install -y make wget git curl
@@ -116,5 +118,5 @@ python ${UMBRELLA_PATH}/tests/functional/scripts/rstuf-admin-metadata-update.py 
 
 cp ./metadata-update-payload.json ${UMBRELLA_PATH}
 
-make -C ${UMBRELLA_PATH}/ functional-tests-exitfirst
+make -C ${UMBRELLA_PATH}/ functional-tests-exitfirst PYTEST_GROUP=${PYTEST_GROUP} SLOW=${SLOW}
 
