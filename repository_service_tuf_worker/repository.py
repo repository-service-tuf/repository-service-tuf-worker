@@ -77,11 +77,11 @@ LOCK_TARGETS = "LOCK_TARGETS"
 
 
 class TaskName(str, enum.Enum):
-    ADD_TARGETS = "add_targets"
-    REMOVE_TARGETS = "remove_targets"
+    ADD_ARTIFACTS = "add_artifacts"
+    REMOVE_ARTIFACTS = "remove_artifacts"
     BOOTSTRAP = "bootstrap"
     UPDATE_SETTINGS = "update_settings"
-    PUBLISH_TARGETS = "publish_targets"
+    PUBLISH_ARTIFACTS = "publish_artifacts"
     METADATA_UPDATE = "metadata_update"
     SIGN_METADATA = "sign_metadata"
     DELETE_SIGN_METADATA = "delete_sign_metadata"
@@ -375,18 +375,20 @@ class MetadataRepository:
 
         return snapshot.signed.version
 
-    def _get_role_for_target_path(self, target_path: str) -> Optional[str]:
+    def _get_role_for_artifact_path(self, artifact_path: str) -> Optional[str]:
         """
         Return role name by target file path
         """
         targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
         delegations = targets.signed.delegations
         # Note: there could be more than one matching custom delegated role,
-        # for this target path, but we get the first match. If we want to get
+        # for this artifact path, but we get the first match. If we want to get
         # the most specific one we need to use _preorder_depth_first_walk
         # of the ngclient Updater class in python-tuf.
         try:
-            role_name, _ = next(delegations.get_roles_for_target(target_path))
+            role_name, _ = next(
+                delegations.get_roles_for_target(artifact_path)
+            )
         except StopIteration:
             return None
 
@@ -394,7 +396,7 @@ class MetadataRepository:
 
     def _update_task(
         self,
-        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
+        roles_to_artifacts: Dict[str, List[targets_models.RSTUFTargetFiles]],
         update_state: Task.update_state,
         subtask: Optional[AsyncResult] = None,
     ):
@@ -404,12 +406,12 @@ class MetadataRepository:
         task is finished.
         """
         logging.debug(
-            f"Waiting roles to be published {list(roles_to_targets.keys())}"
+            f"Waiting roles to be published {list(roles_to_artifacts.keys())}"
         )
 
         def _update_state(
             state: states,
-            roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]],
+            roles_artifacts: Dict[str, List[targets_models.RSTUFTargetFiles]],
             completed_roles: List[str],
             exc_type: Optional[str] = None,
             exc_message: Optional[List[str]] = None,
@@ -419,7 +421,7 @@ class MetadataRepository:
                 meta={
                     "details": {
                         "published_roles": completed_roles,
-                        "roles_to_publish": f"{list(roles_to_targets.keys())}",
+                        "roles_to_publish": f"{list(roles_artifacts.keys())}",
                     },
                     "message": "Publishing",
                     "last_update": datetime.now(),
@@ -430,21 +432,22 @@ class MetadataRepository:
 
         while True:
             completed_roles: List[str] = []
-            for role_name, targets in roles_to_targets.items():
-                for target in targets:
-                    self._db.refresh(target)
-                    if target.published is True:
-                        targets.remove(target)
+            for role_name, artifacts in roles_to_artifacts.items():
+                for artifact in artifacts:
+                    self._db.refresh(artifact)
+                    if artifact.published is True:
+                        artifacts.remove(artifact)
 
-                if len(targets) == 0:
+                if len(artifacts) == 0:
                     logging.debug(f"Update: {role_name} completed")
                     completed_roles.append(role_name)
+
             if subtask is not None and subtask.status == states.FAILURE:
                 exc_type = subtask.result.__class__.__name__
                 exc_message = list(subtask.result.args)
                 _update_state(
                     states.FAILURE,
-                    roles_to_targets,
+                    roles_to_artifacts,
                     completed_roles,
                     exc_type=exc_type,
                     exc_message=exc_message,
@@ -454,27 +457,27 @@ class MetadataRepository:
                     f"{exc_type} {exc_message}"
                 )
 
-            if sorted(completed_roles) != sorted(list(roles_to_targets)):
-                _update_state("RUNNING", roles_to_targets, completed_roles)
+            if sorted(completed_roles) != sorted(list(roles_to_artifacts)):
+                _update_state("RUNNING", roles_to_artifacts, completed_roles)
                 time.sleep(3)
             else:
                 break
 
-    def _send_publish_targets_task(
-        self, task_id: str, delegated_targets: Optional[List[str]]
+    def _send_publish_artifacts_task(
+        self, task_id: str, delegated_artifacts: Optional[List[str]]
     ):  # pragma: no cover
         """
-        Send a new task to the `rstuf_internals` queue to publish targets.
+        Send a new task to the `rstuf_internals` queue to publish artifacts.
         """
         # it is imported in the call to avoid a circular import
         from app import repository_service_tuf_worker
 
         return repository_service_tuf_worker.apply_async(
             kwargs={
-                "action": "publish_targets",
-                "payload": {"delegated_targets": delegated_targets},
+                "action": "publish_artifacts",
+                "payload": {"delegated_artifacts": delegated_artifacts},
             },
-            task_id=f"publish_targets-{task_id}",
+            task_id=f"publish_artifacts-{task_id}",
             queue="rstuf_internals",
             acks_late=True,
         )
@@ -821,7 +824,7 @@ class MetadataRepository:
             details=details,
         )
 
-    def publish_targets(
+    def publish_artifacts(
         self,
         payload: Optional[Dict[str, Any]] = None,
         update_state: Optional[
@@ -829,7 +832,7 @@ class MetadataRepository:
         ] = None,  # It is required (see: app.py)
     ):
         """
-        Publish targets as persistent TUF Metadata in the backend storage,
+        Publish artifacts as persistent TUF Metadata in the backend storage,
         updating Snapshot and Timestamp.
         """
         logging.debug(f"Configured timeout: {self._timeout}")
@@ -856,11 +859,11 @@ class MetadataRepository:
 
                 if len(delegated_targets) == 0:
                     logging.debug(
-                        "No new targets in delegated target roles. Finishing"
+                        "No new artifacts in delegated target roles. Finishing"
                     )
                     return self._task_result(
-                        task=TaskName.PUBLISH_TARGETS,
-                        message="Publish Targets Processed",
+                        task=TaskName.PUBLISH_ARTIFACTS,
+                        message="Publish Artifacts Processed",
                         error=None,
                         details={"target_roles": None},
                     )
@@ -879,64 +882,64 @@ class MetadataRepository:
             # properly, it will raise (fail) the task. Otherwise, the ignores
             # the error because another task didn't lock it.
             if lock_status_targets is False:
-                logging.error("The task to publish targets exceeded timeout")
+                logging.error("The task to publish artifacts exceeded timeout")
                 raise redis.exceptions.LockError(
                     "RSTUF: Task exceed `LOCK_TIMEOUT` "
                     f"({self._timeout} seconds)"
                 )
 
-        logging.debug("Targets published")
+        logging.debug("Artifacts published")
         return self._task_result(
-            task=TaskName.PUBLISH_TARGETS,
-            message="Publish Targets Processed",
+            task=TaskName.PUBLISH_ARTIFACTS,
+            message="Publish Artifacts Processed",
             error=None,
             details={
                 "target_roles": delegated_targets,
             },
         )
 
-    def add_targets(
+    def add_artifacts(
         self, payload: Dict[str, Any], update_state: Task.update_state
     ) -> Optional[Dict[str, Any]]:
         """
-        Add or update the new target in the SQL DB and submit the task for
+        Add or update the new artifact in the SQL DB and submit the task for
         `update_targets`
 
-        Check the target(s) in the SQL DB; if it doesn't exist, create a new
+        Check the artifact(s) in the SQL DB; if it doesn't exist, create a new
         entry or update it as not published.
-        After changing the SQL DB submit a new `publish_target` task.
-        This function will wait until all the targets are published.
+        After changing the SQL DB submit a new `publish_artifacts` task.
+        This function will wait until all the artifacts are published.
         """
-        targets = payload.get("targets")
-        if targets is None:
+        artifacts = payload.get("artifacts")
+        if artifacts is None:
             return self._task_result(
-                task=TaskName.ADD_TARGETS,
-                message="Adding target(s) Failed",
-                error="No 'targets' in the payload",
+                task=TaskName.ADD_ARTIFACTS,
+                message="Adding artifact(s) Failed",
+                error="No 'artifacts' in the payload",
                 details=None,
             )
-        # The task id will be used by `_send_publish_targets_task` (sub-task).
+        # The task id required by `_send_publish_artifacts_task` (sub-task).
         task_id = payload.get("task_id")
-        added_targets: List[str] = []
+        added_artifacts: List[str] = []
         invalid_paths: List[str] = []
         # Group target files by responsible delegated role.
         # This will be used to by `_update_task` for updating task status.
-        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
-        for target in targets:
-            delegated_role = self._get_role_for_target_path(target["path"])
+        roles_artifacts: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
+        for artifact in artifacts:
+            delegated_role = self._get_role_for_artifact_path(artifact["path"])
             if delegated_role is None:
-                invalid_paths.append(target["path"])
+                invalid_paths.append(artifact["path"])
                 continue
 
             db_target_file = targets_crud.read_file_by_path(
-                self._db, target.get("path")
+                self._db, artifact.get("path")
             )
             if db_target_file is None:
                 db_target_file = targets_crud.create_file(
                     self._db,
                     targets_schema.RSTUFTargetFileCreate(
-                        path=target.get("path"),
-                        info=target.get("info"),
+                        path=artifact.get("path"),
+                        info=artifact.get("info"),
                         published=False,
                         action=targets_schema.TargetAction.ADD,
                     ),
@@ -948,119 +951,119 @@ class MetadataRepository:
                 db_target_file = targets_crud.update_file_path_and_info(
                     self._db,
                     db_target_file,
-                    target.get("path"),
-                    target.get("info"),
+                    artifact.get("path"),
+                    artifact.get("info"),
                 )
 
-            added_targets.append(target["path"])
-            if delegated_role not in roles_to_targets:
-                roles_to_targets[delegated_role] = []
+            added_artifacts.append(artifact["path"])
+            if delegated_role not in roles_artifacts:
+                roles_artifacts[delegated_role] = []
 
-            roles_to_targets[delegated_role].append(db_target_file)
+            roles_artifacts[delegated_role].append(db_target_file)
 
-        # If publish_targets doesn't exists it will be True by default.
-        publish_targets = payload.get("publish_targets", True)
+        # If publish_artifacts doesn't exists it will be True by default.
+        publish_artifacts = payload.get("publish_artifacts", True)
         subtask = None
-        if publish_targets is True and len(added_targets) > 0:
-            subtask = self._send_publish_targets_task(
-                task_id, [t_role for t_role in roles_to_targets]
+        if publish_artifacts is True and len(added_artifacts) > 0:
+            subtask = self._send_publish_artifacts_task(
+                task_id, [t_role for t_role in roles_artifacts]
             )
 
-        self._update_task(roles_to_targets, update_state, subtask)
+        self._update_task(roles_artifacts, update_state, subtask)
 
-        updated_roles = [t_role for t_role in roles_to_targets]
+        updated_roles = [t_role for t_role in roles_artifacts]
 
         logging.debug(
-            f"Added targets: {added_targets} on Roles {updated_roles}"
+            f"Added artifacts: {added_artifacts} on Roles {updated_roles}"
         )
         return self._task_result(
-            task=TaskName.ADD_TARGETS,
-            message="Target(s) Added",
+            task=TaskName.ADD_ARTIFACTS,
+            message="Artifact(s) Added",
             error=None,
             details={
-                "added_targets": added_targets,
+                "added_artifacts": added_artifacts,
                 "invalid_paths": invalid_paths,
                 "target_roles": updated_roles,
             },
         )
 
-    def remove_targets(
+    def remove_artifacts(
         self, payload: Dict[str, Any], update_state: Task.update_state
     ) -> Dict[str, Any]:
         """
-        Remove targets from the metadata roles.
+        Remove artifacts from the metadata roles.
         """
-        targets = payload.get("targets")
-        if targets is None:
+        artifacts = payload.get("artifacts")
+        if artifacts is None:
             return self._task_result(
-                task=TaskName.REMOVE_TARGETS,
-                message="Removing target(s) Failed",
-                error="No 'targets' in the payload",
+                task=TaskName.REMOVE_ARTIFACTS,
+                message="Removing artifact(s) Failed",
+                error="No 'artifacts' in the payload",
                 details=None,
             )
         task_id = payload.get("task_id")
 
-        if len(targets) == 0:
+        if len(artifacts) == 0:
             return self._task_result(
-                task=TaskName.REMOVE_TARGETS,
-                message="Removing target(s) Failed",
-                error="At list one target is required",
+                task=TaskName.REMOVE_ARTIFACTS,
+                message="Removing artifact(s) Failed",
+                error="At list one artifact is required",
                 details=None,
             )
 
-        deleted_targets: List[str] = []
-        not_found_targets: List[str] = []
+        deleted_artifacts: List[str] = []
+        not_found_artifacts: List[str] = []
 
         # Group target files by responsible delegated role.
-        # This will be used to by `publish_targets`
-        roles_to_targets: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
-        for target in targets:
-            delegated_role = self._get_role_for_target_path(target)
+        # This will be used to by `publish_artifacts`
+        roles_artifacts: Dict[str, List[targets_models.RSTUFTargetFiles]] = {}
+        for artifact in artifacts:
+            delegated_role = self._get_role_for_artifact_path(artifact)
             if delegated_role is None:
-                not_found_targets.append(target)
+                not_found_artifacts.append(artifact)
                 continue
 
-            db_target = targets_crud.read_file_by_path(self._db, target)
+            db_target = targets_crud.read_file_by_path(self._db, artifact)
             if db_target is None or (
                 db_target.action == targets_schema.TargetAction.REMOVE
                 and db_target.published is True
             ):
                 # not found targets or targets already remove action and
                 # published are not found.
-                not_found_targets.append(target)
+                not_found_artifacts.append(artifact)
             else:
                 db_target = targets_crud.update_file_action_to_remove(
                     self._db, db_target
                 )
-                deleted_targets.append(target)
+                deleted_artifacts.append(artifact)
 
-                if delegated_role not in roles_to_targets:
-                    roles_to_targets[delegated_role] = []
+                if delegated_role not in roles_artifacts:
+                    roles_artifacts[delegated_role] = []
 
-                roles_to_targets[delegated_role].append(db_target)
+                roles_artifacts[delegated_role].append(db_target)
 
-        # If publish_targets doesn't exists it will be True by default.
-        publish_targets = payload.get("publish_targets", True)
+        # If publish_artifacts doesn't exists it will be True by default.
+        publish_artifacts = payload.get("publish_artifacts", True)
         subtask = None
-        if len(deleted_targets) > 0 and publish_targets is True:
-            subtask = self._send_publish_targets_task(
-                task_id, [t_role for t_role in roles_to_targets]
+        if len(deleted_artifacts) > 0 and publish_artifacts is True:
+            subtask = self._send_publish_artifacts_task(
+                task_id, [t_role for t_role in roles_artifacts]
             )
 
-        self._update_task(roles_to_targets, update_state, subtask)
+        self._update_task(roles_artifacts, update_state, subtask)
 
         logging.debug(
-            f"Delete targets: {deleted_targets}. "
-            f"Not found targets: {not_found_targets}"
+            f"Deleted artifacts: {deleted_artifacts}. "
+            f"Not found artifacts: {not_found_artifacts}"
         )
 
         return self._task_result(
-            task=TaskName.REMOVE_TARGETS,
-            message="Target(s) removed",
+            task=TaskName.REMOVE_ARTIFACTS,
+            message="Artifact(s) removed",
             error=None,
             details={
-                "deleted_targets": deleted_targets,
-                "not_found_targets": not_found_targets,
+                "deleted_artifacts": deleted_artifacts,
+                "not_found_artifacts": not_found_artifacts,
             },
         )
 
@@ -1299,8 +1302,8 @@ class MetadataRepository:
             logging.info(f"Updating root metadata: {new_root.signed.version}")
 
         else:
-            # We lock this action to stop all new tasks that publish targets
-            # (`publish_targets`) to avoid inconsistencies happening to the
+            # We lock this action to stop all new tasks that publish artifacts
+            # (`publish_artifacts`) to avoid inconsistencies happening to the
             # TUF clients.
             # It is required lock with LOCK_TARGETS before persisting the root
             # metadata.

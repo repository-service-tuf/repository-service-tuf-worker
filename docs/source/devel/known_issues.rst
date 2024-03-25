@@ -92,7 +92,7 @@ The behavior
 
 The problem is the process of writing the role metadata files.
 
-For example, whenever you add a target to a delegated hash role (i.e.
+For example, whenever you add an artifact to a delegated hash role (i.e.
 ``bins-e``), you need to write a new ``<version>.bins-e.json``, bump the
 ``<version>.snapshot.json`` and the ``<version>.timestamp``.
 
@@ -102,33 +102,33 @@ For example, whenever you add a target to a delegated hash role (i.e.
     @startuml
 
     participant "Broker/Backend" as broker
-    participant "add-target" as add_target
+    participant "add-target" as add-artifact
     participant "Storage Backend" as storage #Grey
 
-    broker o-> add_target: [task 01] <consumer>
+    broker o-> add-artifact: [task 01] <consumer>
 
-    add_target -> storage: loads latest bin-e.json
-    add_target <-- storage: 3.bin-e.json
-    add_target -> add_target: Add target\nBump version
-    add_target -> storage: writes 4.bin-e.json
+    add-artifact -> storage: loads latest bin-e.json
+    add-artifact <-- storage: 3.bin-e.json
+    add-artifact -> add-artifact: Add Artifact\nBump version
+    add-artifact -> storage: writes 4.bin-e.json
     note right: 4.bin-e.json\n\tfile001
 
-    add_target -> storage: loads latest Snapshot
-    add_target <-- storage: 41.snapshot.json
-    add_target -> add_target: Add <bin-e> meta\nbump version
-    add_target -> storage: writes  42.snapshot.json
+    add-artifact -> storage: loads latest Snapshot
+    add-artifact <-- storage: 41.snapshot.json
+    add-artifact -> add-artifact: Add <bin-e> meta\nbump version
+    add-artifact -> storage: writes  42.snapshot.json
     note right: 4.bin-e.json\n\tfile001\n42.snapshot.json\n\t4.bin-e
 
-    add_target -> storage: loads Timestamp
-    add_target <-- storage: Timestamp.json (version 83)
-    add_target -> add_target: Add 42.snapshot.json
-    add_target -> storage: writes timestamp.json
+    add-artifact -> storage: loads Timestamp
+    add-artifact <-- storage: Timestamp.json (version 83)
+    add-artifact -> add-artifact: Add 42.snapshot.json
+    add-artifact -> storage: writes timestamp.json
     note right: 4.bin-e.json\n\t file001\n42.snapshot.json\n\t4.bin-e\ntimestamp.json\n\t42.snapshot.json
-    add_target -> broker: [task 01] <publish> result
+    add-artifact -> broker: [task 01] <publish> result
 
     @enduml
 
-If you have a hundred or thousand requests to add targets you might have
+If you have a hundred or thousand requests to add artifacts you might have
 multiple new ``<version>.bins-e.json`` followed by bumps in ``snapshot`` and
 ``timestamp``. There is a risk of race conditions.
 
@@ -139,47 +139,47 @@ Exemple
     @startuml
 
     participant "Broker/Backend" as broker
-    participant "add-target" as add_target
+    participant "add-target" as add-artifact
     participant "Storage Backend" as storage #Grey
 
-    broker o-[#Blue]> add_target: [task 01] <consuner>
-    add_target -[#Blue]> storage: loads latest bin-e.json
-    broker o-[#Green]> add_target: [task 02] <consuner>
-    add_target -[#Green]> storage: loads latest bin-p.json
-    add_target <[#Blue]-- storage: 3.bin-e.json
-    add_target <[#Green]-- storage: 16.bin-p.json
-    add_target -[#Blue]-> add_target: 3.bin-e.json\n Add target\nBump version to 4
-    add_target -[#Green]> add_target: 16.bin-e.json\n Add target\nBump version to 16
-    add_target -[#Blue]> storage: writes 4.bin-e.json
-    add_target -[#Green]> storage: writes 16.bin-e.json
+    broker o-[#Blue]> add-artifact: [task 01] <consuner>
+    add-artifact -[#Blue]> storage: loads latest bin-e.json
+    broker o-[#Green]> add-artifact: [task 02] <consuner>
+    add-artifact -[#Green]> storage: loads latest bin-p.json
+    add-artifact <[#Blue]-- storage: 3.bin-e.json
+    add-artifact <[#Green]-- storage: 16.bin-p.json
+    add-artifact -[#Blue]-> add-artifact: 3.bin-e.json\n Add artifact\nBump version to 4
+    add-artifact -[#Green]> add-artifact: 16.bin-e.json\n Add artifact\nBump version to 16
+    add-artifact -[#Blue]> storage: writes 4.bin-e.json
+    add-artifact -[#Green]> storage: writes 16.bin-e.json
     note right: 4.bin-e.json\n\tfile001\n16.bin-p.json\n\tfile003\n\tfile005
 
 
-    add_target -[#Blue]> storage: loads latest Snapshot
-    add_target -[#Green]> storage: loads latest Snapshot
+    add-artifact -[#Blue]> storage: loads latest Snapshot
+    add-artifact -[#Green]> storage: loads latest Snapshot
 
-    add_target <[#Blue]-- storage: 41.snapshot.json
-    add_target <[#Green]-- storage: 41.snapshot.json
+    add-artifact <[#Blue]-- storage: 41.snapshot.json
+    add-artifact <[#Green]-- storage: 41.snapshot.json
 
-    add_target -[#Blue]> add_target: Add <bin-e> meta\nbump version
-    add_target -[#Green]> add_target: Add <bin-p> meta\nbump version
+    add-artifact -[#Blue]> add-artifact: Add <bin-e> meta\nbump version
+    add-artifact -[#Green]> add-artifact: Add <bin-p> meta\nbump version
 
-    add_target -[#Blue]> storage: writes 42.snapshot.json
+    add-artifact -[#Blue]> storage: writes 42.snapshot.json
     note right: 4.bin-e.json\n\t \
     file001\n16.bin-p.json\n\tfile003\n\tfile005 \
     \n42.snapshot.json\n\t4.bin-e
-    add_target -[#Green]-> storage: writes 42.snapshot.json
+    add-artifact -[#Green]-> storage: writes 42.snapshot.json
     destroy storage
     note right#FFAAAA: 4.bin-e.json\n\t \
     file001\n16.bin-p.json\n\tfile003\n\tfile005 \
     \n42.snapshot.json\n\t16.bin-p \
     \n\t**missing 4.bin-e**
 
-    add_target -[#Blue]> storage: loads Timestamp
-    add_target -[#Green]> storage: loads Timestamp
-    add_target <[#Blue]-- storage: Timestamp.json (version 83)
-    add_target -[#Blue]> add_target: Add 42.snapshot.json
-    add_target -[#Blue]> storage: writes timestamp.json (version 84)
+    add-artifact -[#Blue]> storage: loads Timestamp
+    add-artifact -[#Green]> storage: loads Timestamp
+    add-artifact <[#Blue]-- storage: Timestamp.json (version 83)
+    add-artifact -[#Blue]> add-artifact: Add 42.snapshot.json
+    add-artifact -[#Blue]> storage: writes timestamp.json (version 84)
     note right#FFAAAA: 4.bin-e.json\n\t \
     file001\n16.bin-p.json\n\tfile003\n\tfile005 \
     \n42.snapshot.json\n\t16.bin-p \
@@ -188,12 +188,12 @@ Exemple
     \n\tversion 84 \
     \n\t42.snapshot
 
-    add_target -[#Blue]> broker: [task 01] <publish> result
+    add-artifact -[#Blue]> broker: [task 01] <publish> result
 
-    add_target <[#Green]-- storage: Timestamp.json (version 84)
-    add_target -[#Green]> add_target: Add 42.snapshot.json
-    add_target -[#Green]> add_target: Add target\nBump version to 85
-    add_target -[#Green]> storage: writes timestamp.json (version 85)
+    add-artifact <[#Green]-- storage: Timestamp.json (version 84)
+    add-artifact -[#Green]> add-artifact: Add 42.snapshot.json
+    add-artifact -[#Green]> add-artifact: Add artifact\nBump version to 85
+    add-artifact -[#Green]> storage: writes timestamp.json (version 85)
     note right#FFAAAA: 4.bin-e.json\n\t \
     file001\n16.bin-p.json\n\tfile003\n\tfile005 \
     \n42.snapshot.json\n\t16.bin-p \
@@ -201,7 +201,7 @@ Exemple
     \ntimestamp.json \
     \n\tversion 84 \
     \n\t42.snapshot
-    add_target -[#Green]> broker: [task 02] <publish> result
+    add-artifact -[#Green]> broker: [task 02] <publish> result
 
     @enduml
 
@@ -222,58 +222,58 @@ writing metadata process.
     !pragma teoz true
 
     participant "Broker/Backend" as broker
-    participant "add-target" as add_target
+    participant "add-target" as add-artifact
     participant "Storage Backend" as storage #Grey
 
-    broker o-[#Blue]> add_target: [task 01] <consuner>
+    broker o-[#Blue]> add-artifact: [task 01] <consuner>
     note left #Red: Lock
-    add_target -[#Blue]> add_target: check lock
+    add-artifact -[#Blue]> add-artifact: check lock
 
-    broker o-[#Green]> add_target: [task 02] <consuner>
-    add_target -[#Green]> add_target: check lock
+    broker o-[#Green]> add-artifact: [task 02] <consuner>
+    add-artifact -[#Green]> add-artifact: check lock
     note left #Orange: Waiting unlock
 
     group "task 01" execution
-    add_target -[#Blue]> storage: loads latest bin-e.json
-    add_target <[#Blue]-- storage: 3.bin-e.json
-    add_target -[#Blue]-> add_target: 3.bin-e.json\n Add target\nBump version to 4
-    add_target -[#Blue]> storage: writes 4.bin-e.json
-    add_target -[#Blue]> storage: loads latest Snapshot
-    add_target <[#Blue]-- storage: 41.snapshot.json
-    add_target -[#Blue]> add_target: Add <bin-e> meta\nbump version
-    add_target -[#Blue]> storage: writes 42.snapshot.json
-    add_target -[#Blue]> storage: loads Timestamp
-    add_target <[#Blue]-- storage: Timestamp.json (version 83)
-    add_target -[#Blue]> add_target: Add 42.snapshot.json
-    add_target -[#Blue]> storage: writes timestamp.json (version 84)
+    add-artifact -[#Blue]> storage: loads latest bin-e.json
+    add-artifact <[#Blue]-- storage: 3.bin-e.json
+    add-artifact -[#Blue]-> add-artifact: 3.bin-e.json\n Add artifact\nBump version to 4
+    add-artifact -[#Blue]> storage: writes 4.bin-e.json
+    add-artifact -[#Blue]> storage: loads latest Snapshot
+    add-artifact <[#Blue]-- storage: 41.snapshot.json
+    add-artifact -[#Blue]> add-artifact: Add <bin-e> meta\nbump version
+    add-artifact -[#Blue]> storage: writes 42.snapshot.json
+    add-artifact -[#Blue]> storage: loads Timestamp
+    add-artifact <[#Blue]-- storage: Timestamp.json (version 83)
+    add-artifact -[#Blue]> add-artifact: Add 42.snapshot.json
+    add-artifact -[#Blue]> storage: writes timestamp.json (version 84)
     note right: 4.bin-e.json\n\tfile001 \
     \n42.snapshot.json\n\t4.bin-e \
     \ntimestamp.json (version: 84) \
     \n\t42.snapshot
-    {finish_task01} add_target -[#Blue]> broker: [task 01] <publish> result
+    {finish_task01} add-artifact -[#Blue]> broker: [task 01] <publish> result
     note left #Cyan: Unlock
     end
 
-    add_target -[#Green]> broker: [task 02] Lock
+    add-artifact -[#Green]> broker: [task 02] Lock
     note left #Red: Lock
 
     group "task 02" execution
-    add_target <[#Green]-- storage: 16.bin-p.json
-    add_target -[#Green]> add_target: 16.bin-e.json\n Add target\nBump version to 16
-    add_target -[#Green]> storage: writes 16.bin-e.json
-    add_target -[#Green]> storage: loads latest Snapshot
-    add_target <[#Green]-- storage: 42.snapshot.json
-    add_target -[#Green]> add_target: Add <bin-p> meta\nbump version
-    add_target -[#Green]> storage: loads Timestamp
-    add_target <[#Green]-- storage: Timestamp.json (version 84)
-    add_target -[#Green]> add_target: Add 43.snapshot.json
-    add_target -[#Green]> add_target: Add target\nBump version to 85
-    add_target -[#Green]> storage: writes timestamp.json (version 85)
+    add-artifact <[#Green]-- storage: 16.bin-p.json
+    add-artifact -[#Green]> add-artifact: 16.bin-e.json\n Add artifact\nBump version to 16
+    add-artifact -[#Green]> storage: writes 16.bin-e.json
+    add-artifact -[#Green]> storage: loads latest Snapshot
+    add-artifact <[#Green]-- storage: 42.snapshot.json
+    add-artifact -[#Green]> add-artifact: Add <bin-p> meta\nbump version
+    add-artifact -[#Green]> storage: loads Timestamp
+    add-artifact <[#Green]-- storage: Timestamp.json (version 84)
+    add-artifact -[#Green]> add-artifact: Add 43.snapshot.json
+    add-artifact -[#Green]> add-artifact: Add artifact\nBump version to 85
+    add-artifact -[#Green]> storage: writes timestamp.json (version 85)
     note right: 16.bin-p.json\n\tfile003\n\tfile005 \
     \n43.snapshot.json\n\t4.bin-e \n\t16.bin-p \
     \ntimestamp.json (version 85) \
     \n\t43.snapshot
-    add_target -[#Green]> broker: [task 02] <publish> result
+    add-artifact -[#Green]> broker: [task 02] <publish> result
     note left #Cyan: Unlock
     end
     @enduml
