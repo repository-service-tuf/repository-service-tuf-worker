@@ -869,7 +869,7 @@ class TestMetadataRepository:
             pretend.call(version=mocked_targets.signed.version),
         ]
 
-    def test__get_role_for_target_path(self, test_repo):
+    def test__get_role_for_artifact_path(self, test_repo):
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
@@ -882,7 +882,9 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_targets
         )
-        result = test_repo._get_role_for_target_path("v0.0.1/test_path.tar.gz")
+        result = test_repo._get_role_for_artifact_path(
+            "v0.0.1/test_path.tar.gz"
+        )
 
         assert result == "bins-e"
         delegations = fake_targets.signed.delegations
@@ -893,7 +895,7 @@ class TestMetadataRepository:
             pretend.call(Targets.type)
         ]
 
-    def test__get_role_for_target_path_no_role_for_target(self, test_repo):
+    def test__get_role_for_artifact_path_no_role_for_target(self, test_repo):
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
@@ -906,7 +908,9 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_targets
         )
-        result = test_repo._get_role_for_target_path("v0.0.1/test_path.tar.gz")
+        result = test_repo._get_role_for_artifact_path(
+            "v0.0.1/test_path.tar.gz"
+        )
 
         assert result is None
         delegations = fake_targets.signed.delegations
@@ -968,7 +972,7 @@ class TestMetadataRepository:
         fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
         fake_subtask = pretend.stub(
             status=states.FAILURE,
-            task_id="publish_targets-fakeid",
+            task_id="publish_artifacts-fakeid",
             result=PermissionError("failed to write in the storage"),
         )
 
@@ -977,7 +981,7 @@ class TestMetadataRepository:
                 fake_bin_targets, fake_update_state, fake_subtask
             )
 
-        assert "Failed to execute publish_targets-fakeid" in str(err)
+        assert "Failed to execute publish_artifacts-fakeid" in str(err)
         assert test_repo._db.refresh.calls == [
             pretend.call(fake_target),
             pretend.call(fake_target),
@@ -1996,7 +2000,7 @@ class TestMetadataRepository:
         )
         assert test_repo.write_repository_settings.calls == []
 
-    def test_publish_targets(self, test_repo, monkeypatch, mocked_datetime):
+    def test_publish_artifacts(self, test_repo, monkeypatch, mocked_datetime):
         @contextmanager
         def mocked_lock(lock, timeout):
             yield lock, timeout
@@ -2017,13 +2021,13 @@ class TestMetadataRepository:
         test_repo._update_snapshot = pretend.call_recorder(lambda *a: 3)
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
-        result = test_repo.publish_targets()
+        result = test_repo.publish_artifacts()
 
         assert result == {
-            "task": "publish_targets",
+            "task": "publish_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Publish Targets Processed",
+            "message": "Publish Artifacts Processed",
             "error": None,
             "details": {
                 "target_roles": ["bins-0", "bins-e"],
@@ -2040,7 +2044,7 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_timestamp.calls == [pretend.call(3)]
 
-    def test_publish_targets_payload_delegated_targets(
+    def test_publish_artifacts_payload_delegated_targets(
         self, test_repo, mocked_datetime
     ):
         @contextmanager
@@ -2056,13 +2060,13 @@ class TestMetadataRepository:
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
         payload = {"delegated_targets": ["bins-0", "bins-e"]}
-        result = test_repo.publish_targets(payload)
+        result = test_repo.publish_artifacts(payload)
 
         assert result == {
-            "task": "publish_targets",
+            "task": "publish_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Publish Targets Processed",
+            "message": "Publish Artifacts Processed",
             "error": None,
             "details": {
                 "target_roles": ["bins-0", "bins-e"],
@@ -2076,7 +2080,7 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_timestamp.calls == [pretend.call(3)]
 
-    def test_publish_targets_payload_with_delegated_targets_empty(
+    def test_publish_artifacts_payload_with_delegated_targets_empty(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         @contextmanager
@@ -2100,13 +2104,13 @@ class TestMetadataRepository:
         test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
         payload = {"delegated_targets": None}
-        result = test_repo.publish_targets(payload)
+        result = test_repo.publish_artifacts(payload)
 
         assert result == {
-            "task": "publish_targets",
+            "task": "publish_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Publish Targets Processed",
+            "message": "Publish Artifacts Processed",
             "error": None,
             "details": {
                 "target_roles": ["bins-0", "bins-e"],
@@ -2123,7 +2127,7 @@ class TestMetadataRepository:
         ]
         assert test_repo._update_timestamp.calls == [pretend.call(3)]
 
-    def test_publish_targets_exception_LockNotOwnedError(self, test_repo):
+    def test_publish_artifacts_exception_LockNotOwnedError(self, test_repo):
         @contextmanager
         def mocked_lock(lock, timeout):
             raise repository.redis.exceptions.LockNotOwnedError("timeout")
@@ -2133,14 +2137,14 @@ class TestMetadataRepository:
         )
 
         with pytest.raises(repository.redis.exceptions.LockError) as e:
-            test_repo.publish_targets()
+            test_repo.publish_artifacts()
 
         assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
         assert test_repo._redis.lock.calls == [
             pretend.call("LOCK_TARGETS", timeout=60)
         ]
 
-    def test_publish_targets_without_targets_to_publish(
+    def test_publish_artifacts_without_targets_to_publish(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         @contextmanager
@@ -2160,12 +2164,12 @@ class TestMetadataRepository:
             fake_crud_read_roles_with_unpublished_files,
         )
 
-        result = test_repo.publish_targets()
+        result = test_repo.publish_artifacts()
         assert result == {
-            "task": "publish_targets",
+            "task": "publish_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Publish Targets Processed",
+            "message": "Publish Artifacts Processed",
             "error": None,
             "details": {
                 "target_roles": None,
@@ -2179,9 +2183,9 @@ class TestMetadataRepository:
             == [pretend.call(test_repo._db)]
         )
 
-    def test_add_targets(self, test_repo, monkeypatch, mocked_datetime):
+    def test_add_artifacts(self, test_repo, monkeypatch, mocked_datetime):
         test_repo._db = pretend.stub()
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -2208,13 +2212,13 @@ class TestMetadataRepository:
             "read_role_by_rolename",
             pretend.call_recorder(lambda *a: "bins-e"),
         )
-        test_repo._send_publish_targets_task = pretend.call_recorder(
+        test_repo._send_publish_artifacts_task = pretend.call_recorder(
             lambda *a: "fake_subtask"
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: True)
 
         payload = {
-            "targets": [
+            "artifacts": [
                 {
                     "info": {
                         "length": 11342,
@@ -2230,16 +2234,18 @@ class TestMetadataRepository:
         }
 
         fake_update_state = pretend.stub()
-        result = test_repo.add_targets(payload, update_state=fake_update_state)
+        result = test_repo.add_artifacts(
+            payload, update_state=fake_update_state
+        )
 
         assert result == {
-            "task": "add_targets",
+            "task": "add_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) Added",
+            "message": "Artifact(s) Added",
             "error": None,
             "details": {
-                "added_targets": ["file1.tar.gz"],
+                "added_artifacts": ["file1.tar.gz"],
                 "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
@@ -2268,10 +2274,10 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_role_by_rolename.calls == [
             pretend.call(test_repo._db, "bins-e")
         ]
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file1.tar.gz")
         ]
-        assert test_repo._send_publish_targets_task.calls == [
+        assert test_repo._send_publish_artifacts_task.calls == [
             pretend.call("fake_task_id_xyz", ["bins-e"])
         ]
         assert test_repo._update_task.calls == [
@@ -2280,9 +2286,11 @@ class TestMetadataRepository:
             )
         ]
 
-    def test_add_targets_exists(self, test_repo, monkeypatch, mocked_datetime):
+    def test_add_artifacts_exists(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
         test_repo._db = pretend.stub()
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -2303,13 +2311,13 @@ class TestMetadataRepository:
             "update_file_path_and_info",
             pretend.call_recorder(lambda *a: fake_db_target),
         )
-        test_repo._send_publish_targets_task = pretend.call_recorder(
+        test_repo._send_publish_artifacts_task = pretend.call_recorder(
             lambda *a: "fake_subtask"
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: True)
 
         payload = {
-            "targets": [
+            "artifacts": [
                 {
                     "info": {
                         "length": 11342,
@@ -2325,24 +2333,26 @@ class TestMetadataRepository:
         }
 
         fake_update_state = pretend.stub()
-        result = test_repo.add_targets(payload, update_state=fake_update_state)
+        result = test_repo.add_artifacts(
+            payload, update_state=fake_update_state
+        )
 
         assert result == {
-            "task": "add_targets",
+            "task": "add_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) Added",
+            "message": "Artifact(s) Added",
             "error": None,
             "details": {
-                "added_targets": ["file1.tar.gz"],
+                "added_artifacts": ["file1.tar.gz"],
                 "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
         }
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file1.tar.gz")
         ]
-        assert test_repo._send_publish_targets_task.calls == [
+        assert test_repo._send_publish_artifacts_task.calls == [
             pretend.call("fake_task_id_xyz", ["bins-e"])
         ]
         assert test_repo._update_task.calls == [
@@ -2357,42 +2367,29 @@ class TestMetadataRepository:
             pretend.call(
                 test_repo._db,
                 fake_db_target,
-                payload["targets"][0].get("path"),
-                payload["targets"][0].get("info"),
+                payload["artifacts"][0].get("path"),
+                payload["artifacts"][0].get("info"),
             )
         ]
 
-    def test_add_targets_without_targets(self, test_repo, mocked_datetime):
-        payload = {
-            "artifacts": [
-                {
-                    "info": {
-                        "length": 11342,
-                        "hashes": {
-                            "blake2b-256": "716f6e863f744b9ac22c97ec7b76ea5"
-                        },
-                        "custom": {"task_id": "12345"},
-                    },
-                    "path": "file1.tar.gz",
-                },
-            ]
-        }
+    def test_add_artifacts_without_targets(self, test_repo, mocked_datetime):
+        payload = {}
 
-        result = test_repo.add_targets(payload, update_state=pretend.stub())
+        result = test_repo.add_artifacts(payload, update_state=pretend.stub())
         assert result == {
-            "task": "add_targets",
+            "task": "add_artifacts",
             "status": False,
             "last_update": mocked_datetime.now(),
-            "message": "Adding target(s) Failed",
-            "error": "No 'targets' in the payload",
+            "message": "Adding artifact(s) Failed",
+            "error": "No 'artifacts' in the payload",
             "details": None,
         }
 
-    def test_add_targets_skip_publishing(
+    def test_add_artifacts_skip_publishing(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         test_repo._db = pretend.stub()
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
 
@@ -2422,7 +2419,7 @@ class TestMetadataRepository:
         test_repo._update_task = pretend.call_recorder(lambda *a: True)
 
         payload = {
-            "targets": [
+            "artifacts": [
                 {
                     "info": {
                         "length": 11342,
@@ -2434,21 +2431,23 @@ class TestMetadataRepository:
                     "path": "file1.tar.gz",
                 },
             ],
-            "publish_targets": False,
+            "publish_artifacts": False,
             "task_id": "fake_task_id_xyz",
         }
 
         fake_update_state = pretend.stub()
-        result = test_repo.add_targets(payload, update_state=fake_update_state)
+        result = test_repo.add_artifacts(
+            payload, update_state=fake_update_state
+        )
 
         assert result == {
-            "task": "add_targets",
+            "task": "add_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) Added",
+            "message": "Artifact(s) Added",
             "error": None,
             "details": {
-                "added_targets": ["file1.tar.gz"],
+                "added_artifacts": ["file1.tar.gz"],
                 "invalid_paths": [],
                 "target_roles": ["bins-e"],
             },
@@ -2477,28 +2476,28 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_role_by_rolename.calls == [
             pretend.call(test_repo._db, "bins-e")
         ]
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file1.tar.gz")
         ]
         assert test_repo._update_task.calls == [
             pretend.call({"bins-e": [fake_db_target]}, fake_update_state, None)
         ]
 
-    def test_add_targets_invalid_path(
+    def test_add_artifacts_invalid_path(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         test_repo._db = pretend.stub()
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: None
         )
 
-        def fake_target(key):
+        def fake_artifact(key):
             if key == "path":
                 return "fake_target1.tar.gz"
             if key == "info":
                 return {"k": "v"}
 
-        fake_db_target = pretend.stub(get=pretend.call_recorder(fake_target))
+        fake_db_target = pretend.stub(get=pretend.call_recorder(fake_artifact))
 
         monkeypatch.setattr(
             repository.targets_crud,
@@ -2515,13 +2514,13 @@ class TestMetadataRepository:
             "read_role_by_rolename",
             pretend.call_recorder(lambda *a: "bins-e"),
         )
-        test_repo._send_publish_targets_task = pretend.call_recorder(
+        test_repo._send_publish_artifacts_task = pretend.call_recorder(
             lambda *a: "fake_subtask"
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: True)
 
         payload = {
-            "targets": [
+            "artifacts": [
                 {
                     "info": {
                         "length": 11342,
@@ -2537,16 +2536,18 @@ class TestMetadataRepository:
         }
 
         fake_update_state = pretend.stub()
-        result = test_repo.add_targets(payload, update_state=fake_update_state)
+        result = test_repo.add_artifacts(
+            payload, update_state=fake_update_state
+        )
 
         assert result == {
-            "task": "add_targets",
+            "task": "add_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) Added",
+            "message": "Artifact(s) Added",
             "error": None,
             "details": {
-                "added_targets": [],
+                "added_artifacts": [],
                 "invalid_paths": ["file1.tar.gz"],
                 "target_roles": [],
             },
@@ -2554,16 +2555,16 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_file_by_path.calls == []
         assert repository.targets_crud.create_file.calls == []
         assert repository.targets_crud.read_role_by_rolename.calls == []
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file1.tar.gz")
         ]
-        assert test_repo._send_publish_targets_task.calls == []
+        assert test_repo._send_publish_artifacts_task.calls == []
         assert test_repo._update_task.calls == [
             pretend.call({}, fake_update_state, None)
         ]
 
-    def test_remove_targets(self, test_repo, monkeypatch, mocked_datetime):
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+    def test_remove_artifacts(self, test_repo, monkeypatch, mocked_datetime):
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
         fake_db_target = pretend.stub(action="REMOVE", published=False)
@@ -2580,35 +2581,39 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"],
+            "artifacts": [
+                "file1.tar.gz",
+                "file2.tar.gz",
+                "release-v0.1.0.yaml",
+            ],
             "task_id": "fake_task_id_xyz",
         }
-        test_repo._send_publish_targets_task = pretend.call_recorder(
+        test_repo._send_publish_artifacts_task = pretend.call_recorder(
             lambda *a: "fake_subtask"
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
         fake_update_state = pretend.stub()
-        result = test_repo.remove_targets(
+        result = test_repo.remove_artifacts(
             payload, update_state=fake_update_state
         )
 
         assert result == {
-            "task": "remove_targets",
+            "task": "remove_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) removed",
+            "message": "Artifact(s) removed",
             "error": None,
             "details": {
-                "deleted_targets": [
+                "deleted_artifacts": [
                     "file1.tar.gz",
                     "file2.tar.gz",
                     "release-v0.1.0.yaml",
                 ],
-                "not_found_targets": [],
+                "not_found_artifacts": [],
             },
         }
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file1.tar.gz"),
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2618,7 +2623,7 @@ class TestMetadataRepository:
             pretend.call(test_repo._db, "file2.tar.gz"),
             pretend.call(test_repo._db, "release-v0.1.0.yaml"),
         ]
-        assert test_repo._send_publish_targets_task.calls == [
+        assert test_repo._send_publish_artifacts_task.calls == [
             pretend.call("fake_task_id_xyz", ["bins-e"])
         ]
         assert repository.targets_crud.update_file_action_to_remove.calls == [
@@ -2640,11 +2645,11 @@ class TestMetadataRepository:
             )
         ]
 
-    def test_remove_targets_deleted_and_not_found_targets(
+    def test_remove_artifacts_deleted_and_not_found_targets(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         get_role_for_target_path_generator = iter(("first_role", None))
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: next(get_role_for_target_path_generator)
         )
         fake_db_target = pretend.stub(action="REMOVE", published=False)
@@ -2661,38 +2666,38 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "targets": ["file1.tar.gz", "non-existent"],
+            "artifacts": ["file1.tar.gz", "non-existent"],
             "task_id": "fake_task_id_xyz",
         }
-        test_repo._send_publish_targets_task = pretend.call_recorder(
+        test_repo._send_publish_artifacts_task = pretend.call_recorder(
             lambda *a: "fake_subtask"
         )
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
         fake_update_state = pretend.stub()
-        result = test_repo.remove_targets(
+        result = test_repo.remove_artifacts(
             payload, update_state=fake_update_state
         )
 
         assert result == {
-            "task": "remove_targets",
+            "task": "remove_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) removed",
+            "message": "Artifact(s) removed",
             "error": None,
             "details": {
-                "deleted_targets": ["file1.tar.gz"],
-                "not_found_targets": ["non-existent"],
+                "deleted_artifacts": ["file1.tar.gz"],
+                "not_found_artifacts": ["non-existent"],
             },
         }
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file1.tar.gz"),
             pretend.call("non-existent"),
         ]
         assert repository.targets_crud.read_file_by_path.calls == [
             pretend.call(test_repo._db, "file1.tar.gz"),
         ]
-        assert test_repo._send_publish_targets_task.calls == [
+        assert test_repo._send_publish_artifacts_task.calls == [
             pretend.call("fake_task_id_xyz", ["first_role"])
         ]
         assert repository.targets_crud.update_file_action_to_remove.calls == [
@@ -2706,10 +2711,10 @@ class TestMetadataRepository:
             )
         ]
 
-    def test_remove_targets_skip_publishing(
+    def test_remove_artifacts_skip_publishing(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: "bins-e"
         )
         fake_db_target = pretend.stub(action="REMOVE", published=False)
@@ -2726,33 +2731,37 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "targets": ["file1.tar.gz", "file2.tar.gz", "release-v0.1.0.yaml"],
-            "publish_targets": False,
+            "artifacts": [
+                "file1.tar.gz",
+                "file2.tar.gz",
+                "release-v0.1.0.yaml",
+            ],
+            "publish_artifacts": False,
             "task_id": "fake_task_id_xyz",
         }
         test_repo._update_task = pretend.call_recorder(lambda *a: None)
 
         fake_update_state = pretend.stub()
-        result = test_repo.remove_targets(
+        result = test_repo.remove_artifacts(
             payload, update_state=fake_update_state
         )
 
         assert result == {
-            "task": "remove_targets",
+            "task": "remove_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) removed",
+            "message": "Artifact(s) removed",
             "error": None,
             "details": {
-                "deleted_targets": [
+                "deleted_artifacts": [
                     "file1.tar.gz",
                     "file2.tar.gz",
                     "release-v0.1.0.yaml",
                 ],
-                "not_found_targets": [],
+                "not_found_artifacts": [],
             },
         }
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file1.tar.gz"),
             pretend.call("file2.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2781,10 +2790,10 @@ class TestMetadataRepository:
             pretend.call(test_repo._db, fake_db_target),
         ]
 
-    def test_remove_targets_all_none(
+    def test_remove_artifacts_all_none(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: "bin-e"
         )
 
@@ -2795,27 +2804,33 @@ class TestMetadataRepository:
         )
 
         payload = {
-            "targets": ["file2.tar.gz", "file3.tar.gz", "release-v0.1.0.yaml"]
+            "artifacts": [
+                "file2.tar.gz",
+                "file3.tar.gz",
+                "release-v0.1.0.yaml",
+            ]
         }
 
-        result = test_repo.remove_targets(payload, update_state=pretend.stub())
+        result = test_repo.remove_artifacts(
+            payload, update_state=pretend.stub()
+        )
 
         assert result == {
-            "task": "remove_targets",
+            "task": "remove_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) removed",
+            "message": "Artifact(s) removed",
             "error": None,
             "details": {
-                "deleted_targets": [],
-                "not_found_targets": [
+                "deleted_artifacts": [],
+                "not_found_artifacts": [
                     "file2.tar.gz",
                     "file3.tar.gz",
                     "release-v0.1.0.yaml",
                 ],
             },
         }
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file2.tar.gz"),
             pretend.call("file3.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2826,10 +2841,10 @@ class TestMetadataRepository:
             pretend.call(test_repo._db, "release-v0.1.0.yaml"),
         ]
 
-    def test_remove_targets_action_remove_published_true(
+    def test_remove_artifacts_action_remove_published_true(
         self, test_repo, monkeypatch, mocked_datetime
     ):
-        test_repo._get_role_for_target_path = pretend.call_recorder(
+        test_repo._get_role_for_artifact_path = pretend.call_recorder(
             lambda *a: "bin-e"
         )
 
@@ -2842,27 +2857,33 @@ class TestMetadataRepository:
             pretend.call_recorder(lambda *a: fake_db_target),
         )
         payload = {
-            "targets": ["file2.tar.gz", "file3.tar.gz", "release-v0.1.0.yaml"]
+            "artifacts": [
+                "file2.tar.gz",
+                "file3.tar.gz",
+                "release-v0.1.0.yaml",
+            ]
         }
 
-        result = test_repo.remove_targets(payload, update_state=pretend.stub())
+        result = test_repo.remove_artifacts(
+            payload, update_state=pretend.stub()
+        )
 
         assert result == {
-            "task": "remove_targets",
+            "task": "remove_artifacts",
             "status": True,
             "last_update": mocked_datetime.now(),
-            "message": "Target(s) removed",
+            "message": "Artifact(s) removed",
             "error": None,
             "details": {
-                "deleted_targets": [],
-                "not_found_targets": [
+                "deleted_artifacts": [],
+                "not_found_artifacts": [
                     "file2.tar.gz",
                     "file3.tar.gz",
                     "release-v0.1.0.yaml",
                 ],
             },
         }
-        assert test_repo._get_role_for_target_path.calls == [
+        assert test_repo._get_role_for_artifact_path.calls == [
             pretend.call("file2.tar.gz"),
             pretend.call("file3.tar.gz"),
             pretend.call("release-v0.1.0.yaml"),
@@ -2873,31 +2894,39 @@ class TestMetadataRepository:
             pretend.call(test_repo._db, "release-v0.1.0.yaml"),
         ]
 
-    def test_remove_targets_without_targets(self, test_repo, mocked_datetime):
+    def test_remove_artifacts_without_artifacts(
+        self, test_repo, mocked_datetime
+    ):
         payload = {"paths": []}
 
-        result = test_repo.remove_targets(payload, update_state=pretend.stub())
+        result = test_repo.remove_artifacts(
+            payload, update_state=pretend.stub()
+        )
 
         assert result == {
-            "task": "remove_targets",
+            "task": "remove_artifacts",
             "status": False,
             "last_update": mocked_datetime.now(),
-            "message": "Removing target(s) Failed",
-            "error": "No 'targets' in the payload",
+            "message": "Removing artifact(s) Failed",
+            "error": "No 'artifacts' in the payload",
             "details": None,
         }
 
-    def test_remove_targets_empty_targets(self, test_repo, mocked_datetime):
-        payload = {"targets": []}
+    def test_remove_artifacts_empty_artifacts(
+        self, test_repo, mocked_datetime
+    ):
+        payload = {"artifacts": []}
 
-        result = test_repo.remove_targets(payload, update_state=pretend.stub())
+        result = test_repo.remove_artifacts(
+            payload, update_state=pretend.stub()
+        )
 
         assert result == {
-            "task": "remove_targets",
+            "task": "remove_artifacts",
             "status": False,
             "last_update": mocked_datetime.now(),
-            "message": "Removing target(s) Failed",
-            "error": "At list one target is required",
+            "message": "Removing artifact(s) Failed",
+            "error": "At list one artifact is required",
             "details": None,
         }
 

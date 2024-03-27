@@ -66,7 +66,7 @@ Bootstrap
 
     @enduml
 
-Adding/Removing targets
+Adding/Removing artifacts
 -----------------------
 
 As mentioned at the container level, the domain of ``repository-service-tuf-worker``
@@ -75,8 +75,8 @@ The Repository Worker has an Metadata Repository (`MetadataRepository
 <repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository>`_) implementation
 using `python-tuf <https://theupdateframework.readthedocs.io/en/latest/>`_.
 
-The repository implementation has different methods such as adding new targets,
-removing targets, bumping role metadata versions (ex: Snapshot and Timestamp),
+The repository implementation has different methods such as adding new artifacts,
+removing artifacts, bumping role metadata versions (ex: Snapshot and Timestamp),
 etc.
 
 The Repository Worker handles everything as a task.
@@ -102,18 +102,18 @@ The repository Worker has two maintenance tasks:
 - **Bump Roles** that contain online keys ("Snapshot", "Timestamp" and Hahsed
   Bins ("bins-XX").
 - **Publish the new Hashed Bins Target Roles** ("bins-XX") with new/removed
-  targets.
+  artifacts.
 
 About **Bump Roles** (``bump_online_roles``) that contain online keys is easy.
 These roles have short expiration (defined during repository configuration) and
 must be "bumped" frequently. The implementation in the RepositoryMetadata
 
-**Publish the new Hashed Bins Target Roles** (``publish_targets``) is part of the
+**Publish the new Hashed Bins Target Roles** (``publish_artifacts``) is part of the
 solution for the :ref:`Repository Worker scalability, Issue 17
 <devel/known_issues:(Solved) Scalability>`.
 
-To understand more, every time the API sends a task to add a new target, the
-Hashed Bins Roles must be changed to add the new target(s), followed by a new
+To understand more, every time the API sends a task to add a new artifact(s), the
+Hashed Bins Roles must be changed to add the new artifact(s), followed by a new
 Snapshot and Timestamp versions.
 
 .. uml::
@@ -121,8 +121,8 @@ Snapshot and Timestamp versions.
   @startuml
       !pragma useVerticalIf
       start
-      :Add/Remove target(s);
-      :1. Add the target(s) to the Hashed Bin Role;
+      :Add/Remove artifact(s);
+      :1. Add the artifact(s) to the Hashed Bin Role;
       :2. Generate a new version;
       :2. Persist the new Hashed Bin Role in the Storage;
       :4. Update Hashed Bin Role version in the Snapshot meta;
@@ -141,14 +141,14 @@ We use the 'waiting time' to alternate between tasks.
 
 .. note::
 
-   This is valid flow for the Repository Metadata Methods `add_targets
-   <repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository.add_targets>`_
-   and `remove_targets
-   <repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository.remove_targets>`_
+   This is valid flow for the Repository Metadata Methods `add_artifacts
+   <repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository.add_artifacts>`_
+   and `remove_artifacts
+   <repository_service_tuf_worker.html#repository_service_tuf_worker.repository.MetadataRepository.remove_artifacts>`_
 
-Repository Worker adds/removes the target to the SQL Database.
+Repository Worker adds/removes the artifact(s) to the SQL Database.
 
-It means the multiple Repository Workers can write multiple Targets
+It means the multiple Repository Workers can write multiple artifacts
 (``TargetFiles``) simultaneously from various tasks in the Database.
 
 The **Publish the new Hashed Bins Target Roles** is a synchronization between
@@ -161,7 +161,7 @@ Roles** .
 Every minute, the routine task **Publish the new Hashed Bins Target Roles**
 also runs.
 
-The task will continue running and waiting until all the targets are persisted to the
+The task will continue running and waiting until all the artifacts are persisted to the
 Repository Metadata backend.
 
 The **Publish the new Hashed Bins Target Roles** task runs once per time to using
@@ -170,11 +170,11 @@ locks [#f1]_ . It will  will do:
 .. uml::
 
    @startuml
-      partition "publish targets" {
+      partition "publish artifacts" {
          start
          repeat
-         repeat while (Try LOCK publish_targets) is (Waiting)
-         if (delegated role has NO new targets files) then (True)
+         repeat while (Try LOCK publish_artifacts) is (Waiting)
+         if (delegated role has NO new artifacts files) then (True)
             stop
          else
             :Query all delegated role with target files changed;
@@ -186,7 +186,7 @@ locks [#f1]_ . It will  will do:
             :Bump Snapshot Version with new targets;
             :Bump Timestamp Version with new Snapshot version;
             :Persist the new Timestamp in the Storage and Update the SQL;
-            :UNLOCK publish_targets;
+            :UNLOCK publish_artifacts;
          stop
          endif
       }
