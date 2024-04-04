@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel
@@ -27,7 +27,7 @@ class RSTUFTargetFileCreate(BaseModel):
     info: Dict[str, Any]
     published: bool
     action: TargetAction
-    last_update: Optional[datetime] = datetime.now()
+    last_update: Optional[datetime] = datetime.now(timezone.utc)
 
     class Config:
         orm_mode = True

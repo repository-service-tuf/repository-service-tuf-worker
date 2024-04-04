@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 import datetime
+from datetime import timezone
 from types import ModuleType
 
 import pretend
@@ -35,8 +36,10 @@ def app(test_repo: MetadataRepository) -> ModuleType:
 
 @pytest.fixture()
 def mocked_datetime(monkeypatch):
-    fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
-    fake_datetime = pretend.stub(now=pretend.call_recorder(lambda: fake_time))
+    fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1, tzinfo=timezone.utc)
+    fake_datetime = pretend.stub(
+        now=pretend.call_recorder(lambda *а: fake_time)
+    )
     monkeypatch.setattr(
         "repository_service_tuf_worker.repository.datetime", fake_datetime
     )
