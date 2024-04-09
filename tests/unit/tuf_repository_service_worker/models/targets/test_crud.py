@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 import datetime
+from datetime import timezone
 
 import pretend
 
@@ -45,7 +46,7 @@ class TestCrud:
             commit=pretend.call_recorder(lambda: None),
             refresh=pretend.call_recorder(lambda *a: None),
         )
-        last_updated = datetime.datetime.now()
+        last_updated = datetime.datetime.now(timezone.utc)
         test_target_file = crud.schemas.RSTUFTargetFileCreate(
             path="file1.tar.gz",
             info={"info": {"k": "v"}},
@@ -212,9 +213,9 @@ class TestCrud:
             refresh=pretend.call_recorder(lambda *a: None),
         )
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_exp = datetime.datetime(2019, 6, 16, 9, 5, 1, tzinfo=timezone.utc)
         fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
+            now=pretend.call_recorder(lambda a: fake_exp)
         )
         monkeypatch.setattr(
             "repository_service_tuf_worker.models.targets.crud.datetime",
@@ -238,13 +239,13 @@ class TestCrud:
 
         assert test_result.path == new_path
         assert test_result.info == new_info
-        assert test_result.last_update == fake_time
+        assert test_result.last_update == fake_exp
         assert test_result.action == crud.schemas.TargetAction.ADD
         assert test_result.published is False
         assert mocked_db.add.calls == [pretend.call(test_target_file)]
         assert mocked_db.commit.calls == [pretend.call()]
         assert mocked_db.refresh.calls == [pretend.call(test_target_file)]
-        assert fake_datetime.now.calls == [pretend.call()]
+        assert fake_datetime.now.calls == [pretend.call(timezone.utc)]
 
     def test_update_files_to_published(self, monkeypatch):
         test_targets = ["path/file1", "path.file2"]
@@ -271,9 +272,9 @@ class TestCrud:
             query=pretend.call_recorder(lambda *a: mocked_filter),
             commit=pretend.call_recorder(lambda: None),
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_exp = datetime.datetime(2019, 6, 16, 9, 5, 1, tzinfo=timezone.utc)
         fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
+            now=pretend.call_recorder(lambda a: fake_exp)
         )
         monkeypatch.setattr(
             "repository_service_tuf_worker.models.targets.crud.datetime",
@@ -293,10 +294,10 @@ class TestCrud:
             pretend.call(False, test_targets)
         ]
         assert mocked_update.update.calls == [
-            pretend.call({"published": True, "last_update": fake_time})
+            pretend.call({"published": True, "last_update": fake_exp})
         ]
         assert mocked_db.commit.calls == [pretend.call()]
-        assert fake_datetime.now.calls == [pretend.call()]
+        assert fake_datetime.now.calls == [pretend.call(timezone.utc)]
 
     def test_update_roles_version(self, monkeypatch):
         monkeypatch.setattr(
@@ -308,9 +309,9 @@ class TestCrud:
                 last_update="last_update",
             ),
         )
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_exp = datetime.datetime(2019, 6, 16, 9, 5, 1, tzinfo=timezone.utc)
         fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
+            now=pretend.call_recorder(lambda a: fake_exp)
         )
         monkeypatch.setattr(
             "repository_service_tuf_worker.models.targets.crud.datetime",
@@ -339,12 +340,12 @@ class TestCrud:
             pretend.call(
                 {
                     19: crud.models.RSTUFTargetRoles.version + 1,
-                    "last_update": fake_time,
+                    "last_update": fake_exp,
                 }
             )
         ]
         assert mocked_db.commit.calls == [pretend.call()]
-        assert fake_datetime.now.calls == [pretend.call()]
+        assert fake_datetime.now.calls == [pretend.call(timezone.utc)]
 
     def test_update_file_action_to_remove(self, monkeypatch):
         mocked_db = pretend.stub(
@@ -353,9 +354,9 @@ class TestCrud:
             refresh=pretend.call_recorder(lambda *a: None),
         )
 
-        fake_time = datetime.datetime(2019, 6, 16, 9, 5, 1)
+        fake_exp = datetime.datetime(2019, 6, 16, 9, 5, 1, tzinfo=timezone.utc)
         fake_datetime = pretend.stub(
-            now=pretend.call_recorder(lambda: fake_time)
+            now=pretend.call_recorder(lambda a: fake_exp)
         )
         monkeypatch.setattr(
             "repository_service_tuf_worker.models.targets.crud.datetime",
@@ -375,9 +376,9 @@ class TestCrud:
         assert test_result.path == "file1.tar.gz"
         assert test_result.info == {"info": {"k": "v"}}
         assert test_result.action == crud.schemas.TargetAction.REMOVE
-        assert test_result.last_update == fake_time
+        assert test_result.last_update == fake_exp
         assert test_result.published is False
         assert mocked_db.add.calls == [pretend.call(test_target)]
         assert mocked_db.commit.calls == [pretend.call()]
         assert mocked_db.refresh.calls == [pretend.call(test_target)]
-        assert fake_datetime.now.calls == [pretend.call()]
+        assert fake_datetime.now.calls == [pretend.call(timezone.utc)]

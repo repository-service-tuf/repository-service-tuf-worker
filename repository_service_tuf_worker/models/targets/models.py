@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2022-2023 VMware Inc
 #
 # SPDX-License-Identifier: MIT
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -29,7 +29,7 @@ class RSTUFTargetFiles(Base):
         Enum(schemas.TargetAction),
         nullable=False,
     )
-    last_update = Column(DateTime, default=datetime.now())
+    last_update = Column(DateTime, default=datetime.now(timezone.utc))
     targets_role = Column(Integer, ForeignKey("rstuf_target_roles.id"))
 
 
@@ -38,5 +38,5 @@ class RSTUFTargetRoles(Base):
     id = Column(Integer, primary_key=True, index=True)
     rolename = Column(String, nullable=False)
     version = Column(Integer, nullable=False)
-    last_update = Column(DateTime, default=datetime.now())
+    last_update = Column(DateTime, default=datetime.now(timezone.utc))
     target_files = relationship(RSTUFTargetFiles, backref="rstuf_target_roles")

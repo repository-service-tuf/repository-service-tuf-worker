@@ -8,7 +8,7 @@ import logging
 import time
 import warnings
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from math import log
 from typing import Any, Dict, Iterator, List, Literal, Optional
 
@@ -229,7 +229,7 @@ class MetadataRepository:
         """
         Bumps metadata expiration date by role-specific interval.
         """
-        role.signed.expires = datetime.now().replace(
+        role.signed.expires = datetime.now(timezone.utc).replace(
             microsecond=0
         ) + timedelta(
             days=int(
@@ -424,7 +424,7 @@ class MetadataRepository:
                         "roles_to_publish": f"{list(roles_artifacts.keys())}",
                     },
                     "message": "Publishing",
-                    "last_update": datetime.now(),
+                    "last_update": datetime.now(timezone.utc),
                     "exc_type": exc_type,
                     "exc_message": exc_message,
                 },
@@ -654,7 +654,7 @@ class MetadataRepository:
             message=message,
             error=error,
             details=details,
-            last_update=datetime.now(),
+            last_update=datetime.now(timezone.utc),
         )
         return asdict(result)
 
@@ -1085,6 +1085,7 @@ class MetadataRepository:
         targets: Metadata = self._storage_backend.get(Targets.type)
         timestamp: Metadata
         snapshot_bump = False
+        today = datetime.now(timezone.utc)
         if self._settings.get_fresh("TARGETS_ONLINE_KEY") is None:
             logging.critical("No configuration found for TARGETS_ONLINE_KEY")
 
@@ -1093,7 +1094,7 @@ class MetadataRepository:
                 f"{Targets.type} don't use online key, skipping 'Targets' role"
             )
         else:
-            if force or (targets.signed.expires - datetime.now()) < timedelta(
+            if force or (targets.signed.expires - today) < timedelta(
                 hours=self._hours_before_expire
             ):
                 logging.info("Bumped version of 'Targets' role")
@@ -1112,7 +1113,7 @@ class MetadataRepository:
             delegated_roles: List[str] = []
             for role in self._get_delegation_roles(targets):
                 role_md: Metadata[Targets] = self._storage_backend.get(role)
-                if (role_md.signed.expires - datetime.now()) < timedelta(
+                if (role_md.signed.expires - today) < timedelta(
                     hours=self._hours_before_expire
                 ):
                     delegated_roles.append(role)
@@ -1157,7 +1158,7 @@ class MetadataRepository:
         """
 
         snapshot = self._storage_backend.get(Snapshot.type)
-        if (snapshot.signed.expires - datetime.now()) < timedelta(
+        if (snapshot.signed.expires - datetime.now(timezone.utc)) < timedelta(
             hours=self._hours_before_expire
         ) or force:
             timestamp = self._update_timestamp(self._update_snapshot())
