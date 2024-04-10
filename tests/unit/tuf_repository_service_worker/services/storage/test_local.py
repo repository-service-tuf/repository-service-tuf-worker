@@ -9,27 +9,27 @@ from tuf.api.metadata import Metadata, Root, Timestamp
 
 from repository_service_tuf_worker.services.storage import local
 
+MOCK_PATH = "repository_service_tuf_worker.services.storage.local"
+
 
 class TestLocalStorageService:
     def test_basic_init(self):
         service = local.LocalStorage("/path")
         assert service._path == "/path"
 
-    def test_configure(self):
+    def test_configure(self, monkeypatch):
         test_settings = pretend.stub(
             LOCAL_STORAGE_BACKEND_PATH="/path",
             get=pretend.call_recorder(lambda *a: "/path"),
         )
-        local.os = pretend.stub(
+        fake_os = pretend.stub(
             makedirs=pretend.call_recorder(lambda *a, **kw: None)
         )
-
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
         service = local.LocalStorage.configure(test_settings)
         assert isinstance(service, local.LocalStorage)
         assert service._path == "/path"
-        assert local.os.makedirs.calls == [
-            pretend.call("/path", exist_ok=True)
-        ]
+        assert fake_os.makedirs.calls == [pretend.call("/path", exist_ok=True)]
         assert test_settings.get.calls == [
             pretend.call("LOCAL_STORAGE_BACKEND_PATH")
         ]
@@ -48,16 +48,16 @@ class TestLocalStorageService:
     def test_get(self, monkeypatch):
         service = local.LocalStorage("/path")
 
-        local.glob = pretend.stub(
-            glob=pretend.call_recorder(lambda *a: ["2.root.json"])
+        fake_glob = pretend.stub(
+            glob=pretend.call_recorder(lambda a: ["2.root.json"])
         )
-        local.os = pretend.stub(
+        monkeypatch.setattr(f"{MOCK_PATH}.glob", fake_glob)
+        fake_os = pretend.stub(
             path=pretend.stub(
-                join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/2.root.json"
-                )
+                join=pretend.call_recorder(lambda *a, **kw: "foo/2.root.json")
             )
         )
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
         fake_file_obj = pretend.stub(
             read=pretend.call_recorder(lambda: None),
             close=pretend.call_recorder(lambda: None),
@@ -67,31 +67,31 @@ class TestLocalStorageService:
         )
 
         expected_root = Metadata(Root())
-        local.Metadata = pretend.stub(
+        fake_md = pretend.stub(
             from_bytes=pretend.call_recorder(lambda *a: expected_root)
         )
+        monkeypatch.setattr(f"{MOCK_PATH}.Metadata", fake_md)
         result = service.get("root")
 
         assert result == expected_root
         assert fake_file_obj.read.calls == [pretend.call()]
         assert fake_file_obj.close.calls == [pretend.call()]
-        assert local.glob.glob.calls == [pretend.call("/path/2.root.json")]
-        assert local.os.path.join.calls == [
+        assert fake_glob.glob.calls == [pretend.call("foo/2.root.json")]
+        assert fake_os.path.join.calls == [
             pretend.call(service._path, "*.root.json"),
             pretend.call(service._path, "2.root.json"),
         ]
-        assert local.Metadata.from_bytes.calls == [pretend.call(None)]
+        assert fake_md.from_bytes.calls == [pretend.call(None)]
 
     def test_get_timestamp(self, monkeypatch):
         service = local.LocalStorage("/path")
 
-        local.os = pretend.stub(
+        fake_os = pretend.stub(
             path=pretend.stub(
-                join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/2.root.json"
-                )
+                join=pretend.call_recorder(lambda *a, **kw: "foo/timestamp")
             )
         )
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
         fake_file_obj = pretend.stub(
             read=pretend.call_recorder(lambda: None),
             close=pretend.call_recorder(lambda: None),
@@ -100,31 +100,32 @@ class TestLocalStorageService:
             local.__builtins__, "open", lambda *a: fake_file_obj
         )
         expected_timestamp = Metadata(Timestamp())
-        local.Metadata = pretend.stub(
+        fake_md = pretend.stub(
             from_bytes=pretend.call_recorder(lambda *a: expected_timestamp)
         )
+        monkeypatch.setattr(f"{MOCK_PATH}.Metadata", fake_md)
         result = service.get("timestamp")
 
         assert result == expected_timestamp
         assert fake_file_obj.read.calls == [pretend.call()]
         assert fake_file_obj.close.calls == [pretend.call()]
-        assert local.os.path.join.calls == [
+        assert fake_os.path.join.calls == [
             pretend.call(service._path, "timestamp.json"),
         ]
-        assert local.Metadata.from_bytes.calls == [pretend.call(None)]
+        assert fake_md.from_bytes.calls == [pretend.call(None)]
 
     def test_get_max_version_ValueError(self, monkeypatch):
         service = local.LocalStorage("/path")
-        local.glob = pretend.stub(
-            glob=pretend.call_recorder(lambda *a: ["1.root.json"])
+        fake_glob = pretend.stub(
+            glob=pretend.call_recorder(lambda a: ["1.root.json"])
         )
-        local.os = pretend.stub(
+        monkeypatch.setattr(f"{MOCK_PATH}.glob", fake_glob)
+        fake_os = pretend.stub(
             path=pretend.stub(
-                join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/1.root.json"
-                )
+                join=pretend.call_recorder(lambda *a, **kw: "foo/1.root.json")
             )
         )
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
         fake_file_obj = pretend.stub(
             read=pretend.call_recorder(lambda: None),
             close=pretend.call_recorder(lambda: None),
@@ -136,33 +137,34 @@ class TestLocalStorageService:
             local.__builtins__, "open", lambda *a: fake_file_obj
         )
         expected_root = Metadata(Root())
-        local.Metadata = pretend.stub(
+        fake_md = pretend.stub(
             from_bytes=pretend.call_recorder(lambda *a: expected_root)
         )
+        monkeypatch.setattr(f"{MOCK_PATH}.Metadata", fake_md)
         result = service.get("root")
 
         assert result == expected_root
         assert fake_file_obj.read.calls == [pretend.call()]
         assert fake_file_obj.close.calls == [pretend.call()]
-        assert local.os.path.join.calls == [
+        assert fake_os.path.join.calls == [
             pretend.call(service._path, "*.root.json"),
             pretend.call(service._path, "1.root.json"),
         ]
-        assert local.glob.glob.calls == [pretend.call("/path/1.root.json")]
-        assert local.Metadata.from_bytes.calls == [pretend.call(None)]
+        assert fake_glob.glob.calls == [pretend.call("foo/1.root.json")]
+        assert fake_md.from_bytes.calls == [pretend.call(None)]
 
     def test_get_OSError(self, monkeypatch):
         service = local.LocalStorage("/path")
-        local.glob = pretend.stub(
-            glob=pretend.call_recorder(lambda *a: ["2.root.json"])
+        fake_glob = pretend.stub(
+            glob=pretend.call_recorder(lambda a: ["2.root.json"])
         )
-        local.os = pretend.stub(
+        monkeypatch.setattr(f"{MOCK_PATH}.glob", fake_glob)
+        fake_os = pretend.stub(
             path=pretend.stub(
-                join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/2.root.json"
-                )
+                join=pretend.call_recorder(lambda *a, **kw: "foo/2.root.json")
             )
         )
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
         fake_file_object = pretend.stub(
             close=pretend.call_recorder(lambda: None),
             read=pretend.call_recorder(lambda: b"fake_root_data"),
@@ -181,24 +183,21 @@ class TestLocalStorageService:
 
         assert fake_file_object.close.calls == []
         assert fake_file_object.read.calls == []
-        assert local.os.path.join.calls == [
+        assert fake_os.path.join.calls == [
             pretend.call(service._path, "*.root.json"),
             pretend.call(service._path, "2.root.json"),
         ]
-        assert local.glob.glob.calls == [pretend.call("/path/2.root.json")]
+        assert fake_glob.glob.calls == [pretend.call("foo/2.root.json")]
 
     def test_put(self, monkeypatch):
         service = local.LocalStorage("/path")
-
-        local.os = pretend.stub(
+        fake_os = pretend.stub(
             path=pretend.stub(
-                join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/3.bin-e.json"
-                )
+                join=pretend.call_recorder(lambda *a, **kw: "foo/3.bin-e.json")
             ),
             fsync=pretend.call_recorder(lambda *a: None),
         )
-
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
         fake_file_data = b"fake_byte_data"
 
         fake_destination_file = pretend.stub(
@@ -222,7 +221,7 @@ class TestLocalStorageService:
         result = service.put(fake_file_data, b"3.bin-e.json")
 
         assert result is None
-        assert local.os.path.join.calls == [
+        assert fake_os.path.join.calls == [
             pretend.call(service._path, b"3.bin-e.json"),
         ]
         assert fake_destination_file.write.calls == [
@@ -230,26 +229,23 @@ class TestLocalStorageService:
         ]
         assert fake_destination_file.flush.calls == [pretend.call()]
         assert fake_destination_file.fileno.calls == [pretend.call()]
-        assert local.os.fsync.calls == [pretend.call("fileno")]
+        assert fake_os.fsync.calls == [pretend.call("fileno")]
 
-    def test_put_OSError(self):
+    def test_put_OSError(self, monkeypatch):
         service = local.LocalStorage("/path")
-
-        local.os = pretend.stub(
+        fake_os = pretend.stub(
             path=pretend.stub(
-                join=pretend.call_recorder(
-                    lambda *a, **kw: "/path/3.bin-e.json"
-                )
+                join=pretend.call_recorder(lambda *a, **kw: "foo/3.bin-e.json")
             ),
             open=pretend.raiser(PermissionError("don't want this message")),
         )
-
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
         fake_bytes = b"data"
 
         with pytest.raises(local.StorageError) as err:
             service.put(fake_bytes, "3.bin-e.json")
 
-        assert "Can't write role file '/path/3.bin-e.json'" in str(err)
-        assert local.os.path.join.calls == [
+        assert "Can't write role file 'foo/3.bin-e.json'" in str(err)
+        assert fake_os.path.join.calls == [
             pretend.call(service._path, "3.bin-e.json"),
         ]

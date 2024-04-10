@@ -5,6 +5,7 @@
 
 import datetime
 from contextlib import contextmanager
+from datetime import timezone
 from math import log
 from typing import Iterator
 
@@ -276,7 +277,7 @@ class TestMetadataRepository:
         result = test_repo._bump_expiry(fake_role, "root")
         assert result is None
         assert fake_role.signed.expires == datetime.datetime(
-            2023, 6, 15, 9, 5, 1
+            2023, 6, 15, 9, 5, 1, tzinfo=timezone.utc
         )
 
     def test__bump_version(self, test_repo):
@@ -375,9 +376,11 @@ class TestMetadataRepository:
             )
         )
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: mocked_snapshot
-            if rolename == Snapshot.type
-            else mocked_targets
+            lambda rolename: (
+                mocked_snapshot
+                if rolename == Snapshot.type
+                else mocked_targets
+            )
         )
 
         def fake__bump_and_persist(md, role, **kw):
@@ -2946,9 +2949,9 @@ class TestMetadataRepository:
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: fake_targets
-            if rolename == Targets.type
-            else fake_bins
+            lambda rolename: (
+                fake_targets if rolename == Targets.type else fake_bins
+            )
         )
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda a: True)
@@ -3076,9 +3079,9 @@ class TestMetadataRepository:
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: fake_targets
-            if rolename == Targets.type
-            else fake_bins
+            lambda rolename: (
+                fake_targets if rolename == Targets.type else fake_bins
+            )
         )
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: False)
@@ -3135,9 +3138,9 @@ class TestMetadataRepository:
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: fake_targets
-            if rolename == Targets.type
-            else fake_bins
+            lambda rolename: (
+                fake_targets if rolename == Targets.type else fake_bins
+            )
         )
         test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
@@ -3168,7 +3171,7 @@ class TestMetadataRepository:
 
     def test__run_online_roles_bump_no_changes(self, test_repo, caplog):
         caplog.set_level(repository.logging.DEBUG)
-        fake_time = datetime.datetime(2054, 6, 16, 8, 5, 1)
+        fake_exp = datetime.datetime(2054, 6, 16, 8, 5, 1, tzinfo=timezone.utc)
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
@@ -3176,19 +3179,19 @@ class TestMetadataRepository:
                         get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
                     )
                 ),
-                expires=fake_time,
+                expires=fake_exp,
                 version=1,
             )
         )
 
         fake_bins = pretend.stub(
-            signed=pretend.stub(targets={}, version=6, expires=fake_time)
+            signed=pretend.stub(targets={}, version=6, expires=fake_exp)
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: fake_targets
-            if rolename == Targets.type
-            else fake_bins
+            lambda rolename: (
+                fake_targets if rolename == Targets.type else fake_bins
+            )
         )
 
         test_repo._run_online_roles_bump()
@@ -3245,10 +3248,11 @@ class TestMetadataRepository:
         ]
 
     def test_bump_snapshot_unexpired(self, test_repo):
+        fake_exp = datetime.datetime(2080, 6, 16, 9, 5, 1, tzinfo=timezone.utc)
         fake_snapshot = pretend.stub(
             signed=pretend.stub(
                 meta={},
-                expires=datetime.datetime(2080, 6, 16, 9, 5, 1),
+                expires=fake_exp,
                 version=87,
             )
         )
@@ -3276,10 +3280,11 @@ class TestMetadataRepository:
         # because we pass "force=True" we expect that snapshot must be updated.
         # The current situation as described in the previous comment is that
         # in this case snapshot won't be updated.
+        fake_exp = datetime.datetime(2080, 6, 16, 9, 5, 1, tzinfo=timezone.utc)
         caplog.set_level(repository.logging.DEBUG)
         fake_snapshot = pretend.stub(
             signed=pretend.stub(
-                expires=datetime.datetime(2080, 6, 16, 9, 5, 1),
+                expires=fake_exp,
                 version=87,
             )
         )
@@ -3294,7 +3299,7 @@ class TestMetadataRepository:
                 signed=pretend.stub(
                     snapshot_meta=pretend.stub(version=79),
                     version=87,
-                    expires=datetime.datetime(2028, 6, 16, 9, 5, 1),
+                    expires=fake_exp,
                 )
             )
         )

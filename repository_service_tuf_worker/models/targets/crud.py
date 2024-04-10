@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2022-2023 VMware Inc
 #
 # SPDX-License-Identifier: MIT
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -128,7 +128,7 @@ def update_file_path_and_info(
     target.published = False
     target.path = new_path
     target.info = new_info
-    target.last_update = datetime.now()
+    target.last_update = datetime.now(timezone.utc)
     db.add(target)
     db.commit()
     db.refresh(target)
@@ -147,7 +147,7 @@ def update_files_to_published(db: Session, paths: List[str]) -> None:
     ).update(
         {
             models.RSTUFTargetFiles.published: True,
-            models.RSTUFTargetFiles.last_update: datetime.now(),
+            models.RSTUFTargetFiles.last_update: datetime.now(timezone.utc),
         }
     )
     db.commit()
@@ -163,7 +163,7 @@ def update_roles_version(db: Session, bins_ids: List[int]) -> None:
         {
             models.RSTUFTargetRoles.version: models.RSTUFTargetRoles.version
             + 1,
-            models.RSTUFTargetRoles.last_update: datetime.now(),
+            models.RSTUFTargetRoles.last_update: datetime.now(timezone.utc),
         }
     )
     db.commit()
@@ -177,7 +177,7 @@ def update_file_action_to_remove(
     """
     target.published = False
     target.action = schemas.TargetAction.REMOVE
-    target.last_update = datetime.now()
+    target.last_update = datetime.now(timezone.utc)
     db.add(target)
     db.commit()
     db.refresh(target)
