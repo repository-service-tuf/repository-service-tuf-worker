@@ -1,6 +1,6 @@
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.4.0
+  rev: v4.5.0
   hooks:
   - id: check-added-large-files
   - id: end-of-file-fixer
@@ -10,22 +10,22 @@ repos:
   - id: check-yaml
     files: '.github/'
 - repo: https://github.com/pycqa/flake8
-  rev: '6.1.0'
+  rev: '7.0.0'
   hooks:
   - id: flake8
     exclude: repository_service_tuf_worker/__init__.py|venv|.venv|setting.py|.git|.tox|dist|docs|/*lib/python*|/*egg|build|tools|alembic
 - repo: https://github.com/PyCQA/isort
-  rev: '5.12.0'
+  rev: '5.13.2'
   hooks:
   - id: isort
     args: [-l79, --profile, black, --check, --diff]
 - repo: https://github.com/psf/black
-  rev: '23.7.0'
+  rev: '24.3.0'
   hooks:
   - id: black
     args: [-l79, --check, --diff, .]
 - repo: https://github.com/PyCQA/bandit
-  rev: '1.7.5'
+  rev: '1.7.8'
   hooks:
   - id: bandit
     args: ["-r", "tuf_repository_service_worker"]
@@ -36,6 +36,13 @@ repos:
       name: run requirements check from tox
       description: Checks if `make requirements` is up-to-date
       entry: tox -e requirements
+      language: system
+      pass_filenames: false
+      verbose: true
+    - id: tox-precommit
+      name: run pre-commit version check from tox
+      description: Checks if `pre-commit autoupdate` is up-to-date
+      entry: tox -e precommit
       language: system
       pass_filenames: false
       verbose: true
