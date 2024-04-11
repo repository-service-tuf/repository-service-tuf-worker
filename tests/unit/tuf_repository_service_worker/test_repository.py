@@ -3609,7 +3609,7 @@ class TestMetadataRepository:
     def test_run_force_online_metadata_update_snapshot(self, test_repo):
         test_repo.bump_snapshot = pretend.call_recorder(lambda **kw: None)
 
-        result = test_repo._run_force_online_metadata_update(Snapshot.type)
+        result = test_repo._run_force_online_metadata_update([Snapshot.type])
         assert result == [Snapshot.type, Timestamp.type]
         assert test_repo.bump_snapshot.calls == [pretend.call(force=True)]
 
@@ -3620,7 +3620,7 @@ class TestMetadataRepository:
         )
         test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
 
-        result = test_repo._run_force_online_metadata_update(Timestamp.type)
+        result = test_repo._run_force_online_metadata_update([Timestamp.type])
         assert result == [Timestamp.type]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Snapshot.type)
