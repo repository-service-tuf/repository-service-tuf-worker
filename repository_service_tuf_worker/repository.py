@@ -62,6 +62,13 @@ class Roles(enum.Enum):
     TIMESTAMP = Timestamp.type
     BINS = "bins"
 
+    @staticmethod
+    def is_role(input: Any) -> bool:
+        if not isinstance(input, str):
+            return False
+
+        return any(input == role.value for role in Roles)
+
 
 ALL_REPOSITORY_ROLES_NAMES = [rolename.value for rolename in Roles]
 OFFLINE_KEYS = {
@@ -1217,21 +1224,39 @@ class MetadataRepository:
     ) -> List[str]:
         "Run the actual metadata update for set of online roles."
         roles_diff: List[str] = []
-        if Targets.type in payload and "bins" in payload:
-            self._run_online_roles_bump(force=True)
-            roles_diff = [Targets.type, "bins", Snapshot.type, Timestamp.type]
+        delegated_roles: List[str]
+        if Roles.BINS.value in payload:
+            delegated_roles = [Roles.BINS.value]
+        else:
+            delegated_roles = [r for r in payload if not Roles.is_role(r)]
 
-        elif Targets.type in payload or "bins" in payload:
+        delegated_roles_in_payload = any(r in payload for r in delegated_roles)
+        if Targets.type in payload and delegated_roles_in_payload:
+            self._run_online_roles_bump(force=True)
+            roles_diff = [
+                Targets.type, *delegated_roles, Snapshot.type, Timestamp.type
+            ]
+
+        elif Targets.type in payload or delegated_roles_in_payload:
             if Targets.type in payload:
                 targets = self._storage_backend.get(Targets.type)
                 self._bump_and_persist(targets, Targets.type)
-                logging.info("Bumped version of 'Targets' role")
                 self.bump_snapshot(force=True)
                 roles_diff = [Targets.type, Snapshot.type, Timestamp.type]
             else:
-                # Bump all bins
-                self._update_timestamp(self._update_snapshot(bump_all=True))
-                roles_diff = ["bins", Snapshot.type, Timestamp.type]
+                bump_all = delegated_roles == [Roles.BINS.value]
+                if bump_all:
+                    # Bump all bins
+                    self._update_timestamp(
+                        self._update_snapshot(bump_all=True)
+                    )
+                else:
+                    # Bump custom target delegations
+                    self._update_timestamp(
+                        self._update_snapshot(target_roles=delegated_roles)
+                    )
+
+                roles_diff = [*delegated_roles, Snapshot.type, Timestamp.type]
 
         elif Snapshot.type in payload:
             self.bump_snapshot(force=True)

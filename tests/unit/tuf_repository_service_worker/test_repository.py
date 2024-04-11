@@ -26,6 +26,23 @@ from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
 
 
+class TestRoles:
+    def test_is_role_true_all_roles(self):
+        all = [Root.type, Targets.type, Snapshot.type, Timestamp.type, "bins"]
+        for role in all:
+            assert repository.Roles.is_role(role) is True
+
+    def test_is_role_false_str(self):
+        all_roles = ["root1", "1root", "root.json", "f", "bin", "bin0", ""]
+        for role in all_roles:
+            assert repository.Roles.is_role(role) is False
+
+    def test_is_role_false_other_input(self):
+        all_roles = [1, None, True, [], {}]
+        for role in all_roles:
+            assert repository.Roles.is_role(role) is False
+
+
 class TestMetadataRepository:
     def test_basic_init(self, monkeypatch):
         fake_configure = pretend.call_recorder(lambda *a: None)
@@ -3584,6 +3601,24 @@ class TestMetadataRepository:
         assert result == [Timestamp.type]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Snapshot.type)
+        ]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call(fake_snapshot.signed.version)
+        ]
+
+    def test_run_force_online_metadata_update_targets_and_custom_delegations(
+        self, test_repo
+    ):
+        fake_snapshot = Metadata(Snapshot())
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda **kw: fake_snapshot.signed.version
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
+
+        result = test_repo._run_force_online_metadata_update(["foo", "bar"])
+        assert result == ["foo", "bar", Snapshot.type, Timestamp.type]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=["foo", "bar"])
         ]
         assert test_repo._update_timestamp.calls == [
             pretend.call(fake_snapshot.signed.version)
