@@ -10,7 +10,7 @@ import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from math import log
-from typing import Any, Dict, Iterator, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import redis
 from celery.app.task import Task

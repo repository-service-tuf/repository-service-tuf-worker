@@ -7,7 +7,6 @@ import datetime
 from contextlib import contextmanager
 from datetime import timezone
 from math import log
-from typing import Iterator
 
 import pretend
 import pytest
@@ -15,13 +14,10 @@ from celery.exceptions import ChordError
 from celery.result import states
 from securesystemslib.exceptions import StorageError
 from tuf.api.metadata import (
-    DelegatedRole,
-    Delegations,
     Metadata,
     MetaFile,
     Root,
     Snapshot,
-    SuccinctRoles,
     Targets,
     Timestamp,
 )
@@ -3119,7 +3115,6 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda a: fake_bins
         )
-        # test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
             lambda *a, **kw: "fake_snapshot"
         )
