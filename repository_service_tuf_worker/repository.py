@@ -1071,7 +1071,6 @@ class MetadataRepository:
             force: force all target roles bump even if they have more than
             `self._hours_before_expire` hours to expire.
         """
-        targets: Metadata = self._storage_backend.get(Targets.type)
         timestamp: Metadata
         snapshot_bump = False
         today = datetime.now(timezone.utc)
@@ -1083,6 +1082,7 @@ class MetadataRepository:
                 f"{Targets.type} don't use online key, skipping 'Targets' role"
             )
         else:
+            targets: Metadata = self._storage_backend.get(Targets.type)
             if force or (targets.signed.expires - today) < timedelta(
                 hours=self._hours_before_expire
             ):

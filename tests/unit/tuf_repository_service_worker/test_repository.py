@@ -3035,15 +3035,6 @@ class TestMetadataRepository:
         self, monkeypatch, caplog, test_repo, mocked_datetime
     ):
         caplog.set_level(repository.logging.WARNING)
-        fake_targets = pretend.stub(
-            signed=pretend.stub(
-                delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
-                    )
-                ),
-            )
-        )
         fake_bins = pretend.stub(
             signed=pretend.stub(
                 targets={}, version=6, expires=mocked_datetime.now()
@@ -3051,9 +3042,7 @@ class TestMetadataRepository:
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: (
-                fake_targets if rolename == Targets.type else fake_bins
-            )
+            lambda a: fake_bins
         )
 
         def fake_get_fresh(setting: str):
@@ -3086,7 +3075,6 @@ class TestMetadataRepository:
         msg = "targets don't use online key, skipping 'Targets' role"
         assert msg == caplog.messages[0]
         assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
         assert test_repo._update_snapshot.calls == [
@@ -3105,16 +3093,6 @@ class TestMetadataRepository:
         self, caplog, test_repo, mocked_datetime, monkeypatch
     ):
         caplog.set_level(repository.logging.CRITICAL)
-        fake_targets = pretend.stub(
-            signed=pretend.stub(
-                delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
-                    )
-                ),
-            )
-        )
-
         fake_bins = pretend.stub(
             signed=pretend.stub(
                 targets={}, version=6, expires=mocked_datetime.now()
@@ -3139,9 +3117,7 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: (
-                fake_targets if rolename == Targets.type else fake_bins
-            )
+            lambda a: fake_bins
         )
         # test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
@@ -3160,7 +3136,6 @@ class TestMetadataRepository:
         msg = "No configuration found for TARGETS_ONLINE_KEY"
         assert msg == caplog.messages[0]
         assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
         assert test_repo._update_snapshot.calls == [
@@ -3179,26 +3154,12 @@ class TestMetadataRepository:
     ):
         caplog.set_level(repository.logging.DEBUG)
         fake_exp = datetime.datetime(2054, 6, 16, 8, 5, 1, tzinfo=timezone.utc)
-        fake_targets = pretend.stub(
-            signed=pretend.stub(
-                delegations=pretend.stub(
-                    succinct_roles=pretend.stub(
-                        get_roles=pretend.call_recorder(lambda *a: ["bin-a"])
-                    )
-                ),
-                expires=fake_exp,
-                version=1,
-            )
-        )
-
         fake_bins = pretend.stub(
             signed=pretend.stub(targets={}, version=6, expires=fake_exp)
         )
 
         test_repo._storage_backend.get = pretend.call_recorder(
-            lambda rolename: (
-                fake_targets if rolename == Targets.type else fake_bins
-            )
+            lambda a: fake_bins
         )
 
         def fake_get_fresh(setting: str):
@@ -3218,7 +3179,6 @@ class TestMetadataRepository:
 
         test_repo._run_online_roles_bump()
         assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
         msg_1 = "No configuration found for TARGETS_ONLINE_KEY"
@@ -3232,13 +3192,32 @@ class TestMetadataRepository:
             pretend.call("DELEGATED_ROLES_NAMES"),
         ]
 
-    def test__run_online_roles_bump_StorageError(self, test_repo):
+    def test__run_online_roles_bump_StorageError(self, test_repo, monkeypatch):
+        def fake_get_fresh(setting: str):
+            if setting == "TARGETS_ONLINE_KEY":
+                return None
+            elif setting == "DELEGATED_ROLES_NAMES":
+                return ["bin-a"]
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         test_repo._storage_backend.get = pretend.raiser(
             StorageError("Overwrite it")
         )
 
         with pytest.raises(StorageError):
             test_repo._run_online_roles_bump()
+
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_ONLINE_KEY"),
+            pretend.call("DELEGATED_ROLES_NAMES"),
+        ]
 
     def test_bump_snapshot(self, test_repo, mocked_datetime):
         fake_snapshot = pretend.stub(
