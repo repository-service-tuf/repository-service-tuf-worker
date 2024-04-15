@@ -1105,6 +1105,9 @@ class TestMetadataRepository:
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._sign = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
 
         fake_targets = pretend.stub(
             signed=pretend.stub(
@@ -1144,6 +1147,10 @@ class TestMetadataRepository:
 
             call_id += 1
 
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("DELEGATED_ROLES_NAMES", ["role1", "role2"])
+        ]
+
     def test__setup_targets_delegations_hash_bins_delegations(
         self, test_repo, monkeypatch
     ):
@@ -1164,6 +1171,9 @@ class TestMetadataRepository:
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._sign = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
 
         fake_targets = pretend.stub(
             signed=pretend.stub(
@@ -1203,46 +1213,9 @@ class TestMetadataRepository:
 
             call_id += 1
 
-    def test__get_delegation_roles_succinct_roles(self, test_repo):
-        targets: Metadata[Targets] = Metadata(Targets())
-        succinct_roles = SuccinctRoles([], 1, 1, repository.BINS)
-        targets.signed.delegations = Delegations(
-            keys={}, succinct_roles=succinct_roles
-        )
-
-        expected_result = ["bins-0", "bins-1"]
-        test_result = []
-        for role_name in test_repo._get_delegation_roles(targets):
-            test_result.append(role_name)
-
-        assert test_result == expected_result
-
-    def test__get_delegation_roles_custom_targets(self, test_repo):
-        targets: Metadata[Targets] = Metadata(Targets())
-        targets.signed.delegations = Delegations(
-            keys={},
-            roles={
-                "role1": DelegatedRole("role1", [], 1, 1, "role1/"),
-                "role2": DelegatedRole("role2", [], 1, 1, "role2/"),
-            },
-        )
-
-        expected_result = ["role1", "role2"]
-        test_result = []
-        for role_name in test_repo._get_delegation_roles(targets):
-            test_result.append(role_name)
-
-        assert test_result == expected_result
-
-    def test__get_delegation_roles_no_delegation(self, test_repo):
-        targets: Metadata[Targets] = Metadata(Targets())
-        result = []
-        with pytest.raises(ValueError) as e:
-            for delegated_role in test_repo._get_delegation_roles(targets):
-                result.append(delegated_role)
-
-        assert len(result) == 0
-        assert "Targets must have delegation, internal error" in str(e)
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("DELEGATED_ROLES_NAMES", ["bins-0", "bins-1"])
+        ]
 
     def test__bootstrap_online_roles(self, test_repo, monkeypatch):
         fake_root_md = pretend.stub(
@@ -1255,14 +1228,13 @@ class TestMetadataRepository:
         test_repo._setup_targets_delegations = pretend.call_recorder(
             lambda *a: None
         )
-
-        def fake_delegation_roles() -> Iterator:
-            bins = ["bins-0", "bins-1"]
-            for bin in bins:
-                yield bin
-
-        test_repo._get_delegation_roles = pretend.call_recorder(
-            lambda *a: fake_delegation_roles()
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: ["bins-0", "bins-1"])
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
         )
         repository.MetaFile = pretend.call_recorder(lambda: "name")
 
@@ -1283,9 +1255,9 @@ class TestMetadataRepository:
         assert call.args[0] == "online_public_key"
         assert isinstance(call.args[1], Metadata)
         assert call.args[2] is None
-
-        for call in test_repo._get_delegation_roles.calls:
-            assert isinstance(call.args[0], Metadata)
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("DELEGATED_ROLES_NAMES")
+        ]
 
         assert repository.targets_crud.create_roles.calls == [
             pretend.call(
@@ -2953,22 +2925,20 @@ class TestMetadataRepository:
                 fake_targets if rolename == Targets.type else fake_bins
             )
         )
+
+        def fake_get_fresh(setting: str):
+            if setting == "TARGETS_ONLINE_KEY":
+                return True
+            elif setting == "DELEGATED_ROLES_NAMES":
+                return ["bin-a"]
+
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda a: True)
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
         )
         monkeypatch.setattr(
             repository,
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
-        )
-
-        def fake_delegation_roles() -> Iterator:
-            bins = ["bin-a"]
-            for bin in bins:
-                yield bin
-
-        test_repo._get_delegation_roles = pretend.call_recorder(
-            lambda *a: fake_delegation_roles()
         )
         test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
@@ -2988,8 +2958,10 @@ class TestMetadataRepository:
             pretend.call(Targets.type),
             pretend.call("bin-a"),
         ]
-        assert test_repo._get_delegation_roles.calls == [
-            pretend.call(fake_targets)
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_ONLINE_KEY"),
+            pretend.call("TARGETS_ONLINE_KEY"),
+            pretend.call("DELEGATED_ROLES_NAMES"),
         ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(fake_targets, Targets.type),
@@ -3083,8 +3055,15 @@ class TestMetadataRepository:
                 fake_targets if rolename == Targets.type else fake_bins
             )
         )
+
+        def fake_get_fresh(setting: str):
+            if setting == "TARGETS_ONLINE_KEY":
+                return False
+            elif setting == "DELEGATED_ROLES_NAMES":
+                return ["bin-a"]
+
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: False)
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
         )
         monkeypatch.setattr(
             repository,
@@ -3116,9 +3095,14 @@ class TestMetadataRepository:
         assert test_repo._update_timestamp.calls == [
             pretend.call("fake_snapshot")
         ]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_ONLINE_KEY"),
+            pretend.call("TARGETS_ONLINE_KEY"),
+            pretend.call("DELEGATED_ROLES_NAMES"),
+        ]
 
     def test__run_online_roles_bump_warning_missing_config(
-        self, caplog, test_repo, mocked_datetime
+        self, caplog, test_repo, mocked_datetime, monkeypatch
     ):
         caplog.set_level(repository.logging.CRITICAL)
         fake_targets = pretend.stub(
@@ -3136,13 +3120,30 @@ class TestMetadataRepository:
                 targets={}, version=6, expires=mocked_datetime.now()
             )
         )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda a: fake_bins
+        )
 
+        def fake_get_fresh(setting: str):
+            if setting == "TARGETS_ONLINE_KEY":
+                return None
+            elif setting == "DELEGATED_ROLES_NAMES":
+                return ["bin-a"]
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda rolename: (
                 fake_targets if rolename == Targets.type else fake_bins
             )
         )
-        test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: None)
+        # test_repo._settings.get_fresh = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
             lambda *a, **kw: "fake_snapshot"
         )
@@ -3168,8 +3169,14 @@ class TestMetadataRepository:
         assert test_repo._update_timestamp.calls == [
             pretend.call("fake_snapshot")
         ]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_ONLINE_KEY"),
+            pretend.call("DELEGATED_ROLES_NAMES"),
+        ]
 
-    def test__run_online_roles_bump_no_changes(self, test_repo, caplog):
+    def test__run_online_roles_bump_no_changes(
+        self, test_repo, caplog, monkeypatch
+    ):
         caplog.set_level(repository.logging.DEBUG)
         fake_exp = datetime.datetime(2054, 6, 16, 8, 5, 1, tzinfo=timezone.utc)
         fake_targets = pretend.stub(
@@ -3194,6 +3201,21 @@ class TestMetadataRepository:
             )
         )
 
+        def fake_get_fresh(setting: str):
+            if setting == "TARGETS_ONLINE_KEY":
+                return None
+            elif setting == "DELEGATED_ROLES_NAMES":
+                return ["bin-a"]
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
         test_repo._run_online_roles_bump()
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type),
@@ -3205,6 +3227,10 @@ class TestMetadataRepository:
         assert msg_2 in caplog.messages[1]
         assert "Snapshot version bumped:" not in caplog.messages
         assert "Timestamp version bumped:" not in caplog.messages
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_ONLINE_KEY"),
+            pretend.call("DELEGATED_ROLES_NAMES"),
+        ]
 
     def test__run_online_roles_bump_StorageError(self, test_repo):
         test_repo._storage_backend.get = pretend.raiser(
