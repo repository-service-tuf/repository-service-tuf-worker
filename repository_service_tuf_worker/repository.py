@@ -10,7 +10,7 @@ import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from math import log
-from typing import Any, Dict, Iterator, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import redis
 from celery.app.task import Task
@@ -545,6 +545,7 @@ class MetadataRepository:
         custom_targets: Optional[Dict[str, Any]] = None,
     ):
         """Setup target delegations no matter if succinct hash bin or custom"""
+        delegated_roles: List[str] = []
         if custom_targets:
             # Using custom Target roles delegations with path prefixes.
             targets.signed.delegations = Delegations({}, {})
@@ -558,6 +559,7 @@ class MetadataRepository:
                 self._bump_expiry(custom_target, role_name)
                 self._sign(custom_target)
                 self._persist(custom_target, role_name)
+                delegated_roles.append(role_name)
         else:
             # Using succinct hash bin delegations.
             # Calculate the bit length (Number of bits between 1 and 32)
@@ -579,25 +581,11 @@ class MetadataRepository:
                 self._bump_expiry(bins_role, BINS)
                 self._sign(bins_role)
                 self._persist(bins_role, delegated_name)
+                delegated_roles.append(delegated_name)
 
-    def _get_delegation_roles(
-        self, targets: Metadata[Targets]
-    ) -> Iterator[str]:
-        """Get all Targets delegation roles no matter if bins or custom.
-
-        Raises ValueError if targets.signed.delegation is not initialized.
-        """
-        if targets.signed.delegations is None:
-            raise ValueError("Targets must have delegation, internal error")
-
-        if targets.signed.delegations.succinct_roles:
-            # Using succinct hash bin delegations.
-            for bin in targets.signed.delegations.succinct_roles.get_roles():
-                yield bin
-        else:
-            # Using custom Target roles delegations with path prefixes.
-            for custom_target_name in targets.signed.delegations.roles.keys():
-                yield custom_target_name
+        self.write_repository_settings(
+            "DELEGATED_ROLES_NAMES", delegated_roles
+        )
 
     def _bootstrap_online_roles(
         self,
@@ -617,7 +605,8 @@ class MetadataRepository:
         self._setup_targets_delegations(public_key, targets, custom_targets)
 
         db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
-        for role_name in self._get_delegation_roles(targets):
+        delegated_names = self._settings.get_fresh("DELEGATED_ROLES_NAMES")
+        for role_name in delegated_names:
             snapshot.signed.meta[f"{role_name}.json"] = MetaFile()
 
             db_target_roles.append(
@@ -1082,7 +1071,6 @@ class MetadataRepository:
             force: force all target roles bump even if they have more than
             `self._hours_before_expire` hours to expire.
         """
-        targets: Metadata = self._storage_backend.get(Targets.type)
         timestamp: Metadata
         snapshot_bump = False
         today = datetime.now(timezone.utc)
@@ -1094,6 +1082,7 @@ class MetadataRepository:
                 f"{Targets.type} don't use online key, skipping 'Targets' role"
             )
         else:
+            targets: Metadata = self._storage_backend.get(Targets.type)
             if force or (targets.signed.expires - today) < timedelta(
                 hours=self._hours_before_expire
             ):
@@ -1111,7 +1100,8 @@ class MetadataRepository:
         else:
             # Updating only those delegated roles that have expired.
             delegated_roles: List[str] = []
-            for role in self._get_delegation_roles(targets):
+            delegated_names = self._settings.get_fresh("DELEGATED_ROLES_NAMES")
+            for role in delegated_names:
                 role_md: Metadata[Targets] = self._storage_backend.get(role)
                 if (role_md.signed.expires - today) < timedelta(
                     hours=self._hours_before_expire
