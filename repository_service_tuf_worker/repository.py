@@ -1221,50 +1221,46 @@ class MetadataRepository:
 
         return True
 
-    def _run_force_online_metadata_update(
-        self, payload: List[str]
-    ) -> List[str]:
+    def _run_force_online_metadata_update(self, roles: List[str]) -> List[str]:
         "Run the actual metadata update for set of online roles."
         roles_diff: List[str] = []
-        delegated_roles: List[str]
-        if Roles.BINS.value in payload:
+        delegated_roles: List[str] = []
+        if Roles.BINS.value in roles:
             delegated_roles = [Roles.BINS.value]
         else:
-            delegated_roles = [r for r in payload if not Roles.is_role(r)]
+            delegated_roles = [r for r in roles if not Roles.is_role(r)]
 
-        delegated_roles_in_payload = any(r in payload for r in delegated_roles)
-        if Targets.type in payload and delegated_roles_in_payload:
+        if Targets.type in roles and len(delegated_roles) > 0:
             self._run_online_roles_bump(force=True)
             roles_diff = [
                 Targets.type, *delegated_roles, Snapshot.type, Timestamp.type
             ]
 
-        elif Targets.type in payload or delegated_roles_in_payload:
-            if Targets.type in payload:
+        elif Targets.type in roles or len(delegated_roles) > 0:
+            if Targets.type in roles:
                 targets = self._storage_backend.get(Targets.type)
                 self._bump_and_persist(targets, Targets.type)
                 self.bump_snapshot(force=True)
                 roles_diff = [Targets.type, Snapshot.type, Timestamp.type]
             else:
-                bump_all = delegated_roles == [Roles.BINS.value]
-                if bump_all:
-                    # Bump all bins
-                    self._update_timestamp(
-                        self._update_snapshot(bump_all=True)
+                target_roles = delegated_roles
+                if delegated_roles == [Roles.BINS.value]:
+                    # Set the actual names of the bins
+                    target_roles = self._settings.get_fresh(
+                        "DELEGATED_ROLES_NAMES"
                     )
-                else:
-                    # Bump custom target delegations
-                    self._update_timestamp(
-                        self._update_snapshot(target_roles=delegated_roles)
-                    )
+
+                self._update_timestamp(
+                    self._update_snapshot(target_roles=target_roles)
+                )
 
                 roles_diff = [*delegated_roles, Snapshot.type, Timestamp.type]
 
-        elif Snapshot.type in payload:
+        elif Snapshot.type in roles:
             self.bump_snapshot(force=True)
             roles_diff = [Snapshot.type, Timestamp.type]
 
-        elif Timestamp.type in payload:
+        elif Timestamp.type in roles:
             snapshot = self._storage_backend.get(Snapshot.type)
             self._update_timestamp(snapshot.signed.version)
             roles_diff = [Timestamp.type]

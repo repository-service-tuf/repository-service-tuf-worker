@@ -3568,7 +3568,17 @@ class TestMetadataRepository:
         ]
         assert test_repo.bump_snapshot.calls == [pretend.call(force=True)]
 
-    def test_run_force_online_metadata_update_bins(self, test_repo):
+    def test_run_force_online_metadata_update_bins(
+        self, test_repo, monkeypatch
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: ["bins-a"])
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
         test_repo._update_snapshot = pretend.call_recorder(
             lambda **kw: "snapshot_version"
         )
@@ -3577,7 +3587,7 @@ class TestMetadataRepository:
         result = test_repo._run_force_online_metadata_update(["bins"])
         assert result == ["bins", Snapshot.type, Timestamp.type]
         assert test_repo._update_snapshot.calls == [
-            pretend.call(bump_all=True)
+            pretend.call(target_roles=["bins-a"])
         ]
         assert test_repo._update_timestamp.calls == [
             pretend.call("snapshot_version")
