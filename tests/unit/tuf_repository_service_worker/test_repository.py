@@ -3545,7 +3545,7 @@ class TestMetadataRepository:
         payload = [Targets.type, "bins"]
 
         result = test_repo._run_force_online_metadata_update(payload)
-        assert result == [Targets.type, "bins", Snapshot.type, Timestamp.type]
+        assert result == ["bins", Targets.type, Snapshot.type, Timestamp.type]
         assert test_repo._run_online_roles_bump.calls == [
             pretend.call(force=True)
         ]

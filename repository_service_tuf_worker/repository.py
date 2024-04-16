@@ -1233,7 +1233,10 @@ class MetadataRepository:
         if Targets.type in roles and len(delegated_roles) > 0:
             self._run_online_roles_bump(force=True)
             roles_diff = [
-                Targets.type, *delegated_roles, Snapshot.type, Timestamp.type
+                *delegated_roles,
+                Targets.type,
+                Snapshot.type,
+                Timestamp.type,
             ]
 
         elif Targets.type in roles or len(delegated_roles) > 0:
