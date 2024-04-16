@@ -533,7 +533,9 @@ class MetadataRepository:
 
         else:
             delegated_roles = roles_info["delegated_roles"]
-            self.write_repository_settings("DELEGATED_ROLES", delegated_roles)
+            self.write_repository_settings(
+                "CUSTOM_DELEGATED_ROLES", delegated_roles
+            )
             for deleg_name, deleg_info in delegated_roles.items():
                 name = deleg_name.upper()
                 self.write_repository_settings(
@@ -659,12 +661,12 @@ class MetadataRepository:
         """
         Register the bootstrap finished.
         """
-        delegated_roles: Dict[str, Any] = self._settings.get_fresh(
-            "DELEGATED_ROLES"
+        custom_delegated_roles: Dict[str, Any] = self._settings.get_fresh(
+            "CUSTOM_DELEGATED_ROLES"
         )
         self._persist(root, Root.type)
         self.write_repository_settings("ROOT_SIGNING", None)
-        self._bootstrap_online_roles(root, delegated_roles)
+        self._bootstrap_online_roles(root, custom_delegated_roles)
         self.write_repository_settings("BOOTSTRAP", task_id)
 
     def bootstrap(

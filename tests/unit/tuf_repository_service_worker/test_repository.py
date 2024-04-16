@@ -1096,7 +1096,7 @@ class TestMetadataRepository:
             pretend.call("TIMESTAMP_NUM_KEYS", 1),
             pretend.call("TARGETS_ONLINE_KEY", True),
             pretend.call(
-                "DELEGATED_ROLES", payload_settings["delegated_roles"]
+                "CUSTOM_DELEGATED_ROLES", payload_settings["delegated_roles"]
             ),
             pretend.call("FOO_EXPIRATION", 30),
             pretend.call("FOO_THRESHOLD", 1),
@@ -1507,7 +1507,7 @@ class TestMetadataRepository:
 
         assert result is None
         assert fake_settings.get_fresh.calls == [
-            pretend.call("DELEGATED_ROLES")
+            pretend.call("CUSTOM_DELEGATED_ROLES")
         ]
         assert test_repo._persist.calls == [
             pretend.call("fake_root", repository.Root.type)
