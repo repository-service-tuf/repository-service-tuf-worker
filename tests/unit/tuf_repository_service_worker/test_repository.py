@@ -26,6 +26,23 @@ from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
 
 
+class TestRoles:
+    def test_is_role_true_all_roles(self):
+        all = [Root.type, Targets.type, Snapshot.type, Timestamp.type, "bins"]
+        for role in all:
+            assert repository.Roles.is_role(role) is True
+
+    def test_is_role_false_str(self):
+        all_roles = ["root1", "1root", "root.json", "f", "bin", "bin0", ""]
+        for role in all_roles:
+            assert repository.Roles.is_role(role) is False
+
+    def test_is_role_false_other_input(self):
+        all_roles = [1, None, True, [], {}]
+        for role in all_roles:
+            assert repository.Roles.is_role(role) is False
+
+
 class TestMetadataRepository:
     def test_basic_init(self, monkeypatch):
         fake_configure = pretend.call_recorder(lambda *a: None)
@@ -1079,7 +1096,7 @@ class TestMetadataRepository:
             pretend.call("TIMESTAMP_NUM_KEYS", 1),
             pretend.call("TARGETS_ONLINE_KEY", True),
             pretend.call(
-                "DELEGATED_ROLES", payload_settings["delegated_roles"]
+                "CUSTOM_DELEGATED_ROLES", payload_settings["delegated_roles"]
             ),
             pretend.call("FOO_EXPIRATION", 30),
             pretend.call("FOO_THRESHOLD", 1),
@@ -1490,7 +1507,7 @@ class TestMetadataRepository:
 
         assert result is None
         assert fake_settings.get_fresh.calls == [
-            pretend.call("DELEGATED_ROLES")
+            pretend.call("CUSTOM_DELEGATED_ROLES")
         ]
         assert test_repo._persist.calls == [
             pretend.call("fake_root", repository.Root.type)
@@ -3365,6 +3382,40 @@ class TestMetadataRepository:
             pretend.call("BOOTSTRAP")
         ]
 
+    def test_bump_online_roles_when_inital_bootstrap(
+        self, monkeypatch, test_repo
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "pre-")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        result = test_repo.bump_online_roles()
+        assert result is False
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
+    def test_bump_online_roles_when_bootstrap_signing_process(
+        self, monkeypatch, test_repo
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "signing-")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        result = test_repo.bump_online_roles()
+        assert result is False
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
     def test_bump_online_roles_exception_LockNotOwnedError(
         self, monkeypatch, test_repo
     ):
@@ -3485,6 +3536,207 @@ class TestMetadataRepository:
             test_repo._trusted_root_update(fake_old_root_md, fake_new_root_md)
         assert "Expected 'root', got 'snapshot'" in str(err)
 
+    def test_run_force_online_metadata_update_targets_and_bins(
+        self, test_repo
+    ):
+        test_repo._run_online_roles_bump = pretend.call_recorder(
+            lambda **kw: None
+        )
+        payload = [Targets.type, "bins"]
+
+        result = test_repo._run_force_online_metadata_update(payload)
+        assert result == ["bins", Targets.type, Snapshot.type, Timestamp.type]
+        assert test_repo._run_online_roles_bump.calls == [
+            pretend.call(force=True)
+        ]
+
+    def test_run_force_online_metadata_update_targets(self, test_repo):
+        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
+        fake_targets = Metadata(Targets())
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda a: fake_targets)
+        )
+        test_repo.bump_snapshot = pretend.call_recorder(lambda **kw: None)
+
+        result = test_repo._run_force_online_metadata_update([Targets.type])
+        assert result == [Targets.type, Snapshot.type, Timestamp.type]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(fake_targets, Targets.type)
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Targets.type)
+        ]
+        assert test_repo.bump_snapshot.calls == [pretend.call(force=True)]
+
+    def test_run_force_online_metadata_update_bins(
+        self, test_repo, monkeypatch
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: ["bins-a"])
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda **kw: "snapshot_version"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
+
+        result = test_repo._run_force_online_metadata_update(["bins"])
+        assert result == ["bins", Snapshot.type, Timestamp.type]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=["bins-a"])
+        ]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call("snapshot_version")
+        ]
+
+    def test_run_force_online_metadata_update_snapshot(self, test_repo):
+        test_repo.bump_snapshot = pretend.call_recorder(lambda **kw: None)
+
+        result = test_repo._run_force_online_metadata_update([Snapshot.type])
+        assert result == [Snapshot.type, Timestamp.type]
+        assert test_repo.bump_snapshot.calls == [pretend.call(force=True)]
+
+    def test_run_force_online_metadata_update_timestamp(self, test_repo):
+        fake_snapshot = Metadata(Snapshot())
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda a: fake_snapshot)
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
+
+        result = test_repo._run_force_online_metadata_update([Timestamp.type])
+        assert result == [Timestamp.type]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Snapshot.type)
+        ]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call(fake_snapshot.signed.version)
+        ]
+
+    def test_run_force_online_metadata_update_targets_and_custom_delegations(
+        self, test_repo
+    ):
+        fake_snapshot = Metadata(Snapshot())
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda **kw: fake_snapshot.signed.version
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
+
+        result = test_repo._run_force_online_metadata_update(["foo", "bar"])
+        assert result == ["foo", "bar", Snapshot.type, Timestamp.type]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=["foo", "bar"])
+        ]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call(fake_snapshot.signed.version)
+        ]
+
+    def test__force_online_metadata_update(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: "123")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+        roles = ["snapshot", "targets"]
+        test_repo._run_force_online_metadata_update = pretend.call_recorder(
+            lambda a: roles
+        )
+        payload = {"roles": roles}
+        result = test_repo.force_online_metadata_update(payload)
+        assert result == {
+            "task": repository.TaskName.FORCE_ONLINE_METADATA_UPDATE,
+            "status": True,
+            "message": "Force new online metadata update succeeded",
+            "error": None,
+            "details": {
+                "updated_roles": roles,
+            },
+            "last_update": mocked_datetime.now(),
+        }
+        assert fake_settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._redis.lock.calls == [
+            pretend.call(repository.LOCK_TARGETS, timeout=test_repo._timeout)
+        ]
+        assert test_repo._run_force_online_metadata_update.calls == [
+            pretend.call(payload["roles"])
+        ]
+
+    @pytest.mark.parametrize("bootstrap_value", [None, "pre-", "signing-"])
+    def test__force_online_metadata_update_bootstrap_not_finished(
+        self, test_repo, monkeypatch, mocked_datetime, bootstrap_value
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: bootstrap_value)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        result = test_repo.force_online_metadata_update({"roles": "targets"})
+        assert result == {
+            "task": repository.TaskName.FORCE_ONLINE_METADATA_UPDATE,
+            "status": False,
+            "message": "Force new online metadata update failed",
+            "error": "New metadata updates requre completed bootstrap",
+            "details": None,
+            "last_update": mocked_datetime.now(),
+        }
+        assert fake_settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+
+    def test__force_online_metadata_update_timeout(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: "123")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            raise repository.redis.exceptions.LockNotOwnedError("timeout")
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+        payload = {"roles": ["snapshot", "targets"]}
+        result = test_repo.force_online_metadata_update(payload)
+        assert result == {
+            "task": repository.TaskName.FORCE_ONLINE_METADATA_UPDATE,
+            "status": False,
+            "message": "Force new online metadata update failed",
+            "error": (
+                "The task to update online roles exceeded the "
+                f"timeout of {test_repo._timeout} seconds."
+            ),
+            "details": None,
+            "last_update": mocked_datetime.now(),
+        }
+        assert fake_settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
+        assert test_repo._redis.lock.calls == [
+            pretend.call(repository.LOCK_TARGETS, timeout=test_repo._timeout)
+        ]
+
     def test__root_metadata_update(self, test_repo, mocked_datetime):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
@@ -3507,7 +3759,7 @@ class TestMetadataRepository:
         result = test_repo._root_metadata_update(fake_new_root_md)
 
         assert result == {
-            "task": "metadata_update",
+            "task": repository.TaskName.METADATA_UPDATE,
             "status": True,
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Processed",
@@ -3556,7 +3808,7 @@ class TestMetadataRepository:
         result = test_repo._root_metadata_update(fake_new_root_md)
 
         assert result == {
-            "task": "metadata_update",
+            "task": repository.TaskName.METADATA_UPDATE,
             "status": True,
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Processed",
@@ -3598,7 +3850,7 @@ class TestMetadataRepository:
         result = test_repo._root_metadata_update(fake_new_root_md)
 
         assert result == {
-            "task": "metadata_update",
+            "task": repository.TaskName.METADATA_UPDATE,
             "status": False,
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Failed",
@@ -3644,7 +3896,7 @@ class TestMetadataRepository:
         result = test_repo._root_metadata_update(fake_new_root_md)
 
         assert result == {
-            "task": "metadata_update",
+            "task": repository.TaskName.METADATA_UPDATE,
             "status": True,
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Processed",
@@ -3760,7 +4012,7 @@ class TestMetadataRepository:
         payload = {"metadata": {"bins": "bins_metadata"}}
         result = test_repo.metadata_update(payload)
         assert result == {
-            "task": "metadata_update",
+            "task": repository.TaskName.METADATA_UPDATE,
             "status": False,
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Failed",
@@ -3787,7 +4039,7 @@ class TestMetadataRepository:
         result = test_repo.metadata_update(payload)
 
         assert result == {
-            "task": "metadata_update",
+            "task": repository.TaskName.METADATA_UPDATE,
             "status": False,
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Failed",
@@ -3813,7 +4065,7 @@ class TestMetadataRepository:
 
         result = test_repo.metadata_update(payload)
         assert result == {
-            "task": "metadata_update",
+            "task": repository.TaskName.METADATA_UPDATE,
             "status": False,
             "last_update": mocked_datetime.now(),
             "message": "Metadata Update Failed",
