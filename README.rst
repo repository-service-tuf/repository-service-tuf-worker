@@ -158,7 +158,7 @@ Functional tests
 
 1. Make sure you have a development environment running (``make run-dev``)
 
-2. Run the FT tests ``make ft-das`` or ``make ft-signed``
+2. Run the FT tests ``make ft-das-local`` or ``make ft-signed-local``
 
 
 Managing requirements
