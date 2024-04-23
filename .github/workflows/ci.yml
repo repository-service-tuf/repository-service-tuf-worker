@@ -15,7 +15,7 @@ jobs:
         python-versions: [ "3.10", "3.11" ]
 
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+    - uses: actions/checkout@1d96c772d19495a3b5c517cd2bc0cb401ea0529f
 
     - name: Check if any local image is used in docker-compose.yml
       run: |
