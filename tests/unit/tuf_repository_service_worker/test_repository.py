@@ -191,17 +191,9 @@ class TestMetadataRepository:
         assert "No permission /run/secrets/*" == caplog.messages[0]
 
     def test__sign(self, test_repo):
-        fake_role = pretend.stub(keyids=["keyid_1"])
+        test_repo._online_key = "onlin_key"
         fake_md = pretend.stub(
-            signatures=pretend.stub(clear=pretend.call_recorder(lambda: None)),
             sign=pretend.call_recorder(lambda *a, **kw: None),
-            signed=pretend.stub(
-                roles={"timestamp": fake_role},
-                keys={"keyid_1": {}},
-            ),
-        )
-        test_repo._storage_backend = pretend.stub(
-            get=pretend.call_recorder(lambda *a: fake_md)
         )
         test_repo._signer_store = pretend.stub(
             get=pretend.call_recorder(lambda *a: "key_signer_1")
@@ -210,12 +202,8 @@ class TestMetadataRepository:
         test_result = test_repo._sign(fake_md)
 
         assert test_result is None
-        assert test_repo._signer_store.get.calls == [pretend.call({})]
-        assert fake_md.signatures.clear.calls == [pretend.call()]
-        assert test_repo._storage_backend.get.calls == [pretend.call("root")]
-        assert fake_md.sign.calls == [
-            pretend.call("key_signer_1", append=True),
-        ]
+        assert test_repo._signer_store.get.calls == [pretend.call("onlin_key")]
+        assert fake_md.sign.calls == [pretend.call("key_signer_1")]
 
     def _test_helper_persist(
         self, test_repo, role, version, expected_file_name
@@ -1487,6 +1475,15 @@ class TestMetadataRepository:
         ]
 
     def test__bootstrap_finalize(self, test_repo, monkeypatch):
+        fake_role = pretend.stub(keyids=["keyid"])
+        fake_root = pretend.stub(
+            signatures=pretend.stub(clear=pretend.call_recorder(lambda: None)),
+            sign=pretend.call_recorder(lambda *a, **kw: None),
+            signed=pretend.stub(
+                roles={"timestamp": fake_role},
+                keys={"keyid": "online_key_id"},
+            ),
+        )
         test_repo._persist = pretend.call_recorder(lambda *a: None)
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
@@ -1503,21 +1500,22 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        result = test_repo._bootstrap_finalize("fake_root", "task_id")
+        result = test_repo._bootstrap_finalize(fake_root, "task_id")
 
         assert result is None
         assert fake_settings.get_fresh.calls == [
             pretend.call("CUSTOM_DELEGATED_ROLES")
         ]
+        assert test_repo._online_key == "online_key_id"
         assert test_repo._persist.calls == [
-            pretend.call("fake_root", repository.Root.type)
+            pretend.call(fake_root, repository.Root.type)
         ]
         assert test_repo.write_repository_settings.calls == [
             pretend.call("ROOT_SIGNING", None),
             pretend.call("BOOTSTRAP", "task_id"),
         ]
         assert test_repo._bootstrap_online_roles.calls == [
-            pretend.call("fake_root", fake_delegated_roles)
+            pretend.call(fake_root, fake_delegated_roles)
         ]
 
     def test_bootstrap(self, monkeypatch, test_repo, mocked_datetime):
@@ -3866,13 +3864,14 @@ class TestMetadataRepository:
     ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["keyid2"])},
+                keys={"keyid2": "key2"},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k2": "v2"})},
+                roles={"timestamp": pretend.stub(keyids=["keyid1"])},
                 version=1,
             )
         )
@@ -3892,6 +3891,7 @@ class TestMetadataRepository:
         test_repo._run_online_roles_bump = pretend.call_recorder(
             lambda **kw: None
         )
+        test_repo._online_key = "key1"
 
         result = test_repo._root_metadata_update(fake_new_root_md)
 
@@ -3920,6 +3920,7 @@ class TestMetadataRepository:
         assert test_repo._run_online_roles_bump.calls == [
             pretend.call(force=True)
         ]
+        assert test_repo._online_key == "key2"
 
     def test__root_metadata_update_online_key_lock_timeout(
         self, monkeypatch, test_repo
@@ -3966,6 +3967,44 @@ class TestMetadataRepository:
         assert test_repo._trusted_root_update.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
         ]
+
+    def test_root_metadata_update_finalize_run_onlines_bump_fails(
+        self, test_repo
+    ) -> None:
+        fake_new_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids=["keyid2"])},
+                keys={"keyid2": "key2"},
+                version=2,
+            )
+        )
+        fake_old_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids=["keyid1"])},
+                version=1,
+            )
+        )
+
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock),
+        )
+        test_repo._run_online_roles_bump = pretend.raiser(ValueError("Bad"))
+        test_repo._online_key = "key1"
+
+        with pytest.raises(ValueError):
+            test_repo._root_metadata_update_finalize(
+                fake_old_root_md, fake_new_root_md
+            )
+
+        assert test_repo._redis.lock.calls == [
+            pretend.call(repository.LOCK_TARGETS, timeout=60.0)
+        ]
+        # Assert that we have recovered to the previous online key
+        assert test_repo._online_key == "key1"
 
     def test_metadata_update(self, monkeypatch, test_repo):
         fake_settings = pretend.stub(
@@ -4556,6 +4595,19 @@ class TestMetadataRepository:
             "error": "Invalid signature",
             "details": None,
         }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ROOT_SIGNING"),
+            pretend.call("BOOTSTRAP"),
+        ]
+        assert repository.Signature.from_dict.calls == [
+            pretend.call(payload["signature"])
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Root.type)
+        ]
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call({"metadata": "fake"})
+        ]
 
     def test_sign_metadata__update__invalid_threshold__trusted_and_new(
         self,
