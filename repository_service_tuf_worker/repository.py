@@ -115,6 +115,7 @@ class MetadataRepository:
         app_settings = self.refresh_settings()
         self._storage_backend: IStorage = app_settings.STORAGE
         self._signer_store = SignerStore(app_settings)
+        self._online_key: Key
         self._db = app_settings.SQL
         self._redis = redis.StrictRedis.from_url(
             self._worker_settings.REDIS_SERVER
@@ -203,14 +204,8 @@ class MetadataRepository:
         The metadata role type is used as default key id. This is only allowed
         for top-level roles.
         """
-        role.signatures.clear()
-        root: Metadata[Root] = self._storage_backend.get("root")
-        # All roles except root share the same one key and it doesn't matter
-        # from which role we will get the key.
-        keyid: str = root.signed.roles["timestamp"].keyids[0]
-        public_key = root.signed.keys[keyid]
-        signer = self._signer_store.get(public_key)
-        role.sign(signer, append=True)
+        signer = self._signer_store.get(self._online_key)
+        role.sign(signer)
 
     def _persist(self, role: Metadata, role_name: str) -> str:
         """
@@ -664,9 +659,13 @@ class MetadataRepository:
         custom_delegated_roles: Dict[str, Any] = self._settings.get_fresh(
             "CUSTOM_DELEGATED_ROLES"
         )
-        self._persist(root, Root.type)
-        self.write_repository_settings("ROOT_SIGNING", None)
+        # All roles except root share the same one key and it doesn't matter
+        # from which role we will get the key.
+        keyid: str = root.signed.roles["timestamp"].keyids[0]
+        self._online_key = root.signed.keys[keyid]
         self._bootstrap_online_roles(root, custom_delegated_roles)
+        self.write_repository_settings("ROOT_SIGNING", None)
+        self._persist(root, Root.type)
         self.write_repository_settings("BOOTSTRAP", task_id)
 
     def bootstrap(
@@ -1424,6 +1423,20 @@ class MetadataRepository:
             status_lock_targets = False
             try:
                 with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+                    curr_online_key = self._online_key
+                    # All roles except root share the same one key and it
+                    # doesn't matter from which role we will get the key.
+                    keyid: str = new_root.signed.roles["timestamp"].keyids[0]
+                    self._online_key = new_root.signed.keys[keyid]
+
+                    try:
+                        self._run_online_roles_bump(force=True)
+                        logging.info("Updating all targets metadata")
+                    except Exception as e:
+                        # Recover to correct online key state.
+                        self._online_key = curr_online_key
+                        raise e
+
                     # root metadata and online key are updated
                     # 1. persist the new root
                     # 2. bump all target roles
@@ -1431,8 +1444,6 @@ class MetadataRepository:
                     logging.info(
                         f"Updating root metadata: {new_root.signed.version}"
                     )
-                    self._run_online_roles_bump(force=True)
-                    logging.info("Updating all targets metadata")
                     status_lock_targets = True
             except redis.exceptions.LockNotOwnedError:
                 if status_lock_targets is False:
