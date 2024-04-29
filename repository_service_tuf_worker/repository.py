@@ -1330,7 +1330,7 @@ class MetadataRepository:
             },
         )
 
-    def _trusted_root_update(
+    def _verify_new_root_signing(
         self, current_root: Metadata[Root], new_root: Metadata[Root]
     ):
         """Verify if the new metadata is a trusted Root metadata"""
@@ -1361,7 +1361,7 @@ class MetadataRepository:
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
         try:
-            self._trusted_root_update(current_root, new_root)
+            self._verify_new_root_signing(current_root, new_root)
 
         except UnsignedMetadataError:
             # TODO: Add missing sanity check - new root must have at least 1
