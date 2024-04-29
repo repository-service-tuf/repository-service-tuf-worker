@@ -871,6 +871,103 @@ class TestMetadataRepository:
             pretend.call(version=mocked_targets.signed.version),
         ]
 
+    def test__update_targets_delegations_key_bins(self, test_repo):
+        fake_online_key_stub = pretend.stub(keyid="new_online_key")
+        test_repo._online_key = fake_online_key_stub
+        fake_root = pretend.stub(
+            signed=pretend.stub(
+                roles={Targets.type: pretend.stub(keyids=["old_keyid"])}
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda a: fake_root
+        )
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(succinct_roles=True),
+                revoke_key=pretend.call_recorder(lambda a: None),
+                add_key=pretend.call_recorder(lambda a: None),
+            )
+        )
+
+        result = test_repo._update_targets_delegations_key(fake_targets)
+        assert result is None
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Root.type)
+        ]
+        assert fake_targets.signed.revoke_key.calls == [
+            pretend.call("old_keyid")
+        ]
+        assert fake_targets.signed.add_key.calls == [
+            pretend.call(fake_online_key_stub)
+        ]
+
+    def test__update_targets_delegations_key_custom_delegations(
+        self, test_repo
+    ):
+        fake_online_key_stub = pretend.stub(keyid="new_online_key")
+        test_repo._online_key = fake_online_key_stub
+        fake_root = pretend.stub(
+            signed=pretend.stub(
+                roles={Targets.type: pretend.stub(keyids=["old_keyid"])}
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda a: fake_root
+        )
+        fake_role1 = pretend.stub(name="role1")
+        fake_role2 = pretend.stub(name="role2")
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    succinct_roles=None,
+                    roles=pretend.stub(
+                        values=pretend.call_recorder(
+                            lambda: [fake_role1, fake_role2]
+                        )
+                    ),
+                ),
+                revoke_key=pretend.call_recorder(lambda *a: None),
+                add_key=pretend.call_recorder(lambda *a: None),
+            )
+        )
+
+        result = test_repo._update_targets_delegations_key(fake_targets)
+        assert result is None
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Root.type)
+        ]
+        assert fake_targets.signed.delegations.roles.values.calls == [
+            pretend.call(),
+        ]
+        assert fake_targets.signed.revoke_key.calls == [
+            pretend.call("old_keyid", "role1"),
+            pretend.call("old_keyid", "role2"),
+        ]
+        assert fake_targets.signed.add_key.calls == [
+            pretend.call(fake_online_key_stub, "role1"),
+            pretend.call(fake_online_key_stub, "role2"),
+        ]
+
+    def test__update_targets_delegations_online_key_not_changed(
+        self, test_repo
+    ):
+        test_repo._online_key = pretend.stub(keyid="online_key")
+        fake_root = pretend.stub(
+            signed=pretend.stub(
+                roles={Targets.type: pretend.stub(keyids=["online_key"])}
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda a: fake_root
+        )
+
+        result = test_repo._update_targets_delegations_key("targets")
+        assert result is None
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Root.type)
+        ]
+
     def test__get_role_for_artifact_path(self, test_repo):
         fake_targets = pretend.stub(
             signed=pretend.stub(
@@ -2951,6 +3048,9 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
+        test_repo._update_targets_delegations_key = pretend.call_recorder(
+            lambda a: None
+        )
         test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
             lambda **kw: "fake_snapshot"
@@ -2973,6 +3073,9 @@ class TestMetadataRepository:
             pretend.call("TARGETS_ONLINE_KEY"),
             pretend.call("TARGETS_ONLINE_KEY"),
             pretend.call("DELEGATED_ROLES_NAMES"),
+        ]
+        assert test_repo._update_targets_delegations_key.calls == [
+            pretend.call(fake_targets)
         ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(fake_targets, Targets.type),
@@ -3010,6 +3113,9 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
+        test_repo._update_targets_delegations_key = pretend.call_recorder(
+            lambda a: None
+        )
         test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
             lambda **kw: "fake_snapshot"
@@ -3026,6 +3132,9 @@ class TestMetadataRepository:
         test_repo._run_online_roles_bump(force=True)
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Targets.type),
+        ]
+        assert test_repo._update_targets_delegations_key.calls == [
+            pretend.call(fake_targets)
         ]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(fake_targets, Targets.type),

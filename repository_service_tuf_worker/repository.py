@@ -378,6 +378,30 @@ class MetadataRepository:
 
         return snapshot.signed.version
 
+    def _update_targets_delegations_key(self, targets: Metadata[Targets]):
+        """
+        Update the key used by delegations referenced in targets metadata.
+
+        Args:
+            targets: current top level targets metadata.
+        """
+        current_root = self._storage_backend.get(Root.type)
+        old_online_keyid = current_root.signed.roles[Targets.type].keyids[0]
+        # New online keyid is set to self._online_key before function call.
+        new_online_key = self._online_key
+        if old_online_keyid == new_online_key.keyid:
+            return
+
+        bins = True if targets.signed.delegations.succinct_roles else False
+        if bins:
+            targets.signed.revoke_key(old_online_keyid)
+            targets.signed.add_key(new_online_key)
+
+        else:
+            for role in targets.signed.delegations.roles.values():
+                targets.signed.revoke_key(old_online_keyid, role.name)
+                targets.signed.add_key(new_online_key, role.name)
+
     def _get_role_for_artifact_path(self, artifact_path: str) -> Optional[str]:
         """
         Return role name by target file path
@@ -1095,8 +1119,9 @@ class MetadataRepository:
             if force or (targets.signed.expires - today) < timedelta(
                 hours=self._hours_before_expire
             ):
-                logging.info("Bumped version of 'Targets' role")
+                self._update_targets_delegations_key(targets)
                 self._bump_and_persist(targets, Targets.type)
+                logging.info("Bumped version of 'Targets' role")
                 snapshot_bump = True
 
         if force:
