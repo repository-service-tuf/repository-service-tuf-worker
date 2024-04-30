@@ -3784,43 +3784,16 @@ class TestMetadataRepository:
             )
         assert "Expected 'root', got 'snapshot'" in str(err)
 
-    def test_run_force_online_metadata_update_targets_and_bins(
-        self, test_repo
+    def test__run_force_online_metadata_update_targets_and_bins(
+        self, test_repo, monkeypatch
     ):
-        test_repo._run_online_roles_bump = pretend.call_recorder(
-            lambda **kw: None
-        )
-        payload = [Targets.type, "bins"]
-
-        result = test_repo._run_force_online_metadata_update(payload)
-        assert result == ["bins", Targets.type, Snapshot.type, Timestamp.type]
-        assert test_repo._run_online_roles_bump.calls == [
-            pretend.call(force=True)
-        ]
-
-    def test_run_force_online_metadata_update_targets(self, test_repo):
-        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         fake_targets = Metadata(Targets())
         test_repo._storage_backend = pretend.stub(
             get=pretend.call_recorder(lambda a: fake_targets)
         )
-        test_repo.bump_snapshot = pretend.call_recorder(lambda **kw: None)
-
-        result = test_repo._run_force_online_metadata_update([Targets.type])
-        assert result == [Targets.type, Snapshot.type, Timestamp.type]
-        assert test_repo._bump_and_persist.calls == [
-            pretend.call(fake_targets, Targets.type)
-        ]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type)
-        ]
-        assert test_repo.bump_snapshot.calls == [pretend.call(force=True)]
-
-    def test_run_force_online_metadata_update_bins(
-        self, test_repo, monkeypatch
-    ):
+        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: ["bins-a"])
+            get_fresh=pretend.call_recorder(lambda *a: ["bins-a", "bins-b"])
         )
         monkeypatch.setattr(
             repository,
@@ -3828,27 +3801,139 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         test_repo._update_snapshot = pretend.call_recorder(
-            lambda **kw: "snapshot_version"
+            lambda **kw: "version"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
+        payload = [Targets.type, "bins"]
+
+        result = test_repo._run_force_online_metadata_update(payload)
+        assert result == [Snapshot.type, Timestamp.type, Targets.type, "bins"]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Targets.type)
+        ]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(fake_targets, Targets.type)
+        ]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("DELEGATED_ROLES_NAMES")
+        ]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=["bins-a", "bins-b"])
+        ]
+        assert test_repo._update_timestamp.calls == [pretend.call("version")]
+
+    def test__run_force_online_metadata_update_targets_and_custom_role(
+        self, test_repo
+    ):
+        fake_targets = Metadata(Targets())
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda a: fake_targets)
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda **kw: "version"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
+        payload = [Targets.type, "foo"]
+
+        result = test_repo._run_force_online_metadata_update(payload)
+        assert result == [Snapshot.type, Timestamp.type, Targets.type, "foo"]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(fake_targets, Targets.type)
+        ]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=["foo"])
+        ]
+        assert test_repo._update_timestamp.calls == [pretend.call("version")]
+
+    def test__run_force_online_metadata_update_targets_and_custom_roles(
+        self, test_repo
+    ):
+        fake_targets = Metadata(Targets())
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda a: fake_targets)
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(lambda *а: None)
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda **kw: "version"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
+        payload = [Targets.type, "foo", "bar"]
+
+        result = test_repo._run_force_online_metadata_update(payload)
+        assert result == [
+            Snapshot.type,
+            Timestamp.type,
+            Targets.type,
+            "foo",
+            "bar",
+        ]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(fake_targets, Targets.type)
+        ]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=["foo", "bar"])
+        ]
+        assert test_repo._update_timestamp.calls == [pretend.call("version")]
+
+    def test__run_force_online_metadata_update_bins(
+        self, test_repo, monkeypatch
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: ["bins-a", "bins-b"])
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda **kw: "version"
         )
         test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
 
         result = test_repo._run_force_online_metadata_update(["bins"])
-        assert result == ["bins", Snapshot.type, Timestamp.type]
+        assert result == [Snapshot.type, Timestamp.type, "bins"]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("DELEGATED_ROLES_NAMES")
+        ]
         assert test_repo._update_snapshot.calls == [
-            pretend.call(target_roles=["bins-a"])
+            pretend.call(target_roles=["bins-a", "bins-b"])
         ]
-        assert test_repo._update_timestamp.calls == [
-            pretend.call("snapshot_version")
-        ]
+        assert test_repo._update_timestamp.calls == [pretend.call("version")]
 
-    def test_run_force_online_metadata_update_snapshot(self, test_repo):
+    def test__run_force_online_metadata_update_targets(self, test_repo):
+        fake_targets = Metadata(Targets())
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda a: fake_targets)
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(lambda *а: None)
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda **kw: "version"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
+
+        result = test_repo._run_force_online_metadata_update([Targets.type])
+        assert result == [Snapshot.type, Timestamp.type, Targets.type]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Targets.type)
+        ]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(fake_targets, Targets.type)
+        ]
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=[])
+        ]
+        assert test_repo._update_timestamp.calls == [pretend.call("version")]
+
+    def test__run_force_online_metadata_update_snapshot(self, test_repo):
         test_repo.bump_snapshot = pretend.call_recorder(lambda **kw: None)
 
         result = test_repo._run_force_online_metadata_update([Snapshot.type])
         assert result == [Snapshot.type, Timestamp.type]
         assert test_repo.bump_snapshot.calls == [pretend.call(force=True)]
 
-    def test_run_force_online_metadata_update_timestamp(self, test_repo):
+    def test__run_force_online_metadata_update_timestamp(self, test_repo):
         fake_snapshot = Metadata(Snapshot())
         test_repo._storage_backend = pretend.stub(
             get=pretend.call_recorder(lambda a: fake_snapshot)
@@ -3859,24 +3944,6 @@ class TestMetadataRepository:
         assert result == [Timestamp.type]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Snapshot.type)
-        ]
-        assert test_repo._update_timestamp.calls == [
-            pretend.call(fake_snapshot.signed.version)
-        ]
-
-    def test_run_force_online_metadata_update_targets_and_custom_delegations(
-        self, test_repo
-    ):
-        fake_snapshot = Metadata(Snapshot())
-        test_repo._update_snapshot = pretend.call_recorder(
-            lambda **kw: fake_snapshot.signed.version
-        )
-        test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
-
-        result = test_repo._run_force_online_metadata_update(["foo", "bar"])
-        assert result == ["foo", "bar", Snapshot.type, Timestamp.type]
-        assert test_repo._update_snapshot.calls == [
-            pretend.call(target_roles=["foo", "bar"])
         ]
         assert test_repo._update_timestamp.calls == [
             pretend.call(fake_snapshot.signed.version)
