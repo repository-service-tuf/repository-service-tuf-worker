@@ -72,6 +72,7 @@ services:
       - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
       - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
       - RSTUF_LOCAL_KEYVAULT_PATH=/opt/repository-service-tuf-worker/tests/files/key_storage
+      - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
       - RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass:online-rsa.key,strongPass,rsa
       - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
       - RSTUF_SQL_SERVER=postgres:5432
@@ -81,6 +82,7 @@ services:
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
+      - ./tests/files/key_storage/:/var/opt/repository-service-tuf/key_storage
     depends_on:
       rabbitmq:
         condition: service_healthy
