@@ -84,7 +84,7 @@ class TestSigner:
 
     def test_get_from_file_uri(self, key_metadata):
         path = _FILES / "pem" / "ed25519_private.pem"
-        uri = f"file:{path}?encrypted=false"
+        uri = f"file2:{path}"
         key_metadata[RSTUF_ONLINE_KEY_URI_FIELD] = uri
 
         fake_id = "fake_id"
