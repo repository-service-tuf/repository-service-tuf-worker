@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 from dynaconf import Dynaconf
 from pretend import stub
-from securesystemslib.signer import AWSSigner, CryptoSigner, Key
+from securesystemslib.signer import AWSSigner, CryptoSigner, Key, VaultSigner
 
 from repository_service_tuf_worker.interfaces import IKeyVault
 from repository_service_tuf_worker.signer import (
@@ -154,3 +154,24 @@ class TestSigner:
         store = SignerStore(settings)
         signer = store.get(key)
         assert isinstance(signer, AWSSigner)
+
+    @pytest.mark.skipif(
+        not os.environ.get("RSTUF_VAULT_ADDR"), reason="No vault server"
+    )
+    def test_get_from_vault(self):
+        # Import test public key of given key name and version from cault
+        # - see tests/files/vault/init.sh for how such a key is created
+        # - see tox.ini for how credentials etc. are passed via env vars
+        name = "test-key-ed25519"
+
+        settings = Dynaconf(envvar_prefix="RSTUF")
+
+        with isolated_env(settings.to_dict()):
+            uri, key = VaultSigner.import_(name)
+
+        key.unrecognized_fields[RSTUF_ONLINE_KEY_URI_FIELD] = uri
+
+        # Load signer from Vault KMS
+        store = SignerStore(settings)
+        signer = store.get(key)
+        assert isinstance(signer, VaultSigner)
