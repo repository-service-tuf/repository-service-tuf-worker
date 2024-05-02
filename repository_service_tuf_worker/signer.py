@@ -74,9 +74,7 @@ class FileNameSigner(CryptoSigner):
 
 RSTUF_ONLINE_KEY_URI_FIELD = "x-rstuf-online-key-uri"
 
-# Register non-default securesystemslib file signer
-# secure-systems-lab/securesystemslib#617
-SIGNER_FOR_URI_SCHEME[CryptoSigner.FILE_URI_SCHEME] = CryptoSigner
+
 # Register custom FileNameSigner
 SIGNER_FOR_URI_SCHEME[FileNameSigner.SCHEME] = FileNameSigner
 
