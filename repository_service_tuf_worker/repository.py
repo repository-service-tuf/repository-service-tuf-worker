@@ -45,7 +45,7 @@ from repository_service_tuf_worker import (  # noqa
     get_repository_settings,
     get_worker_settings,
 )
-from repository_service_tuf_worker.interfaces import IKeyVault, IStorage
+from repository_service_tuf_worker.interfaces import IStorage
 from repository_service_tuf_worker.models import (
     rstuf_db,
     targets_crud,
@@ -167,10 +167,6 @@ class MetadataRepository:
 
         # storage
         IStorage.from_dynaconf(settings)
-
-        # keyvault
-        if settings.get("KEYVAULT_BACKEND"):
-            IKeyVault.from_dynaconf(settings)
 
         self._worker_settings = settings
         return settings

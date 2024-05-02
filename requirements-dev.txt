@@ -106,10 +106,10 @@ pydantic-core==2.18.2; python_version >= '3.8'
 pynacl==1.5.0
 pytz==2024.1
 redis==5.0.4; python_version >= '3.7'
-securesystemslib[crypto,pynacl]==0.31.0; python_version ~= '3.8'
+securesystemslib[crypto]==1.0.0; python_version ~= '3.8'
 sqlalchemy==2.0.29; python_version >= '3.7'
 supervisor==4.2.5
-tuf==4.0.0; python_version >= '3.8'
+tuf @ git+https://github.com/theupdateframework/python-tuf@a7b832b88ff3c094aafdd78a72bbcf19a93b0bf0 ; python_version >= '3.8'
 tzdata==2024.1; python_version >= '2'
 vine==5.1.0; python_version >= '3.6'
 watchdog==4.0.0; python_version >= '3.8'

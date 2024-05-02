@@ -74,9 +74,7 @@ class FileNameSigner(CryptoSigner):
 
 RSTUF_ONLINE_KEY_URI_FIELD = "x-rstuf-online-key-uri"
 
-# Register non-default securesystemslib file signer
-# secure-systems-lab/securesystemslib#617
-SIGNER_FOR_URI_SCHEME[CryptoSigner.FILE_URI_SCHEME] = CryptoSigner
+
 # Register custom FileNameSigner
 SIGNER_FOR_URI_SCHEME[FileNameSigner.SCHEME] = FileNameSigner
 
@@ -101,6 +99,8 @@ _AMBIENT_SETTING_NAMES = [
     "AWS_SECRET_ACCESS_KEY",
     "AWS_ENDPOINT_URL",
     "AWS_DEFAULT_REGION",
+    "VAULT_ADDR",
+    "VAULT_TOKEN",
 ]
 
 
