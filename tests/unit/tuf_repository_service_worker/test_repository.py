@@ -5,6 +5,7 @@
 
 import datetime
 from contextlib import contextmanager
+from copy import copy
 from datetime import timezone
 from math import log
 
@@ -24,6 +25,8 @@ from tuf.api.metadata import (
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
+
+REPOSITORY_PATH = f"repository_service_tuf_worker.repository"
 
 
 class TestRoles:
@@ -76,6 +79,56 @@ class TestMetadataRepository:
         result = test_repo._settings
 
         assert result == fake_settings
+
+    def test_online_key_property_from_redis(self, test_repo, monkeypatch):
+        fake_key_dict = {"keyval": "foo", "keyid": "key_id"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        key = pretend.stub(keyid="key_id")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
+        result = test_repo._online_key
+        assert result == key
+        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
+        ]
+
+    def test_online_key_property_from_storage(self, test_repo, monkeypatch):
+        fake_key_dict = {"keyval": "foo", "keyid": "key_id"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: None)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        key = pretend.stub(keyid="key_id")
+        fake_root = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids=["key_id"])},
+                keys={"key_id": key},
+                version=2,
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda *a: fake_root
+        )
+        result = test_repo._online_key
+        assert result == key
+        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Root.type)
+        ]
 
     def test_refresh_settings_with_none_arg(self, test_repo):
         test_repo.refresh_settings()
@@ -190,8 +243,21 @@ class TestMetadataRepository:
         assert "No permission /run/secrets/*" in str(e)
         assert "No permission /run/secrets/*" == caplog.messages[0]
 
-    def test__sign(self, test_repo):
-        test_repo._online_key = "onlin_key"
+    def test__sign(self, test_repo, monkeypatch):
+        fake_key_dict = {"keyval": "foo", "keyid": "keyid"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_key = pretend.stub(keyid="new_key")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: fake_key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
         fake_md = pretend.stub(
             sign=pretend.call_recorder(lambda *a, **kw: None),
         )
@@ -202,7 +268,11 @@ class TestMetadataRepository:
         test_result = test_repo._sign(fake_md)
 
         assert test_result is None
-        assert test_repo._signer_store.get.calls == [pretend.call("onlin_key")]
+        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
+        ]
+        assert test_repo._signer_store.get.calls == [pretend.call(fake_key)]
         assert fake_md.sign.calls == [pretend.call("key_signer_1")]
 
     def _test_helper_persist(
@@ -871,9 +941,23 @@ class TestMetadataRepository:
             pretend.call(version=mocked_targets.signed.version),
         ]
 
-    def test__update_targets_delegations_key_bins(self, test_repo):
-        fake_online_key_stub = pretend.stub(keyid="new_online_key")
-        test_repo._online_key = fake_online_key_stub
+    def test__update_targets_delegations_key_bins(
+        self, test_repo, monkeypatch
+    ):
+        fake_key_dict = {"keyval": "foo", "keyid": "keyid"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_key = pretend.stub(keyid="new_key")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: fake_key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
         fake_root = pretend.stub(
             signed=pretend.stub(
                 roles={Targets.type: pretend.stub(keyids=["old_keyid"])}
@@ -895,18 +979,32 @@ class TestMetadataRepository:
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Root.type)
         ]
+        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
+        ]
         assert fake_targets.signed.revoke_key.calls == [
             pretend.call("old_keyid")
         ]
-        assert fake_targets.signed.add_key.calls == [
-            pretend.call(fake_online_key_stub)
-        ]
+        assert fake_targets.signed.add_key.calls == [pretend.call(fake_key)]
 
     def test__update_targets_delegations_key_custom_delegations(
-        self, test_repo
+        self, test_repo, monkeypatch
     ):
-        fake_online_key_stub = pretend.stub(keyid="new_online_key")
-        test_repo._online_key = fake_online_key_stub
+        fake_key_dict = {"keyval": "foo", "keyid": "keyid"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_key = pretend.stub(keyid="new_key")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: fake_key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
         fake_root = pretend.stub(
             signed=pretend.stub(
                 roles={Targets.type: pretend.stub(keyids=["old_keyid"])}
@@ -937,6 +1035,10 @@ class TestMetadataRepository:
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Root.type)
         ]
+        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
+        ]
         assert fake_targets.signed.delegations.roles.values.calls == [
             pretend.call(),
         ]
@@ -945,14 +1047,27 @@ class TestMetadataRepository:
             pretend.call("old_keyid", "role2"),
         ]
         assert fake_targets.signed.add_key.calls == [
-            pretend.call(fake_online_key_stub, "role1"),
-            pretend.call(fake_online_key_stub, "role2"),
+            pretend.call(fake_key, "role1"),
+            pretend.call(fake_key, "role2"),
         ]
 
     def test__update_targets_delegations_online_key_not_changed(
-        self, test_repo
+        self, test_repo, monkeypatch
     ):
-        test_repo._online_key = pretend.stub(keyid="online_key")
+        fake_key_dict = {"keyval": "foo", "keyid": "keyid"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_key = pretend.stub(keyid="online_key")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: fake_key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
         fake_root = pretend.stub(
             signed=pretend.stub(
                 roles={Targets.type: pretend.stub(keyids=["online_key"])}
@@ -966,6 +1081,10 @@ class TestMetadataRepository:
         assert result is None
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Root.type)
+        ]
+        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
 
     def test__get_role_for_artifact_path(self, test_repo):
@@ -1572,13 +1691,17 @@ class TestMetadataRepository:
         ]
 
     def test__bootstrap_finalize(self, test_repo, monkeypatch):
+        fake_key_dict = {"keyval": "foo"}
+        fake_key = pretend.stub(
+            to_dict=pretend.call_recorder(lambda: fake_key_dict), keyid="keyid"
+        )
         fake_role = pretend.stub(keyids=["keyid"])
         fake_root = pretend.stub(
             signatures=pretend.stub(clear=pretend.call_recorder(lambda: None)),
             sign=pretend.call_recorder(lambda *a, **kw: None),
             signed=pretend.stub(
                 roles={"timestamp": fake_role},
-                keys={"keyid": "online_key_id"},
+                keys={"keyid": fake_key},
             ),
         )
         test_repo._persist = pretend.call_recorder(lambda *a: None)
@@ -1603,11 +1726,12 @@ class TestMetadataRepository:
         assert fake_settings.get_fresh.calls == [
             pretend.call("CUSTOM_DELEGATED_ROLES")
         ]
-        assert test_repo._online_key == "online_key_id"
+        assert fake_key.to_dict.calls == [pretend.call()]
         assert test_repo._persist.calls == [
             pretend.call(fake_root, repository.Root.type)
         ]
         assert test_repo.write_repository_settings.calls == [
+            pretend.call("ONLINE_KEY", fake_key_dict),
             pretend.call("ROOT_SIGNING", None),
             pretend.call("BOOTSTRAP", "task_id"),
         ]
@@ -3555,7 +3679,7 @@ class TestMetadataRepository:
     def test__verify_new_root_signing(self, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=2,
                 type=repository.Root.type,
             ),
@@ -3563,7 +3687,7 @@ class TestMetadataRepository:
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=1,
             ),
             verify_delegate=pretend.call_recorder(lambda *a: None),
@@ -3585,7 +3709,7 @@ class TestMetadataRepository:
     ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=2,
                 type=repository.Root.type,
             ),
@@ -3595,7 +3719,7 @@ class TestMetadataRepository:
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=1,
             ),
             verify_delegate=pretend.call_recorder(lambda *a: None),
@@ -3610,14 +3734,14 @@ class TestMetadataRepository:
     def test__verify_new_root_signing_bad_version(self, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=4,
                 type=repository.Root.type,
             ),
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=1,
             ),
         )
@@ -3631,14 +3755,14 @@ class TestMetadataRepository:
     def test__verify_new_root_signing_bad_type(self, test_repo):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=2,
                 type=repository.Snapshot.type,
             ),
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"root": pretend.stub(keyids={"k1": "v1"})},
+                roles={"root": pretend.stub(keyids=["k1"])},
                 version=1,
             ),
         )
@@ -3853,13 +3977,13 @@ class TestMetadataRepository:
     def test__root_metadata_update(self, test_repo, mocked_datetime):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=1,
             )
         )
@@ -3898,13 +4022,13 @@ class TestMetadataRepository:
     ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=1,
             )
         )
@@ -3945,13 +4069,13 @@ class TestMetadataRepository:
     ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=1,
             )
         )
@@ -3977,18 +4101,37 @@ class TestMetadataRepository:
         ]
 
     def test__root_metadata_update_online_key(
-        self, test_repo, mocked_datetime
+        self, test_repo, mocked_datetime, monkeypatch
     ):
+        fake_key_dict = {"keyval": "foo", "keyid": "old_key_id"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        old_key = pretend.stub(keyid="old_key_id")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: old_key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
+        new_key_dict = {"keyval": "bar"}
+        new_key = pretend.stub(
+            to_dict=pretend.call_recorder(lambda: new_key_dict),
+            keyid="new_key_id",
+        )
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids=["keyid2"])},
-                keys={"keyid2": "key2"},
+                roles={"timestamp": pretend.stub(keyids=["new_key_id"])},
+                keys={"new_key_id": new_key},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids=["keyid1"])},
+                roles={"timestamp": pretend.stub(keyids=["old_key_id"])},
                 version=1,
             )
         )
@@ -4010,7 +4153,9 @@ class TestMetadataRepository:
         test_repo._run_online_roles_bump = pretend.call_recorder(
             lambda **kw: None
         )
-        test_repo._online_key = "key1"
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
 
         result = test_repo._root_metadata_update(fake_new_root_md)
 
@@ -4036,23 +4181,30 @@ class TestMetadataRepository:
         assert test_repo._persist.calls == [
             pretend.call(fake_new_root_md, repository.Root.type)
         ]
+        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
+        ]
+        assert new_key.to_dict.calls == [pretend.call()]
         assert test_repo._run_online_roles_bump.calls == [
             pretend.call(force=True)
         ]
-        assert test_repo._online_key == "key2"
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ONLINE_KEY", new_key_dict)
+        ]
 
     def test__root_metadata_update_online_key_lock_timeout(
         self, monkeypatch, test_repo
     ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k1": "v1"})},
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids={"k2": "v2"})},
+                roles={"timestamp": pretend.stub(keyids=["k2"])},
                 version=1,
             )
         )
@@ -4090,18 +4242,41 @@ class TestMetadataRepository:
         ]
 
     def test_root_metadata_update_finalize_run_onlines_bump_fails(
-        self, test_repo
+        self, test_repo, monkeypatch
     ) -> None:
+        fake_key_dict = {"keyval": "foo", "keyid": "old_key_id"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        old_key_dict = {"keyval": "old_bar"}
+        old_key = pretend.stub(
+            to_dict=pretend.call_recorder(lambda: old_key_dict),
+            keyid="old_key_id",
+        )
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: old_key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
+        new_key_dict = {"keyval": "old_bar"}
+        new_key = pretend.stub(
+            to_dict=pretend.call_recorder(lambda: new_key_dict),
+            keyid="new_key_id",
+        )
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids=["keyid2"])},
-                keys={"keyid2": "key2"},
+                roles={"timestamp": pretend.stub(keyids=["new_key_id"])},
+                keys={"new_key_id": new_key},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids=["keyid1"])},
+                roles={"timestamp": pretend.stub(keyids=["old_key_id"])},
                 version=1,
             )
         )
@@ -4114,7 +4289,9 @@ class TestMetadataRepository:
             lock=pretend.call_recorder(mocked_lock),
         )
         test_repo._run_online_roles_bump = pretend.raiser(ValueError("Bad"))
-        test_repo._online_key = "key1"
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
 
         with pytest.raises(ValueError):
             test_repo._root_metadata_update_finalize(
@@ -4124,8 +4301,18 @@ class TestMetadataRepository:
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=60.0)
         ]
-        # Assert that we have recovered to the previous online key
-        assert test_repo._online_key == "key1"
+        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
+        ]
+        assert new_key.to_dict.calls == [pretend.call()]
+        # Assert that we have recovered to the previous online key.
+        # These calls assert that the online key is set to current online key.
+        assert old_key.to_dict.calls == [pretend.call()]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ONLINE_KEY", new_key_dict),
+            pretend.call("ONLINE_KEY", old_key_dict),
+        ]
 
     def test_metadata_update(self, monkeypatch, test_repo):
         fake_settings = pretend.stub(
@@ -4645,7 +4832,7 @@ class TestMetadataRepository:
             pretend.call("ROOT_SIGNING", "fake_metadata")
         ]
 
-    def test_sign_metadata__update__bad_role_type(
+    def test_sign_metadata_update_bad_role_type(
         self, test_repo, monkeypatch, mocked_datetime
     ):
         fake_signature = pretend.stub(keyid="fake")
@@ -4664,7 +4851,7 @@ class TestMetadataRepository:
             "details": None,
         }
 
-    def test_sign_metadata__update__invalid_signature(
+    def test_sign_metadata_update_invalid_signature(
         self,
         test_repo,
         monkeypatch,
@@ -4730,7 +4917,7 @@ class TestMetadataRepository:
             pretend.call({"metadata": "fake"})
         ]
 
-    def test_sign_metadata__update__invalid_threshold__trusted_and_new(
+    def test_sign_metadata_update_invalid_threshold_trusted_and_new(
         self,
         test_repo,
         monkeypatch,
@@ -4796,7 +4983,7 @@ class TestMetadataRepository:
             },
         }
 
-    def test_sign_metadata__update__invalid_threshold__trusted(
+    def test_sign_metadata_update_invalid_threshold_trusted(
         self,
         test_repo,
         monkeypatch,
@@ -4862,7 +5049,7 @@ class TestMetadataRepository:
             },
         }
 
-    def test_sign_metadata__update__invalid_threshold__new(
+    def test_sign_metadata_update_invalid_threshold_new(
         self,
         test_repo,
         monkeypatch,
@@ -4930,7 +5117,7 @@ class TestMetadataRepository:
             },
         }
 
-    def test_sign_metadata__update__valid_threshold(
+    def test_sign_metadata_update_valid_threshold(
         self,
         test_repo,
         monkeypatch,
@@ -4979,6 +5166,9 @@ class TestMetadataRepository:
         test_repo._validate_threshold = pretend.call_recorder(
             lambda *a: next(fake_threshold_result)
         )
+        test_repo._root_metadata_update_finalize = pretend.call_recorder(
+            lambda *a: None
+        )
 
         # Call sign_metadata with fake payload
         # All deserialization and validation is mocked
@@ -4995,6 +5185,9 @@ class TestMetadataRepository:
                 "update": "Metadata update finished",
             },
         }
+        assert test_repo._root_metadata_update_finalize.calls == [
+            pretend.call(fake_trusted_root, fake_new_root)
+        ]
 
     def test_delete_sign_metadata_bootstrap_signing_state(
         self, test_repo, monkeypatch, mocked_datetime

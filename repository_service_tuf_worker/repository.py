@@ -129,6 +129,24 @@ class MetadataRepository:
     def _settings(self) -> Dynaconf:
         return get_repository_settings()
 
+    @property
+    def _online_key(self) -> Key:
+        key_dict = self._settings.get_fresh("ONLINE_KEY")
+        if key_dict is not None:
+            return Key.from_dict(key_dict.pop("keyid"), key_dict)
+        else:
+            root: Metadata[Root] = self._storage_backend.get(Root.type)
+            # All roles except root share the same one key and it doesn't
+            # matter from which role we will get the key.
+            keyid: str = root.signed.roles["timestamp"].keyids[0]
+            return root.signed.keys[keyid]
+
+    @_online_key.setter
+    def _online_key(self, key: Key):
+        key_dict = key.to_dict()
+        key_dict["keyid"] = key.keyid
+        self.write_repository_settings("ONLINE_KEY", key_dict)
+
     @classmethod
     def create_service(cls) -> "MetadataRepository":
         """Class Method for MetadataRepository service creation."""
@@ -1432,9 +1450,9 @@ class MetadataRepository:
         # We always persist the new root metadata, but we cannot persist
         # without verifying if the online key is rotated to avoid a mismatch
         # with the rest of the roles using the online key.
-        current_online_keyid = current_root.signed.roles[Timestamp.type].keyids
-        new_online_keyid = new_root.signed.roles[Timestamp.type].keyids
-        if current_online_keyid == new_online_keyid:
+        current_keyid = current_root.signed.roles[Timestamp.type].keyids[0]
+        new_keyid = new_root.signed.roles[Timestamp.type].keyids[0]
+        if current_keyid == new_keyid:
             # online key is not changed, persist the new root
             self._persist(new_root, Root.type)
             logging.info(f"Updating root metadata: {new_root.signed.version}")
@@ -1449,10 +1467,7 @@ class MetadataRepository:
             try:
                 with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
                     curr_online_key = self._online_key
-                    # All roles except root share the same one key and it
-                    # doesn't matter from which role we will get the key.
-                    keyid: str = new_root.signed.roles["timestamp"].keyids[0]
-                    self._online_key = new_root.signed.keys[keyid]
+                    self._online_key = new_root.signed.keys[new_keyid]
 
                     try:
                         self._run_online_roles_bump(force=True)
