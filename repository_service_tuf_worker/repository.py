@@ -138,7 +138,11 @@ class MetadataRepository:
             # All roles except root share the same one key and it doesn't
             # matter from which role we will get the key.
             keyid: str = root.signed.roles["timestamp"].keyids[0]
-            return root.signed.keys[keyid]
+            key = root.signed.keys[keyid]
+            key_dict = key.to_dict()
+            key_dict["keyid"] = key.keyid
+            self.write_repository_settings("ONLINE_KEY", key_dict)
+            return key
 
     @_online_key.setter
     def _online_key(self, key: Key):

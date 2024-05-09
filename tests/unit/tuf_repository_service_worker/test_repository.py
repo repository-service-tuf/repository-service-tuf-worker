@@ -111,7 +111,11 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        key = pretend.stub(keyid="key_id")
+        key_dict = {"keyval": "old_bar"}
+        expected_dict = copy(key_dict)
+        key = pretend.stub(
+            keyid="key_id", to_dict=pretend.call_recorder(lambda: key_dict)
+        )
         fake_root = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids=["key_id"])},
@@ -122,11 +126,19 @@ class TestMetadataRepository:
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda *a: fake_root
         )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
         result = test_repo._online_key
         assert result == key
         assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
         assert test_repo._storage_backend.get.calls == [
             pretend.call(Root.type)
+        ]
+        expected_dict["keyid"] = key.keyid
+        assert key.to_dict.calls == [pretend.call()]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("ONLINE_KEY", expected_dict)
         ]
 
     def test_refresh_settings_with_none_arg(self, test_repo):
