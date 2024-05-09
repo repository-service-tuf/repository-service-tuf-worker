@@ -128,6 +128,28 @@ class MetadataRepository:
     def _settings(self) -> Dynaconf:
         return get_repository_settings()
 
+    @property
+    def _online_key(self) -> Key:
+        key_dict = self._settings.get_fresh("ONLINE_KEY")
+        if key_dict is not None:
+            return Key.from_dict(key_dict.pop("keyid"), key_dict)
+        else:
+            root: Metadata[Root] = self._storage_backend.get(Root.type)
+            # All roles except root share the same one key and it doesn't
+            # matter from which role we will get the key.
+            keyid: str = root.signed.roles["timestamp"].keyids[0]
+            key = root.signed.keys[keyid]
+            key_dict = key.to_dict()
+            key_dict["keyid"] = key.keyid
+            self.write_repository_settings("ONLINE_KEY", key_dict)
+            return key
+
+    @_online_key.setter
+    def _online_key(self, key: Key):
+        key_dict = key.to_dict()
+        key_dict["keyid"] = key.keyid
+        self.write_repository_settings("ONLINE_KEY", key_dict)
+
     @classmethod
     def create_service(cls) -> "MetadataRepository":
         """Class Method for MetadataRepository service creation."""
@@ -203,14 +225,8 @@ class MetadataRepository:
         The metadata role type is used as default key id. This is only allowed
         for top-level roles.
         """
-        role.signatures.clear()
-        root: Metadata[Root] = self._storage_backend.get("root")
-        # All roles except root share the same one key and it doesn't matter
-        # from which role we will get the key.
-        keyid: str = root.signed.roles["timestamp"].keyids[0]
-        public_key = root.signed.keys[keyid]
-        signer = self._signer_store.get(public_key)
-        role.sign(signer, append=True)
+        signer = self._signer_store.get(self._online_key)
+        role.sign(signer)
 
     def _persist(self, role: Metadata, role_name: str) -> str:
         """
@@ -382,6 +398,30 @@ class MetadataRepository:
         logging.info("Bumped version of 'Snapshot' role")
 
         return snapshot.signed.version
+
+    def _update_targets_delegations_key(self, targets: Metadata[Targets]):
+        """
+        Update the key used by delegations referenced in targets metadata.
+
+        Args:
+            targets: current top level targets metadata.
+        """
+        current_root = self._storage_backend.get(Root.type)
+        old_online_keyid = current_root.signed.roles[Targets.type].keyids[0]
+        # New online keyid is set to self._online_key before function call.
+        new_online_key = self._online_key
+        if old_online_keyid == new_online_key.keyid:
+            return
+
+        bins = True if targets.signed.delegations.succinct_roles else False
+        if bins:
+            targets.signed.revoke_key(old_online_keyid)
+            targets.signed.add_key(new_online_key)
+
+        else:
+            for role in targets.signed.delegations.roles.values():
+                targets.signed.revoke_key(old_online_keyid, role.name)
+                targets.signed.add_key(new_online_key, role.name)
 
     def _get_role_for_artifact_path(self, artifact_path: str) -> Optional[str]:
         """
@@ -664,9 +704,13 @@ class MetadataRepository:
         custom_delegated_roles: Dict[str, Any] = self._settings.get_fresh(
             "CUSTOM_DELEGATED_ROLES"
         )
-        self._persist(root, Root.type)
-        self.write_repository_settings("ROOT_SIGNING", None)
+        # All roles except root share the same one key and it doesn't matter
+        # from which role we will get the key.
+        keyid: str = root.signed.roles["timestamp"].keyids[0]
+        self._online_key = root.signed.keys[keyid]
         self._bootstrap_online_roles(root, custom_delegated_roles)
+        self.write_repository_settings("ROOT_SIGNING", None)
+        self._persist(root, Root.type)
         self.write_repository_settings("BOOTSTRAP", task_id)
 
     def bootstrap(
@@ -1096,8 +1140,9 @@ class MetadataRepository:
             if force or (targets.signed.expires - today) < timedelta(
                 hours=self._hours_before_expire
             ):
-                logging.info("Bumped version of 'Targets' role")
+                self._update_targets_delegations_key(targets)
                 self._bump_and_persist(targets, Targets.type)
+                logging.info("Bumped version of 'Targets' role")
                 snapshot_bump = True
 
         if force:
@@ -1331,7 +1376,7 @@ class MetadataRepository:
             },
         )
 
-    def _trusted_root_update(
+    def _verify_new_root_signing(
         self, current_root: Metadata[Root], new_root: Metadata[Root]
     ):
         """Verify if the new metadata is a trusted Root metadata"""
@@ -1362,7 +1407,7 @@ class MetadataRepository:
         current_root: Metadata[Root] = self._storage_backend.get(Root.type)
 
         try:
-            self._trusted_root_update(current_root, new_root)
+            self._verify_new_root_signing(current_root, new_root)
 
         except UnsignedMetadataError:
             # TODO: Add missing sanity check - new root must have at least 1
@@ -1408,9 +1453,9 @@ class MetadataRepository:
         # We always persist the new root metadata, but we cannot persist
         # without verifying if the online key is rotated to avoid a mismatch
         # with the rest of the roles using the online key.
-        current_online_keyid = current_root.signed.roles[Timestamp.type].keyids
-        new_online_keyid = new_root.signed.roles[Timestamp.type].keyids
-        if current_online_keyid == new_online_keyid:
+        current_keyid = current_root.signed.roles[Timestamp.type].keyids[0]
+        new_keyid = new_root.signed.roles[Timestamp.type].keyids[0]
+        if current_keyid == new_keyid:
             # online key is not changed, persist the new root
             self._persist(new_root, Root.type)
             logging.info(f"Updating root metadata: {new_root.signed.version}")
@@ -1424,6 +1469,17 @@ class MetadataRepository:
             status_lock_targets = False
             try:
                 with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+                    curr_online_key = self._online_key
+                    self._online_key = new_root.signed.keys[new_keyid]
+
+                    try:
+                        self._run_online_roles_bump(force=True)
+                        logging.info("Updating all targets metadata")
+                    except Exception as e:
+                        # Recover to correct online key state.
+                        self._online_key = curr_online_key
+                        raise e
+
                     # root metadata and online key are updated
                     # 1. persist the new root
                     # 2. bump all target roles
@@ -1431,8 +1487,6 @@ class MetadataRepository:
                     logging.info(
                         f"Updating root metadata: {new_root.signed.version}"
                     )
-                    self._run_online_roles_bump(force=True)
-                    logging.info("Updating all targets metadata")
                     status_lock_targets = True
             except redis.exceptions.LockNotOwnedError:
                 if status_lock_targets is False:
