@@ -26,7 +26,7 @@ from tuf.api.metadata import (
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
 
-REPOSITORY_PATH = f"repository_service_tuf_worker.repository"
+REPOSITORY_PATH = "repository_service_tuf_worker.repository"
 
 
 class TestRoles:
@@ -103,7 +103,6 @@ class TestMetadataRepository:
         ]
 
     def test_online_key_property_from_storage(self, test_repo, monkeypatch):
-        fake_key_dict = {"keyval": "foo", "keyid": "key_id"}
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda a: None)
         )
