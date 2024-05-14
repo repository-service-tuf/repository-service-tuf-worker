@@ -73,17 +73,18 @@ ft-das:
 ifeq ($(GITHUB_ACTION),)
 	$(MAKE) clone-umbrella
 endif
-	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --entrypoint 'bash tests/functional/scripts/run-ft-das.sh $(CLI_VERSION) $(PYTEST_GROUP) $(SLOW)' --rm repository-service-tuf-worker
+	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-das.sh $(CLI_VERSION) $(PYTEST_GROUP) $(SLOW)
 
 ft-das-local:
-	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --entrypoint 'bash tests/functional/scripts/run-ft-das.sh $(CLI_VERSION)' --rm repository-service-tuf-worker
+	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-das.sh $(CLI_VERSION)
+
 
 ft-signed:
 # Use "GITHUB_ACTION" to identify if we are running from a GitHub action.
 ifeq ($(GITHUB_ACTION),)
 	$(MAKE) clone-umbrella
 endif
-	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --entrypoint 'bash tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION) $(PYTEST_GROUP) $(SLOW)' --rm repository-service-tuf-worker
+	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION) $(PYTEST_GROUP) $(SLOW)
 
 ft-signed-local:
-	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --entrypoint 'bash tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION)' --rm repository-service-tuf-worker
+	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION)

@@ -58,11 +58,8 @@ services:
     environment:
       - DATA_DIR=./data
       - RSTUF_STORAGE_BACKEND=LocalStorage
-      - RSTUF_KEYVAULT_BACKEND=LocalKeyVault
       - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
-      - RSTUF_LOCAL_KEYVAULT_PATH=/opt/repository-service-tuf-worker/tests/files/key_storage
       - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
-      - RSTUF_LOCAL_KEYVAULT_KEYS=online.key,strongPass:online-rsa.key,strongPass,rsa
       - RSTUF_BROKER_SERVER=redis://redis
       - RSTUF_REDIS_SERVER=redis://redis
       - RSTUF_SQL_SERVER=postgres:secret@postgres:5432
