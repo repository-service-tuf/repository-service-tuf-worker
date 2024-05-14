@@ -1275,34 +1275,21 @@ class MetadataRepository:
         else:
             delegated_roles = [r for r in roles if not Roles.is_role(r)]
 
-        if Targets.type in roles and len(delegated_roles) > 0:
-            self._run_online_roles_bump(force=True)
-            roles_diff = [
-                *delegated_roles,
-                Targets.type,
-                Snapshot.type,
-                Timestamp.type,
-            ]
-
-        elif Targets.type in roles or len(delegated_roles) > 0:
+        if Targets.type in roles or len(delegated_roles) > 0:
+            roles_diff = [Snapshot.type, Timestamp.type]
             if Targets.type in roles:
                 targets = self._storage_backend.get(Targets.type)
                 self._bump_and_persist(targets, Targets.type)
-                self.bump_snapshot(force=True)
-                roles_diff = [Targets.type, Snapshot.type, Timestamp.type]
-            else:
-                target_roles = delegated_roles
-                if delegated_roles == [Roles.BINS.value]:
-                    # Set the actual names of the bins
-                    target_roles = self._settings.get_fresh(
-                        "DELEGATED_ROLES_NAMES"
-                    )
+                roles_diff += [Targets.type]
 
+            if delegated_roles == [Roles.BINS.value]:
+                self._update_timestamp(self._update_snapshot(bump_all=True))
+            else:
                 self._update_timestamp(
-                    self._update_snapshot(target_roles=target_roles)
+                    self._update_snapshot(target_roles=delegated_roles)
                 )
 
-                roles_diff = [*delegated_roles, Snapshot.type, Timestamp.type]
+            roles_diff += [*delegated_roles]
 
         elif Snapshot.type in roles:
             self.bump_snapshot(force=True)
