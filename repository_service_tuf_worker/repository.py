@@ -1282,16 +1282,12 @@ class MetadataRepository:
                 self._bump_and_persist(targets, Targets.type)
                 roles_diff += [Targets.type]
 
-            target_roles = delegated_roles
             if delegated_roles == [Roles.BINS.value]:
-                # Set the actual names of the bins
-                target_roles = self._settings.get_fresh(
-                    "DELEGATED_ROLES_NAMES"
+                self._update_timestamp(self._update_snapshot(bump_all=True))
+            else:
+                self._update_timestamp(
+                    self._update_snapshot(target_roles=delegated_roles)
                 )
-
-            self._update_timestamp(
-                self._update_snapshot(target_roles=target_roles)
-            )
 
             roles_diff += [*delegated_roles]
 
