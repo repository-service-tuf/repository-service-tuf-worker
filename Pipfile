@@ -9,7 +9,7 @@ redis = "*"
 tuf = "*"
 dynaconf = {extras = ["ini"], version = "*"}
 supervisor = "*"
-securesystemslib = {extras = ["pynacl", "crypto"], version = "*"}
+securesystemslib = {extras = ["pynacl", "crypto"], version = ">-=0.31.0,<1.0.0"}
 sqlalchemy = "*"
 psycopg2 = "*"
 alembic = "*"
