@@ -8,7 +8,7 @@ The ``repository-service-tuf-worker``, in the context perspective, is a Consumer
 Publisher from the Broker that receives tasks to perform in the
 `TUF Metadata Repository`. The `Metadata Repository` is stored using a
 *Repository Storage Service* that reads/writes this data. For signing some of
-the Metadata, the ``repository-service-tuf-worker`` uses online key.
+the Metadata, the ``repository-service-tuf-worker`` uses the online key.
 
 .. image:: /_static/repository-service-tuf-worker-C1.png
 
