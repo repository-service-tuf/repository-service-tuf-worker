@@ -24,7 +24,7 @@ the Metadata Repository using the ``Storage Service`` to handle the TUF
 Metadata. After executing any task, ``repository-service-tuf-api`` publishes to
 the Broker.
 
-The ``repository-service-tuf-worker`` implements the services ``Storage Service``.
+The ``repository-service-tuf-worker`` implements the service ``Storage Service``.
 
 Current supported Storage Services types:
     - LocalStorage (File System)
