@@ -9,7 +9,7 @@ redis = "*"
 tuf = "*"
 dynaconf = {extras = ["ini"], version = "*"}
 supervisor = "*"
-securesystemslib = {extras = ["pynacl", "crypto"], version = "*"}
+securesystemslib = {extras = ["pynacl", "crypto"], version = ">-=0.31.0,<1.0.0"}
 sqlalchemy = "*"
 psycopg2 = "*"
 alembic = "*"
@@ -43,7 +43,7 @@ pre-commit = "*"
 bandit = "*"
 myst-parser = "*"
 awscli-local = "*"
-awscli = "*"
+awscli = "==1.32.93"
 
 [requires]
 python_version = "3.10"
