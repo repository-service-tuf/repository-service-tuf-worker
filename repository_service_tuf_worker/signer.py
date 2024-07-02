@@ -16,8 +16,6 @@ from securesystemslib.signer import (
     Signer,
 )
 
-from repository_service_tuf_worker.interfaces import IKeyVault
-
 
 class FileNameSigner(CryptoSigner):
     """File-based signer implementation.
@@ -118,8 +116,6 @@ class SignerStore:
             if value := settings.get(name):
                 self._ambient_settings[name] = value
 
-        # Cache KEYVAULT setting as fallback
-        self._vault = settings.get("KEYVAULT")
         self._signers: dict[str, Signer] = {}
 
     def get(self, key: Key) -> Signer:
@@ -128,7 +124,6 @@ class SignerStore:
         - signer is loaded from the uri included in the passed public key
           (see SIGNER_FOR_URI_SCHEME for available uri schemes)
         - additional signer settings can be provided "ambiently" (see __init__)
-        - RSTUF_KEYVAULT_BACKEND is used as fallback, if no URI is included
 
         """
 
@@ -139,13 +134,5 @@ class SignerStore:
                     signer = Signer.from_priv_key_uri(uri, key)
 
                 self._signers[key.keyid] = signer
-
-            else:
-                if not isinstance(self._vault, IKeyVault):
-                    raise ValueError(
-                        "RSTUF_KEYVAULT_BACKEND is required for online signing"
-                    )
-
-                self._signers[key.keyid] = self._vault.get(key)
 
         return self._signers[key.keyid]

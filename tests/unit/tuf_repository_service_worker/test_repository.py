@@ -48,23 +48,8 @@ class TestRoles:
 
 class TestMetadataRepository:
     def test_basic_init(self, monkeypatch):
-        fake_configure = pretend.call_recorder(lambda *a: None)
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.services.keyvault.local.LocalKeyVault.configure",  # noqa
-            fake_configure,
-        )
         test_repo = repository.MetadataRepository()
         assert isinstance(test_repo, repository.MetadataRepository) is True
-
-    def test_init_with_no_keyvault(self, monkeypatch):
-        settings = repository.get_worker_settings()
-        del settings.KEYVAULT_BACKEND
-
-        monkeypatch.setattr(
-            repository, "get_worker_settings", lambda: settings
-        )
-        test_repo = repository.MetadataRepository()
-        assert "KEYVAULT" not in test_repo.refresh_settings()
 
     def test_create_service(self, test_repo):
         assert isinstance(test_repo, repository.MetadataRepository) is True
