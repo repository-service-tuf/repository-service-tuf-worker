@@ -84,7 +84,7 @@ def read_role_by_rolename(
         db.query(models.RSTUFTargetRoles)
         .filter(
             models.RSTUFTargetRoles.rolename == rolename,
-            models.RSTUFTargetRoles.active == True,
+            models.RSTUFTargetRoles.active == True,  # noqa
         )
         .first()
     )
@@ -100,7 +100,7 @@ def read_role_deactivated_by_rolename(
         db.query(models.RSTUFTargetRoles)
         .filter(
             models.RSTUFTargetRoles.rolename == rolename,
-            models.RSTUFTargetRoles.active == False,
+            models.RSTUFTargetRoles.active == False,  # noqa
         )
         .first()
     )
@@ -112,7 +112,7 @@ def read_all_roles(db: Session) -> List[models.RSTUFTargetRoles]:
     """
     return (
         db.query(models.RSTUFTargetRoles)
-        .filter(models.RSTUFTargetRoles.active == True)
+        .filter(models.RSTUFTargetRoles.active == True)  # noqa
         .all()
     )
 
@@ -130,7 +130,7 @@ def read_roles_joint_files(
         )
         .join(models.RSTUFTargetFiles)
         .filter(
-            models.RSTUFTargetRoles.active == True,
+            models.RSTUFTargetRoles.active == True,  # noqa
             models.RSTUFTargetRoles.rolename.in_(rolenames),
         )
         .all()
