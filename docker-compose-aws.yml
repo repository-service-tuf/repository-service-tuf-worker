@@ -70,7 +70,7 @@ services:
       - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
       - RSTUF_BROKER_SERVER=redis://redis
       - RSTUF_REDIS_SERVER=redis://redis
-      - RSTUF_SQL_SERVER=postgres:secret@postgres:5432
+      - RSTUF_DB_SERVER=postgres:secret@postgres:5432
       - METADATA_BASE_URL="http://localstack:4566/tuf-metadata/"
     volumes:
       - ./:/opt/repository-service-tuf-worker:z

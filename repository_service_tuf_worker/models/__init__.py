@@ -16,8 +16,8 @@ from repository_service_tuf_worker.models.targets import (  # noqa
 )
 
 
-def rstuf_db(sql_server: str) -> sessionmaker:
-    engine = create_engine(sql_server)
+def rstuf_db(db_server: str) -> sessionmaker:
+    engine = create_engine(db_server)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     # Base.metadata.create_all(bind=engine)
