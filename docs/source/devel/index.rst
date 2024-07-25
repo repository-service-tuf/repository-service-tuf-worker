@@ -67,7 +67,7 @@ Bootstrap
     @enduml
 
 Adding/Removing artifacts
------------------------
+-------------------------
 
 As mentioned at the container level, the domain of ``repository-service-tuf-worker``
 (Repository Worker) is managing the TUF Repository Metadata.
@@ -108,9 +108,7 @@ About **Bump Roles** (``bump_online_roles``) that contain online keys is easy.
 These roles have short expiration (defined during repository configuration) and
 must be "bumped" frequently. The implementation in the RepositoryMetadata
 
-**Publish the new Hashed Bins Target Roles** (``publish_artifacts``) is part of the
-solution for the :ref:`Repository Worker scalability, Issue 17
-<devel/known_issues:(Solved) Scalability>`.
+**Publish the new Hashed Bins Target Roles** (``publish_artifacts``)
 
 To understand more, every time the API sends a task to add a new artifact(s), the
 Hashed Bins Roles must be changed to add the new artifact(s), followed by a new
@@ -219,14 +217,6 @@ AWSS3
 1. Initiate the aws development environment ``make run-dev DC=aws``
 
 
-Important issues/problems
-#########################
-
-.. toctree::
-   :maxdepth: 1
-
-   known_issues
-
 Implementation
 ##############
 
@@ -238,5 +228,4 @@ Implementation
    repository_service_tuf_worker.models.targets
    repository_service_tuf_worker.services
    repository_service_tuf_worker.services.storage
-   repository_service_tuf_worker.services.keyvault
    modules

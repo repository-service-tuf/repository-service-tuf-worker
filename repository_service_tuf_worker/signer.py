@@ -28,20 +28,17 @@ class FileNameSigner(CryptoSigner):
     NOTE: Make sure to use the secrets management service of your deployment
     platform to protect your private key!
 
-    Example::
-
+    Example:
         ONLINE_KEY_DIR (env) "/run/secrets"
         priv_key_uri (arg): "fn:foo"
-
         File path: "/run/secrets/foo"
 
     Raises:
         KeyError: ONLINE_KEY_DIR environment variable not set
         OSError: file cannot be loaded
         ValueError: uri has no file name, or private key cannot be decoded,
-                or type does not match public key
-        cryptography.exceptions.UnsupportedAlgorithm: key type not supported
-
+        or type does not match public key
+        `cryptography.exceptions.UnsupportedAlgorithm`: key type not supported
     """
 
     SCHEME = "fn"
@@ -54,6 +51,8 @@ class FileNameSigner(CryptoSigner):
         public_key: Key,
         secrets_handler: Optional[SecretsHandler] = None,
     ) -> "FileNameSigner":
+        """Factory constructor for a given private key URI."""
+
         _, _, file_name = priv_key_uri.partition(":")
         if not file_name:
             raise ValueError(
