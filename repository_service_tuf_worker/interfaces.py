@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from dynaconf import Dynaconf
-from securesystemslib.signer import Key, Signer
 from tuf.api.metadata import Metadata, T
 
 

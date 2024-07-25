@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 from dynaconf import Dynaconf
 from pretend import stub
-from securesystemslib.signer import AWSSigner, CryptoSigner, Key
+from securesystemslib.signer import AWSSigner, Key
 
 from repository_service_tuf_worker.signer import (
     RSTUF_ONLINE_KEY_URI_FIELD,
