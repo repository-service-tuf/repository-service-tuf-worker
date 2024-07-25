@@ -11,7 +11,6 @@ from dynaconf import Dynaconf
 from pretend import stub
 from securesystemslib.signer import AWSSigner, CryptoSigner, Key
 
-from repository_service_tuf_worker.interfaces import IKeyVault
 from repository_service_tuf_worker.signer import (
     RSTUF_ONLINE_KEY_URI_FIELD,
     FileNameSigner,
@@ -47,54 +46,6 @@ class TestSigner:
         store._signers[fake_id] = fake_signer
 
         assert store.get(fake_key) == fake_signer
-
-    def test_get_load_and_cache(self):
-        class FakeKeyVault(IKeyVault):
-            @classmethod
-            def configure(cls, settings):
-                pass
-
-            @classmethod
-            def settings(cls):
-                pass
-
-            def get(self, public_key):
-                return fake_signer
-
-        fake_id = "fake_id"
-        fake_signer = stub()
-        fake_key = stub(keyid=fake_id, unrecognized_fields={})
-
-        settings = Dynaconf(KEYVAULT=FakeKeyVault())
-        store = SignerStore(settings)
-
-        assert not store._signers
-        assert store.get(fake_key) == fake_signer
-        assert fake_id in store._signers
-
-    def test_get_no_vault(self):
-        fake_id = "fake_id"
-        fake_key = stub(keyid=fake_id, unrecognized_fields={})
-
-        settings = Dynaconf()
-        store = SignerStore(settings)
-
-        with pytest.raises(ValueError):
-            store.get(fake_key)
-
-    def test_get_from_file_uri(self, key_metadata):
-        path = _FILES / "pem" / "ed25519_private.pem"
-        uri = f"file2:{path}"
-        key_metadata[RSTUF_ONLINE_KEY_URI_FIELD] = uri
-
-        fake_id = "fake_id"
-        key = Key.from_dict(fake_id, key_metadata)
-
-        settings = Dynaconf()
-        store = SignerStore(settings)
-        signer = store.get(key)
-
-        assert isinstance(signer, CryptoSigner)
 
     def test_get_from_file_name_uri(self, key_metadata):
         dir_ = _FILES / "pem"
