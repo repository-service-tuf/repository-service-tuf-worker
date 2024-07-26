@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from dynaconf import Dynaconf
-from securesystemslib.signer import Key, Signer
 from tuf.api.metadata import Metadata, T
 
 
@@ -20,36 +19,6 @@ class ServiceSettings:
     names: List[str]
     required: bool
     default: Optional[Any] = None
-
-
-class IKeyVault(ABC):
-    @classmethod
-    @abstractmethod
-    def configure(cls, settings: Dynaconf) -> "IKeyVault":
-        """
-        Run actions to verify, configure and create object using the settings.
-        """
-        pass  # pragma: no cover
-
-    @classmethod
-    def from_dynaconf(cls, settings: Dynaconf) -> None:
-        """
-        Run actions to verify and configure using the settings.
-        """
-        _setup_service_dynaconf(cls, settings.KEYVAULT_BACKEND, settings)
-
-    @classmethod
-    @abstractmethod
-    def settings(cls) -> List[ServiceSettings]:
-        """
-        Define all the ServiceSettings required in settings.
-        """
-        pass  # pragma: no cover
-
-    @abstractmethod
-    def get(self, public_key: Key) -> Signer:
-        """Return a signer using the online key."""
-        pass  # pragma: no cover
 
 
 class IStorage(ABC):
@@ -154,10 +123,6 @@ def _setup_service_dynaconf(cls: Any, backend: Any, settings: Dynaconf):
         if cls.__name__ == "IStorage":
             settings.STORAGE_BACKEND = backend
             settings.STORAGE = settings.STORAGE_BACKEND.configure(settings)
-
-        elif cls.__name__ == "IKeyVault":
-            settings.KEYVAULT_BACKEND = backend
-            settings.KEYVAULT = settings.KEYVAULT_BACKEND.configure(settings)
 
         else:
             raise ValueError(f"Invalid Interface {cls.__name__}")

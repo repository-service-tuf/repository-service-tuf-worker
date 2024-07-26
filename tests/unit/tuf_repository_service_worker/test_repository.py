@@ -48,11 +48,6 @@ class TestRoles:
 
 class TestMetadataRepository:
     def test_basic_init(self, monkeypatch):
-        fake_configure = pretend.call_recorder(lambda *a: None)
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.services.keyvault.local.LocalKeyVault.configure",  # noqa
-            fake_configure,
-        )
         test_repo = repository.MetadataRepository()
         assert isinstance(test_repo, repository.MetadataRepository) is True
 

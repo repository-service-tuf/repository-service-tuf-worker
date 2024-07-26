@@ -16,8 +16,6 @@ from securesystemslib.signer import (
     Signer,
 )
 
-from repository_service_tuf_worker.interfaces import IKeyVault
-
 
 class FileNameSigner(CryptoSigner):
     """File-based signer implementation.
@@ -30,20 +28,17 @@ class FileNameSigner(CryptoSigner):
     NOTE: Make sure to use the secrets management service of your deployment
     platform to protect your private key!
 
-    Example::
-
+    Example:
         ONLINE_KEY_DIR (env) "/run/secrets"
         priv_key_uri (arg): "fn:foo"
-
         File path: "/run/secrets/foo"
 
     Raises:
         KeyError: ONLINE_KEY_DIR environment variable not set
         OSError: file cannot be loaded
         ValueError: uri has no file name, or private key cannot be decoded,
-                or type does not match public key
-        cryptography.exceptions.UnsupportedAlgorithm: key type not supported
-
+        or type does not match public key
+        `cryptography.exceptions.UnsupportedAlgorithm`: key type not supported
     """
 
     SCHEME = "fn"
@@ -56,6 +51,8 @@ class FileNameSigner(CryptoSigner):
         public_key: Key,
         secrets_handler: Optional[SecretsHandler] = None,
     ) -> "FileNameSigner":
+        """Factory constructor for a given private key URI."""
+
         _, _, file_name = priv_key_uri.partition(":")
         if not file_name:
             raise ValueError(
@@ -74,9 +71,7 @@ class FileNameSigner(CryptoSigner):
 
 RSTUF_ONLINE_KEY_URI_FIELD = "x-rstuf-online-key-uri"
 
-# Register non-default securesystemslib file signer
-# secure-systems-lab/securesystemslib#617
-SIGNER_FOR_URI_SCHEME[CryptoSigner.FILE_URI_SCHEME] = CryptoSigner
+
 # Register custom FileNameSigner
 SIGNER_FOR_URI_SCHEME[FileNameSigner.SCHEME] = FileNameSigner
 
@@ -118,8 +113,6 @@ class SignerStore:
             if value := settings.get(name):
                 self._ambient_settings[name] = value
 
-        # Cache KEYVAULT setting as fallback
-        self._vault = settings.get("KEYVAULT")
         self._signers: dict[str, Signer] = {}
 
     def get(self, key: Key) -> Signer:
@@ -128,8 +121,6 @@ class SignerStore:
         - signer is loaded from the uri included in the passed public key
           (see SIGNER_FOR_URI_SCHEME for available uri schemes)
         - additional signer settings can be provided "ambiently" (see __init__)
-        - RSTUF_KEYVAULT_BACKEND is used as fallback, if no URI is included
-
         """
 
         if key.keyid not in self._signers:
@@ -139,13 +130,5 @@ class SignerStore:
                     signer = Signer.from_priv_key_uri(uri, key)
 
                 self._signers[key.keyid] = signer
-
-            else:
-                if not isinstance(self._vault, IKeyVault):
-                    raise ValueError(
-                        "RSTUF_KEYVAULT_BACKEND is required for online signing"
-                    )
-
-                self._signers[key.keyid] = self._vault.get(key)
 
         return self._signers[key.keyid]
