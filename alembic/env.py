@@ -1,3 +1,4 @@
+import logging
 import os
 from logging.config import fileConfig
 
@@ -10,27 +11,30 @@ from alembic import context
 config = context.config
 
 # Support RSTUF Worker Container multiple environment variables for SQL
+# TODO: Removed deprecated RSTUF_SQL_* environment variables in the future
 sql_server = os.getenv("RSTUF_SQL_SERVER")
 sql_user = os.getenv("RSTUF_SQL_USER")
 sql_password = os.getenv("RSTUF_SQL_PASSWORD")
+if sql_server or sql_user or sql_password:
+    logging.warning("RSTUF_SQL_* are deprecated. Use RSTUF_DB_* instead.")
+db_server = os.getenv("RSTUF_DB_SERVER", sql_server)
+db_user = os.getenv("RSTUF_DB_USER", sql_user)
+db_password = os.getenv("RSTUF_DB_PASSWORD", sql_password)
 
-if sql_server is None:
-    raise ValueError("RSTUF_SQL_SERVER is required")
+if db_server is None:
+    raise ValueError("RSTUF_DB_SERVER is required")
 
-sql_server = sql_server.replace("postgresql://", "")  # remove protocol
+db_server = db_server.replace("postgresql://", "")  # remove protocol
 
-if sql_user and sql_password is None:
-    raise ValueError(
-        "RSTUF_SQL_PASSWORD is required when using RSTUF_SQL_USER"
-    )
-elif sql_user and sql_password:
-    if sql_password.startswith("/run/secrets"):
-        with open(sql_password) as f:
-            sql_password = f.read().rstrip("\n")
-    sql_server_uri = f"postgresql://{sql_user}:{sql_password}@{sql_server}"
+if db_user and db_password is None:
+    raise ValueError("RSTUF_DB_PASSWORD is required when using RSTUF_DB_USER")
+elif db_user and db_password:
+    if db_password.startswith("/run/secrets"):
+        with open(db_password) as f:
+            db_password = f.read().rstrip("\n")
+    sql_server_uri = f"postgresql://{db_user}:{db_password}@{db_server}"
 else:
-    sql_server_uri = f"postgresql://{sql_server}"
-
+    sql_server_uri = f"postgresql://{db_server}"
 
 config.set_main_option("sqlalchemy.url", sql_server_uri)
 
