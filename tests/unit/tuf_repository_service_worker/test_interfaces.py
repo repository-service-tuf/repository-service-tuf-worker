@@ -8,20 +8,6 @@ from repository_service_tuf_worker import interfaces
 
 
 class TestInterfaces:
-    def test_IKeyVault(self):
-        class TestKeyVault(interfaces.IKeyVault):
-            @classmethod
-            def configure(): ...
-
-            def get(): ...
-
-            @classmethod
-            def settings(): ...
-
-        test_keyvault = TestKeyVault()
-
-        assert isinstance(test_keyvault, interfaces.IKeyVault)
-
     def test_IStorage(self):
         class TestStorage(interfaces.IStorage):
             @classmethod

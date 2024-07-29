@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2023 Repository Service for TUF Contributors
+# SPDX-FileCopyrightText: 2023-2024 Repository Service for TUF Contributors
 # SPDX-FileCopyrightText: 2022-2023 VMware Inc
 #
 # SPDX-License-Identifier: MIT
@@ -48,11 +48,6 @@ class TestRoles:
 
 class TestMetadataRepository:
     def test_basic_init(self, monkeypatch):
-        fake_configure = pretend.call_recorder(lambda *a: None)
-        monkeypatch.setattr(
-            "repository_service_tuf_worker.services.keyvault.local.LocalKeyVault.configure",  # noqa
-            fake_configure,
-        )
         test_repo = repository.MetadataRepository()
         assert isinstance(test_repo, repository.MetadataRepository) is True
 
@@ -186,9 +181,9 @@ class TestMetadataRepository:
         ]
 
     def test_refresh_settings_with_sql_user_password(self, test_repo):
-        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
-        test_repo._worker_settings.SQL_USER = "psql"
-        test_repo._worker_settings.SQL_PASSWORD = "psqlpass"
+        test_repo._worker_settings.DB_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.DB_USER = "psql"
+        test_repo._worker_settings.DB_PASSWORD = "psqlpass"
         fake_sql = pretend.stub()
         repository.rstuf_db = pretend.call_recorder(lambda *a: fake_sql)
 
@@ -200,20 +195,20 @@ class TestMetadataRepository:
         ]
 
     def test_refresh_settings_with_sql_user_missing_password(self, test_repo):
-        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
-        test_repo._worker_settings.SQL_USER = "psql"
+        test_repo._worker_settings.DB_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.DB_USER = "psql"
 
         with pytest.raises(AttributeError) as e:
             test_repo.refresh_settings()
 
-        assert "'Settings' object has no attribute 'SQL_PASSWORD'" in str(e)
+        assert "'Settings' object has no attribute 'DB_PASSWORD'" in str(e)
 
     def test_refresh_settings_with_sql_user_password_secrets(
         self, test_repo, monkeypatch
     ):
-        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
-        test_repo._worker_settings.SQL_USER = "psql"
-        test_repo._worker_settings.SQL_PASSWORD = "/run/secrets/SQL_PASSWORD"
+        test_repo._worker_settings.DB_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.DB_USER = "psql"
+        test_repo._worker_settings.DB_PASSWORD = "/run/secrets/DB_PASSWORD"
         fake_data = pretend.stub(
             read=pretend.call_recorder(lambda: "psqlpass\n")
         )
@@ -239,9 +234,9 @@ class TestMetadataRepository:
         self, test_repo, monkeypatch, caplog
     ):
         caplog.set_level(repository.logging.ERROR)
-        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
-        test_repo._worker_settings.SQL_USER = "psql"
-        test_repo._worker_settings.SQL_PASSWORD = "/run/secrets/SQL_PASSWORD"
+        test_repo._worker_settings.DB_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.DB_USER = "psql"
+        test_repo._worker_settings.DB_PASSWORD = "/run/secrets/DB_PASSWORD"
         monkeypatch.setitem(
             repository.__builtins__,
             "open",
@@ -253,6 +248,18 @@ class TestMetadataRepository:
 
         assert "No permission /run/secrets/*" in str(e)
         assert "No permission /run/secrets/*" == caplog.messages[0]
+
+    def test_refresh_settings_with_deprecated_sql(
+        self, test_repo, monkeypatch, caplog
+    ):
+        caplog.set_level(repository.logging.WARNING)
+        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
+
+        test_repo.refresh_settings()
+        assert (
+            "Using RSTUF_SQL_* environment variables is deprecated. "
+            "Use RSTUF_DB_* instead."
+        ) in caplog.messages
 
     def test__sign(self, test_repo, monkeypatch):
         fake_key_dict = {"keyval": "foo", "keyid": "keyid"}

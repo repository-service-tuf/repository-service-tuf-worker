@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2023 Repository Service for TUF Contributors
+# SPDX-FileCopyrightText: 2023-2024 Repository Service for TUF Contributors
 # SPDX-FileCopyrightText: 2022-2023 VMware Inc
 #
 # SPDX-License-Identifier: MIT
@@ -45,7 +45,7 @@ from repository_service_tuf_worker import (  # noqa
     get_repository_settings,
     get_worker_settings,
 )
-from repository_service_tuf_worker.interfaces import IKeyVault, IStorage
+from repository_service_tuf_worker.interfaces import IStorage
 from repository_service_tuf_worker.models import (
     rstuf_db,
     targets_crud,
@@ -162,37 +162,49 @@ class MetadataRepository:
         else:
             settings = worker_settings
         #
-        # SQL
+        # DB
         #
+        # TODO: Removed deprecated RSTUF_SQL_* settings in the future
         sql_server_url = self._worker_settings.get("SQL_SERVER")
+        sql_user = self._worker_settings.get("SQL_USER")
+        sql_password = self._worker_settings.get("SQL_PASSWORD")
+        if sql_server_url or sql_user or sql_password:
+            logging.warning(
+                "Using RSTUF_SQL_* environment variables is deprecated. "
+                "Use RSTUF_DB_* instead."
+            )
+        db_server_url = self._worker_settings.get("DB_SERVER", sql_server_url)
+        db_user = self._worker_settings.get("DB_USER", sql_user)
+        db_password = self._worker_settings.get("DB_PASSWORD", sql_password)
+
         # clean 'postgresql://' if present
-        sql_server = sql_server_url.replace("postgresql://", "")
-        if sql_user := self._worker_settings.get("SQL_USER"):
-            if self._worker_settings.SQL_PASSWORD.startswith("/run/secrets"):
+        db_server = db_server_url.replace("postgresql://", "")
+        if db_user := self._worker_settings.get("DB_USER", sql_user):
+            if db_password is None:
+                raise AttributeError(
+                    "'Settings' object has no attribute 'DB_PASSWORD'"
+                    "'DB_PASSWORD' is required when using 'DB_USER'"
+                )
+            if db_password.startswith("/run/secrets"):
                 try:
-                    with open(self._worker_settings.SQL_PASSWORD) as f:
-                        sql_password = f.read().rstrip("\n")
+                    with open(db_password) as f:
+                        db_password = f.read().rstrip("\n")
                 except OSError as err:
                     logging.error(str(err))
                     raise err
-            else:
-                sql_password = self._worker_settings.SQL_PASSWORD
-            settings.SQL = rstuf_db(
-                f"postgresql://{sql_user}:{sql_password}@{sql_server}"
-            )
-        else:
-            settings.SQL = rstuf_db(f"postgresql://{sql_server}")
 
+            db_uri = f"postgresql://{db_user}:{db_password}@{db_server}"
+        else:
+            db_uri = f"postgresql://{db_server}"
+
+        logging.info(f"DB URI: {db_uri}")
+        settings.SQL = rstuf_db(db_uri)
         #
         # Backends
         #
 
         # storage
         IStorage.from_dynaconf(settings)
-
-        # keyvault
-        if settings.get("KEYVAULT_BACKEND"):
-            IKeyVault.from_dynaconf(settings)
 
         self._worker_settings = settings
         return settings

@@ -7,7 +7,6 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   repository_service_tuf_worker.services.keyvault
    repository_service_tuf_worker.services.storage
 
 Module contents
