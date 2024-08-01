@@ -17,6 +17,7 @@ pydantic = "*"
 celery = "*"
 boto3 = "*"
 awswrangler = "*"
+sigstore = "*"
 
 [dev-packages]
 tox = "*"
@@ -41,7 +42,6 @@ sphinxcontrib-qthelp = "*"
 sphinxcontrib-serializinghtml = "*"
 pre-commit = "*"
 bandit = "*"
-myst-parser = "*"
 awscli-local = "*"
 awscli = "*"
 

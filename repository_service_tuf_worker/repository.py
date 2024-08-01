@@ -18,7 +18,12 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import UnverifiedSignatureError
-from securesystemslib.signer import Key, Signature
+from securesystemslib.signer import (
+    KEY_FOR_TYPE_AND_SCHEME,
+    Key,
+    Signature,
+    SigstoreKey,
+)
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
@@ -53,6 +58,12 @@ from repository_service_tuf_worker.models import (
     targets_schema,
 )
 from repository_service_tuf_worker.signer import SignerStore
+
+KEY_FOR_TYPE_AND_SCHEME.update(
+    {
+        ("sigstore-oidc", "Fulcio"): SigstoreKey,
+    }
+)
 
 
 class Roles(enum.Enum):
