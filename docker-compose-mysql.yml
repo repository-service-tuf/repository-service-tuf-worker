@@ -5,20 +5,21 @@ volumes:
   repository-service-tuf-storage:
   repository-service-tuf-api-data:
   repository-service-tuf-redis-data:
-  repository-service-tuf-pgsql-data:
+  repository-service-tuf-mysql-data:
 
 services:
-  postgres:
-    image: postgres:15.1
+  mysql:
+    image: mysql:oracle
+    restart: always
     ports:
-      - "5433:5432"
+      - 3306:3306
     environment:
-      - POSTGRES_PASSWORD=secret
+      MYSQL_DATABASE: rstuf
+      MYSQL_ROOT_PASSWORD: secret
     volumes:
-      - "repository-service-tuf-pgsql-data:/var/lib/postgresql/data"
+      - repository-service-tuf-mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "postgres"]
-      interval: 1s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psecret"]
 
   repository-service-tuf-api:
     image: ghcr.io/repository-service-tuf/repository-service-tuf-api:${API_VERSION}
@@ -31,6 +32,8 @@ services:
       - RSTUF_REDIS_SERVER=redis://redis
     depends_on:
       redis:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
 
   web:
@@ -62,7 +65,7 @@ services:
       - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
       - RSTUF_BROKER_SERVER=redis://redis
       - RSTUF_REDIS_SERVER=redis://redis
-      - RSTUF_DB_SERVER=postgres:secret@postgres:5432
+      - RSTUF_SQL_SERVER=mysql+pymysql://root:secret@mysql:3306/rstuf
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
@@ -70,7 +73,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
+      mysql:
         condition: service_healthy
     tty: true
     stdin_open: true
@@ -79,5 +82,7 @@ services:
     image: python:3.10-slim-buster
     command: python -V
     working_dir: /rstuf-runner
+    environment:
+      - PERFORMANCE=false
     volumes:
       - ./:/rstuf-runner

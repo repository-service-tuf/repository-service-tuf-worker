@@ -23,7 +23,7 @@ def upgrade() -> None:
     op.create_table(
         "rstuf_target_roles",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("rolename", sa.String(), nullable=False),
+        sa.Column("rolename", sa.String(length=512), nullable=False),
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("last_update", sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
@@ -37,7 +37,7 @@ def upgrade() -> None:
     op.create_table(
         "rstuf_target_files",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("path", sa.String(), nullable=False),
+        sa.Column("path", sa.String(length=512), nullable=False),
         sa.Column(
             "info", postgresql.JSON(astext_type=sa.Text()), nullable=False
         ),

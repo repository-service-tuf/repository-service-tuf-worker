@@ -18,6 +18,7 @@ celery = "*"
 boto3 = "*"
 awswrangler = "*"
 sigstore = "*"
+pymysql = "*"
 
 [dev-packages]
 tox = "*"

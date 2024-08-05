@@ -67,9 +67,18 @@ jobs:
       api_version: ${{ needs.set-component-versions.outputs.api_version }}
       cli_version: ${{ needs.set-component-versions.outputs.cli_version }}
 
+  functional-tests-mysql:
+    needs: set-component-versions
+    name: FT Deploy MySQL Server
+    uses: ./.github/workflows/functional-tests.yml
+    with:
+      docker_compose: docker-compose-mysql.yml
+      api_version: ${{ needs.set-component-versions.outputs.api_version }}
+      cli_version: ${{ needs.set-component-versions.outputs.cli_version }}
+
   prepare-rc:
     runs-on: ubuntu-latest
-    needs: [functional-tests-local, functional-tests-local-redis, functional-tests-aws]
+    needs: [functional-tests-local, functional-tests-local-redis, functional-tests-aws, functional-tests-mysql]
     outputs:
       release_id: ${{ steps.gh-release.outputs.id }}
     steps:

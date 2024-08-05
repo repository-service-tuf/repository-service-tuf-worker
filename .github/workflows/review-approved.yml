@@ -30,3 +30,12 @@ jobs:
       docker_compose: docker-compose-aws.yml
       api_version: dev
       cli_version: dev
+
+  functional-tests-mysql:
+    name: Deploy MySQL Server as DB
+    if: github.event.review.state == 'approved'
+    uses: ./.github/workflows/functional-tests.yml
+    with:
+      docker_compose: docker-compose-mysql.yml
+      api_version: dev
+      cli_version: dev
