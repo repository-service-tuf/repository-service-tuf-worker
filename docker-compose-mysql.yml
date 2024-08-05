@@ -1,38 +1,25 @@
-# Default development deployment
+# Development deployment using Redis as Broker
 version: "3.9"
 
 volumes:
   repository-service-tuf-storage:
   repository-service-tuf-api-data:
-  repository-service-tuf-mq-data:
-  repository-service-tuf-settings:
   repository-service-tuf-redis-data:
-  repository-service-tuf-pgsql-data:
+  repository-service-tuf-mysql-data:
 
 services:
-  rabbitmq:
-    image: rabbitmq:3.10.7-management-alpine
-    volumes:
-     - "repository-service-tuf-mq-data:/var/lib/rabbitmq"
-    ports:
-      - 5672:5672
-      - 15672:15672
-    healthcheck:
-      test: "exit 0"
+  mysql:
+    image: mysql:oracle
     restart: always
-
-  postgres:
-    image: postgres:15.1
     ports:
-      # 5432 may already in use by another PostgreSQL on host
-      - "5433:5432"
+      - 3306:3306
     environment:
-      - POSTGRES_PASSWORD=secret
+      MYSQL_DATABASE: rstuf
+      MYSQL_ROOT_PASSWORD: secret
     volumes:
-      - "repository-service-tuf-pgsql-data:/var/lib/postgresql/data"
+      - repository-service-tuf-mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "postgres"]
-      interval: 1s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psecret"]
 
   repository-service-tuf-api:
     image: ghcr.io/repository-service-tuf/repository-service-tuf-api:${API_VERSION}
@@ -41,10 +28,12 @@ services:
     ports:
       - 80:80
     environment:
-      - RSTUF_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
-      - RSTUF_REDIS_SERVER="redis://redis"
+      - RSTUF_BROKER_SERVER=redis://redis
+      - RSTUF_REDIS_SERVER=redis://redis
     depends_on:
-      rabbitmq:
+      redis:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
 
   web:
@@ -61,6 +50,9 @@ services:
       - repository-service-tuf-redis-data:/data
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
 
   repository-service-tuf-worker:
     build:
@@ -71,26 +63,17 @@ services:
       - RSTUF_STORAGE_BACKEND=LocalStorage
       - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
       - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
-      - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
-      - RSTUF_DB_SERVER=postgresql://postgres:5432
-      - RSTUF_DB_USER=postgres
-      - RSTUF_DB_PASSWORD=secret
+      - RSTUF_BROKER_SERVER=redis://redis
       - RSTUF_REDIS_SERVER=redis://redis
+      - RSTUF_SQL_SERVER=mysql+pymysql://root:secret@mysql:3306/rstuf
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
       - ./tests/files/key_storage/:/var/opt/repository-service-tuf/key_storage
     depends_on:
-      rabbitmq:
+      redis:
         condition: service_healthy
-      postgres:
+      mysql:
         condition: service_healthy
     tty: true
     stdin_open: true
-
-  rstuf-ft-runner:
-    image: python:3.10-slim-buster
-    command: python -V
-    working_dir: /rstuf-runner
-    volumes:
-      - ./:/rstuf-runner

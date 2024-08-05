@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from math import log
 from typing import Any, Dict, List, Literal, Optional
+from urllib.parse import urlparse
 
 import redis
 from celery.app.task import Task
@@ -188,9 +189,16 @@ class MetadataRepository:
         db_user = self._worker_settings.get("DB_USER", sql_user)
         db_password = self._worker_settings.get("DB_PASSWORD", sql_password)
 
-        # clean 'postgresql://' if present
-        db_server = db_server_url.replace("postgresql://", "")
-        if db_user := self._worker_settings.get("DB_USER", sql_user):
+        # TODO: Remove this warning and default to postgresql://
+        if "://" not in db_server_url:
+            logging.warning(
+                "RSTUF_DB_SERVER does not contain a scheme. "
+                "Defaulting to postgresql://"
+            )
+            db_server_url = f"postgresql://{db_server_url}"
+        uri = urlparse(db_server_url)
+
+        if db_user:
             if db_password is None:
                 raise AttributeError(
                     "'Settings' object has no attribute 'DB_PASSWORD'"
@@ -203,12 +211,10 @@ class MetadataRepository:
                 except OSError as err:
                     logging.error(str(err))
                     raise err
-
-            db_uri = f"postgresql://{db_user}:{db_password}@{db_server}"
+            db_uri = f"{uri.scheme}://{db_user}:{db_password}@{uri.netloc}"
         else:
-            db_uri = f"postgresql://{db_server}"
+            db_uri = f"{uri.scheme}:{uri._replace(scheme='').geturl()}"
 
-        logging.info(f"DB URI: {db_uri}")
         settings.SQL = rstuf_db(db_uri)
         #
         # Backends
@@ -502,6 +508,12 @@ class MetadataRepository:
             )
 
         while True:
+            # If using MySQL/MariaDB, we need to commit the transaction in the
+            # subtask to see the changes in the main task.
+            # https://stackoverflow.com/questions/58212462/db-changes-made-in-a-celery-task-not-visible-in-the-main-thread # noqa
+            if "mysql" in self._db.bind.url.drivername:
+                self._db.commit()
+
             completed_roles: List[str] = []
             for role_name, artifacts in roles_to_artifacts.items():
                 for artifact in artifacts:
