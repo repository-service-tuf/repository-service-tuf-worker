@@ -77,3 +77,12 @@ services:
         condition: service_healthy
     tty: true
     stdin_open: true
+
+  rstuf-ft-runner:
+    image: python:3.10-slim-buster
+    command: python -V
+    working_dir: /rstuf-runner
+    environment:
+      - PERFORMANCE=false
+    volumes:
+      - ./:/rstuf-runner

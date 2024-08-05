@@ -1159,7 +1159,13 @@ class TestMetadataRepository:
 
     def test__update_task(self, test_repo, mocked_datetime):
         test_repo._db = pretend.stub(
-            refresh=pretend.call_recorder(lambda *a: None)
+            refresh=pretend.call_recorder(lambda *a: None),
+            bind=pretend.stub(
+                url=pretend.stub(
+                    drivername="mysql+pymysql",
+                )
+            ),
+            commit=pretend.call_recorder(lambda: None),
         )
 
         fake_target = pretend.stub(published=True)
@@ -1179,6 +1185,52 @@ class TestMetadataRepository:
             pretend.call(fake_target),
             pretend.call(fake_target),
         ]
+        assert test_repo._db.commit.calls == [pretend.call(), pretend.call()]
+        assert fake_update_state.calls == [
+            pretend.call(
+                state="RUNNING",
+                meta={
+                    "details": {
+                        "published_roles": ["bin-e"],
+                        "roles_to_publish": "['bin-e', 'bin-f']",
+                    },
+                    "message": "Publishing",
+                    "last_update": mocked_datetime.now(),
+                    "exc_type": None,
+                    "exc_message": None,
+                },
+            ),
+        ]
+
+    def test__update_task_when_postgresql(self, test_repo, mocked_datetime):
+        test_repo._db = pretend.stub(
+            refresh=pretend.call_recorder(lambda *a: None),
+            bind=pretend.stub(
+                url=pretend.stub(
+                    drivername="postgresql",
+                )
+            ),
+            commit=pretend.call_recorder(lambda: None),
+        )
+
+        fake_target = pretend.stub(published=True)
+        fake_bin_targets = {
+            "bin-e": [fake_target],
+            "bin-f": [fake_target, fake_target],
+        }
+        fake_update_state = pretend.call_recorder(lambda *a, **kw: None)
+        fake_subtask = pretend.stub(status=states.SUCCESS)
+        result = test_repo._update_task(
+            fake_bin_targets, fake_update_state, fake_subtask
+        )
+
+        assert result is None
+        assert test_repo._db.refresh.calls == [
+            pretend.call(fake_target),
+            pretend.call(fake_target),
+            pretend.call(fake_target),
+        ]
+        assert test_repo._db.commit.calls == []  # No commit for PostgreSQL
         assert fake_update_state.calls == [
             pretend.call(
                 state="RUNNING",
@@ -1197,7 +1249,12 @@ class TestMetadataRepository:
 
     def test__update_task_subtask_failure(self, test_repo, mocked_datetime):
         test_repo._db = pretend.stub(
-            refresh=pretend.call_recorder(lambda *a: None)
+            refresh=pretend.call_recorder(lambda *a: None),
+            bind=pretend.stub(
+                url=pretend.stub(
+                    drivername="postgresql",
+                )
+            ),
         )
 
         fake_target = pretend.stub(published=True)

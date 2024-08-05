@@ -1,4 +1,7 @@
 .PHONY: build-dev run-dev stop clean purge reformat tests requirements coverage docs
+ifeq ($(DC),)
+DC := docker-compose.yml
+endif
 
 build-dev:
 	docker build -t repository-service-tuf-worker:dev .
@@ -7,11 +10,9 @@ run-dev: export API_VERSION = dev
 run-dev:
 	$(MAKE) build-dev
 	docker pull ghcr.io/repository-service-tuf/repository-service-tuf-api:dev
-ifneq ($(DC),)
-	docker compose -f docker-compose-$(DC).yml up --remove-orphans
-else
-	docker compose -f docker-compose.yml up --remove-orphans
-endif
+
+	docker compose -f $(DC) up --remove-orphans
+
 
 
 db-migration:
@@ -19,11 +20,11 @@ db-migration:
 	docker compose run --rm --entrypoint='alembic revision --autogenerate -m "$(M)"' repository-service-tuf-worker
 
 stop:
-	docker compose down -v
+	docker compose -f $(DC) down -v
 
 clean:
 	$(MAKE) stop
-	docker compose rm --force
+	docker compose -f $(DC) rm --force
 	docker rm repository-service-tuf-worker-localstack-1 -f
 	rm -rf ./data
 	rm -rf ./data_test
@@ -73,10 +74,10 @@ ft-das:
 ifeq ($(GITHUB_ACTION),)
 	$(MAKE) clone-umbrella
 endif
-	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-das.sh $(CLI_VERSION) $(PYTEST_GROUP) $(SLOW)
+	docker compose -f $(DC) run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-das.sh $(CLI_VERSION) $(PYTEST_GROUP) $(SLOW)
 
 ft-das-local:
-	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-das.sh $(CLI_VERSION)
+	docker compose -f $(DC) run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-das.sh $(CLI_VERSION)
 
 
 ft-signed:
@@ -84,7 +85,7 @@ ft-signed:
 ifeq ($(GITHUB_ACTION),)
 	$(MAKE) clone-umbrella
 endif
-	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION) $(PYTEST_GROUP) $(SLOW)
+	docker compose -f $(DC) run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION) $(PYTEST_GROUP) $(SLOW)
 
 ft-signed-local:
-	docker compose run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION)
+	docker compose -f $(DC) run --env UMBRELLA_PATH=rstuf-umbrella --rm rstuf-ft-runner bash rstuf-umbrella/tests/functional/scripts/run-ft-signed.sh $(CLI_VERSION)
