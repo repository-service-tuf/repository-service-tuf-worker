@@ -21,7 +21,7 @@ jobs:
       run: |
         if [[ "$(egrep -w 'image:\s+repository-service-tuf-api|image:\s+repository-service-tuf-worker' docker-compose.yml -c)" -ne "0" ]]; then echo "Local image has been used in docker-compose.yml" && exit 1; fi
 
-    - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f
+    - uses: actions/setup-python@f677139bbe7f9c59b41e40162b753c062f5d49a3
       with:
         python-version: ${{ matrix.python-versions }}
 
