@@ -84,6 +84,23 @@ def read_role_by_rolename(
         db.query(models.RSTUFTargetRoles)
         .filter(
             models.RSTUFTargetRoles.rolename == rolename,
+            models.RSTUFTargetRoles.active == True,
+        )
+        .first()
+    )
+
+
+def read_role_deactivated_by_rolename(
+    db: Session, rolename: str
+) -> Optional[models.RSTUFTargetRoles]:
+    """
+    Read a Target role by a given role name.
+    """
+    return (
+        db.query(models.RSTUFTargetRoles)
+        .filter(
+            models.RSTUFTargetRoles.rolename == rolename,
+            models.RSTUFTargetRoles.active == False,
         )
         .first()
     )
@@ -93,7 +110,11 @@ def read_all_roles(db: Session) -> List[models.RSTUFTargetRoles]:
     """
     Read a all Target bin roles.
     """
-    return db.query(models.RSTUFTargetRoles).all()
+    return (
+        db.query(models.RSTUFTargetRoles)
+        .filter(models.RSTUFTargetRoles.active == True)
+        .all()
+    )
 
 
 def read_roles_joint_files(
@@ -109,6 +130,7 @@ def read_roles_joint_files(
         )
         .join(models.RSTUFTargetFiles)
         .filter(
+            models.RSTUFTargetRoles.active == True,
             models.RSTUFTargetRoles.rolename.in_(rolenames),
         )
         .all()
@@ -183,3 +205,18 @@ def update_file_action_to_remove(
     db.refresh(target)
 
     return target
+
+
+def update_role_to_deactivated(
+    db: Session, role: models.RSTUFTargetRoles
+) -> models.RSTUFTargetRoles:
+    """
+    Update Target role `active` to False.
+    """
+    role.active = False
+    role.last_update = datetime.now(timezone.utc)
+    db.add(role)
+    db.commit()
+    db.refresh(role)
+
+    return role
