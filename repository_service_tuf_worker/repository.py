@@ -383,7 +383,7 @@ class MetadataRepository:
             elif bump_all:
                 db_target_roles = targets_crud.read_all_roles(self._db)
             else:
-                ValueError("'bump_all' or 'target_roles")
+                raise ValueError("'bump_all' or 'target_roles")
 
             snapshot_meta_updated = False
             for db_role in db_target_roles:
@@ -497,7 +497,7 @@ class MetadataRepository:
 
             return snapshot.signed.version
         else:
-            None
+            return None
 
     def _update_targets_delegations_key(self, targets: Metadata[Targets]):
         """
