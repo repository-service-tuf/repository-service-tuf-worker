@@ -898,7 +898,7 @@ class MetadataRepository:
 
         if targets.signed.delegations.succinct_roles:
             raise RepositoryError(
-                "Delegations already using hash-bins, cannot add custom roles"
+                "Delegations already using hash-bins, cannot delete custom roles"
             )
 
         # remove role from Targets delegations and mapping role unique keys
