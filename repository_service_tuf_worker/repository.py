@@ -736,7 +736,7 @@ class MetadataRepository:
             if key not in other_keys:
                 logging.debug(f"removing key id {key}")
                 targets.signed.delegations.keys.delete(key)
-             else:
+            else:
                 logging.debug(f"key {key} used by other role")
 
     def _add_delegated_role_keys(
@@ -899,7 +899,8 @@ class MetadataRepository:
 
         if targets.signed.delegations.succinct_roles:
             raise RepositoryError(
-                "Delegations already using hash-bins, cannot delete custom roles"
+                "Delegations already using hash-bins, cannot delete custom "
+                "roles"
             )
 
         # remove role from Targets delegations and mapping role unique keys
@@ -1034,6 +1035,9 @@ class MetadataRepository:
             logging.debug("verifying delegations threshold")
             for role in success:
                 if self._validate_threshold(success[role], targets, role):
+                    # If the role uses online key it was signed by while
+                    # adding the role by self._add_metadata_delegation.
+                    # if the threshold is met, role is full signed
                     logging.debug(f"role '{role}' uses only online key")
                     snapshot.signed.meta[f"{role}.json"] = MetaFile(
                         success[role].signed.version
