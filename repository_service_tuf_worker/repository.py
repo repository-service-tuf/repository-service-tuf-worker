@@ -736,7 +736,8 @@ class MetadataRepository:
             if key not in other_keys:
                 logging.debug(f"removing key id {key}")
                 targets.signed.delegations.keys.delete(key)
-            logging.debug(f"key {key} used by other role")
+             else:
+                logging.debug(f"key {key} used by other role")
 
     def _add_delegated_role_keys(
         self,
