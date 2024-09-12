@@ -947,7 +947,8 @@ class MetadataRepository:
 
         if targets.signed.delegations.succinct_roles:
             raise RepositoryError(
-                "Delegations already using hash-bins, cannot update custom roles"
+                "Delegations already using hash-bins, cannot update"
+                "custom roles"
             )
 
         success = {}
