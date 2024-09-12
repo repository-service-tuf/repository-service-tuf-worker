@@ -941,20 +941,20 @@ class MetadataRepository:
         self,
         delegations: Delegations,
     ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
-        """Create a custom delegation role"""
+        """Update a custom delegation role"""
 
         targets = self._storage_backend.get(Targets.type)
 
         if targets.signed.delegations.succinct_roles:
             raise RepositoryError(
-                "Delegations already using hash-bins, cannot add custom roles"
+                "Delegations already using hash-bins, cannot update custom roles"
             )
 
         success = {}
         failed = []
         u_role: DelegatedRole  # updated role
         o_role: DelegatedRole  # old role
-        logging.debug("adding roles to Targets delegations")
+        logging.debug("updating roles in Targets delegations")
         current_delegations = copy.deepcopy(targets.signed.delegations)
         for u_role in delegations.roles.values():
             for o_role in current_delegations.roles.values():
@@ -2167,7 +2167,6 @@ class MetadataRepository:
             msg = f"No signatures pending for {rolename}"
             return _result(False, error=msg)
 
-        # Assert metadata type is root
         metadata = Metadata.from_dict(metadata_dict)
 
         # If it isn't a "bootstrap" signing event, it must be "update metadata"
