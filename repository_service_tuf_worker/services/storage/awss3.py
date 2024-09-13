@@ -134,7 +134,9 @@ class AWSS3(IStorage):
             )
             file_object = s3_object.get("Body")
             return Metadata.from_bytes(file_object.read())
-        except DeserializationError as e:
+        except (DeserializationError, ClientError) as e:
+            if "NoSuchKey" in str(e):
+                raise StorageError(f"Role '{role}' not found") from e
             raise StorageError(f"Can't open Role '{role}'") from e
         finally:
             if file_object is not None:
