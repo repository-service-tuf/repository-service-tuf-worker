@@ -80,6 +80,7 @@ jobs:
   functional-das-slow:
     name: "DAS Slow"
     runs-on: ubuntu-latest
+    if: !contains(github.event.commits[0].message, '[skip slow]')
 
     steps:
       - name: Checkout RSTUF Worker source code
