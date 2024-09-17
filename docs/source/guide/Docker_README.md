@@ -68,46 +68,20 @@ The result backend must to be compatible with Celery. See
 
 Example: `redis://redis`
 
-#### (Deprecated see `RSTUF_DB_SERVER`) `RSTUF_SQL_SERVER`
-
-RSTUF requires [PostgreSQL](https://www.postgresql.org) or [MySQL/MariaDB](https://mariadb.org).
-
-Scheme
-  - PostgreSQL: `postgresql://`
-  - MySQL/MariaDB: `mysql+pymysql://`
-
-Example: `postgresql://mypgsql:5432` or `mysql+pymysql://mymysql:3306`
-
-* Optional variables:
-
-  * `RSTUF_SQL_USER` (Deprecated see `RSTUF_DB_USER`) optional information
-    about the user name
-
-    If using this optional variable:
-    - Do not include the user in the `RSTUF_SQL_SERVER`.
-    - The `RSTUF_SQL_PASSWORD` becomes required
-
-  * `RSTUF_SQL_PASSWORD` (Deprecated see `RSTUF_DB_PASSWORD`) use this variable to provide the password separately.
-    - Do not include the password in the `RSTUF_SQL_SERVER`
-    - This environment variable supports container secrets when the `/run/secrets`
-      volume is added to the path.
-
-  Example:
-  ```
-  RSTUF_SQL_SERVER=sqlserver:5432
-  RSTUF_SQL_USER=postgres
-  RSTUF_SQL_PASSWORD=/run/secrets/POSTGRES_PASSWORD
-  ```
-
 #### (Required) `RSTUF_DB_SERVER`
 
-RSTUF requires [PostgreSQL](https://www.postgresql.org) or [MySQL/MariaDB](https://mariadb.org).
+RSTUF requires [PostgreSQL](https://www.postgresql.org)
+
+> **Note:** [MySQL/MariaDB](https://mariadb.org) is also supported, but is not recommended
+> for production use at this time. We still have an opened issue to solve.
+> See https://github.com/repository-service-tuf/repository-service-tuf-worker/issues/598
+
 
 Scheme
   - PostgreSQL: `postgresql://`
-  - MySQL/MariaDB: `mysql+pymysql://`
+  - MySQL/MariaDB: `mysql+pymysql://` (not recommended for production)
 
-Example: `postgresql://mypgsql:5432` or `mysql+pymysql://mymysql:3306`
+Example: `postgresql://mypgsql:5432`
 
 * Optional variables:
 
