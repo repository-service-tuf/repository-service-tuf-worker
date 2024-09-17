@@ -26,6 +26,7 @@ def upgrade() -> None:
         sa.Column("rolename", sa.String(length=512), nullable=False),
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("last_update", sa.DateTime(), nullable=True),
+        sa.Column("active", sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -33,6 +34,12 @@ def upgrade() -> None:
         "rstuf_target_roles",
         ["id"],
         unique=False,
+    )
+    op.create_index(
+        op.f("ix_rstuf_target_roles_rolename"),
+        "rstuf_target_roles",
+        ["rolename"],
+        unique=True,
     )
     op.create_table(
         "rstuf_target_files",

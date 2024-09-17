@@ -139,7 +139,9 @@ class TestCrud:
 
     def test_read_role_by_rolename(self, monkeypatch):
         monkeypatch.setattr(
-            crud.models, "RSTUFTargetRoles", pretend.stub(rolename="bins-0")
+            crud.models,
+            "RSTUFTargetRoles",
+            pretend.stub(rolename="bins-0", active=True),
         )
         mocked_first = pretend.stub(
             first=pretend.call_recorder(lambda: [crud.models.RSTUFTargetRoles])
@@ -157,15 +159,18 @@ class TestCrud:
         assert mocked_db.query.calls == [
             pretend.call(crud.models.RSTUFTargetRoles)
         ]
-        assert mocked_filter.filter.calls == [pretend.call(True)]
+        assert mocked_filter.filter.calls == [pretend.call(True, True)]
         assert mocked_first.first.calls == [pretend.call()]
 
     def test_read_all_roles(self):
         mocked_all = pretend.stub(
             all=pretend.call_recorder(lambda: [crud.models.RSTUFTargetRoles])
         )
+        mocked_filter = pretend.stub(
+            filter=pretend.call_recorder(lambda *a: mocked_all)
+        )
         mocked_db = pretend.stub(
-            query=pretend.call_recorder(lambda *a: mocked_all)
+            query=pretend.call_recorder(lambda *a: mocked_filter)
         )
         test_result = crud.read_all_roles(mocked_db)
         assert test_result == [crud.models.RSTUFTargetRoles]
@@ -176,7 +181,8 @@ class TestCrud:
 
     def test_read_roles_joint_files(self):
         crud.models.RSTUFTargetRoles = pretend.stub(
-            rolename=pretend.stub(in_=pretend.call_recorder(lambda *a: True))
+            rolename=pretend.stub(in_=pretend.call_recorder(lambda *a: True)),
+            active=True,
         )
         mocked_all = pretend.stub(
             all=pretend.call_recorder(lambda: [crud.models.RSTUFTargetRoles])
@@ -197,7 +203,7 @@ class TestCrud:
         assert mocked_db.query.calls == [
             pretend.call(crud.models.RSTUFTargetRoles)
         ]
-        assert mocked_filter.filter.calls == [pretend.call(True)]
+        assert mocked_filter.filter.calls == [pretend.call(True, True)]
         assert crud.models.RSTUFTargetRoles.rolename.in_.calls == [
             pretend.call("bins-0")
         ]

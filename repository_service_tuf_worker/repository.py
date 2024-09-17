@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import copy
 import enum
 import logging
 import time
@@ -10,7 +11,7 @@ import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from math import log
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlparse
 
 import redis
@@ -18,7 +19,7 @@ from celery.app.task import Task
 from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
-from securesystemslib.exceptions import UnverifiedSignatureError
+from securesystemslib.exceptions import StorageError, UnverifiedSignatureError
 from securesystemslib.signer import (
     KEY_FOR_TYPE_AND_SCHEME,
     Key,
@@ -103,6 +104,7 @@ class TaskName(str, enum.Enum):
     PUBLISH_ARTIFACTS = "publish_artifacts"
     FORCE_ONLINE_METADATA_UPDATE = "force_online_metadata_update"
     METADATA_UPDATE = "metadata_update"
+    METADATA_DELEGATION = "metadata_delegation"
     SIGN_METADATA = "sign_metadata"
     DELETE_SIGN_METADATA = "delete_sign_metadata"
 
@@ -273,6 +275,11 @@ class MetadataRepository:
             if role_name == Root.type:
                 self.write_repository_settings("TRUSTED_ROOT", role.to_dict())
 
+            if role_name == Targets.type:
+                self.write_repository_settings(
+                    "TRUSTED_TARGETS", role.to_dict()
+                )
+
         bytes_data = role.to_bytes(JSONSerializer())
         self._storage_backend.put(bytes_data, filename)
         logging.debug(f"{filename} saved")
@@ -308,29 +315,42 @@ class MetadataRepository:
         if persist:
             self._persist(role, role_name)
 
-    def _update_timestamp(self, snapshot_version: int) -> Metadata[Timestamp]:
+    def _update_timestamp(
+        self,
+        snapshot_version: Optional[int] = None,
+        skip: Optional[bool] = False,
+    ) -> Metadata[Timestamp]:
         """
         Loads 'timestamp', updates meta info about passed 'snapshot'
         metadata, bumps version and expiration, signs and persists.
 
         Args:
-            snapshot_version: snapshot version to add to new timestamp.
-            db_targets: RSTUFTarget DB objects will be changed as published in
-                the DB SQL.
+            snapshot_version: Optional snapshot version to new timestamp.
+            skip: Skip bumping version and expiration if snpashot
+            version is not provided
         """
         timestamp: Metadata[Timestamp] = self._storage_backend.get(
             Timestamp.type, None
         )
+        if not snapshot_version and skip:
+            logging.debug(
+                "No snapshot version and skip is True. Not bumping Timestamp"
+            )
+            return timestamp
+
         timestamp.signed.snapshot_meta = MetaFile(version=snapshot_version)
 
         self._bump_and_persist(timestamp, Timestamp.type)
 
+        logging.debug("Bumped version of 'Target' role")
         return timestamp
 
     def _update_snapshot(
         self,
         target_roles: Optional[List[str]] = None,
         bump_all: Optional[bool] = False,
+        only_target: Optional[bool] = False,
+        only_snapshot: Optional[bool] = False,
     ) -> int:
         """
         Loads 'snapshot', updates meta info when 'target_roles' role names are
@@ -342,6 +362,9 @@ class MetadataRepository:
                 will NOT be taken into account.
             bump_all: Wheter to bump all delegated target roles. If provided,
                 then 'target_roles' arg is NOT taken into acount.
+            only_target: Updates only Targets role in the Snapshot Meta.
+                It doesn't Bump and Persist Targets.
+            only_snapshot: Bump and Persist Snapshot Role only.
         """
         snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
         targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
@@ -349,17 +372,39 @@ class MetadataRepository:
             True if targets.signed.delegations.succinct_roles else False
         )
 
-        db_target_roles: List[targets_models.RSTUFTargetRoles] = []
-        if target_roles:
-            db_target_roles = targets_crud.read_roles_joint_files(
-                self._db, target_roles
-            )
+        snapshot_meta_updated = False
 
+        db_target_roles: List[targets_models.RSTUFTargetRoles] = []
+        if target_roles or bump_all:
+            if target_roles:
+                db_target_roles = targets_crud.read_roles_joint_files(
+                    self._db, target_roles
+                )
+            elif bump_all:
+                db_target_roles = targets_crud.read_all_roles(self._db)
+            else:
+                raise ValueError("'bump_all' or 'target_roles")
+
+            snapshot_meta_updated = False
             for db_role in db_target_roles:
                 rolename = db_role.rolename
-                delegation: Metadata[Targets] = self._storage_backend.get(
-                    rolename
-                )
+                try:
+                    delegation: Metadata[Targets] = self._storage_backend.get(
+                        rolename
+                    )
+                    logging.debug(f"role {rolename} loaded from disk")
+                    source = "storage"
+                except StorageError as err:
+                    if delegation_signing := self._settings.get_fresh(
+                        f"{rolename.upper()}_SIGNING"
+                    ):
+                        delegation = Metadata[Targets].from_dict(
+                            delegation_signing
+                        )
+                        logging.debug(f"role {rolename} loaded from singing")
+                        source = "signing"
+                    else:
+                        raise err
                 delegation.signed.targets.clear()
                 delegation.signed.targets = {
                     file.path: TargetFile.from_dict(file.info, file.path)
@@ -374,59 +419,85 @@ class MetadataRepository:
                     # will return None for this specific role.
                 }
                 delegation_name = BINS if bins_used else rolename
-                # update expiry, bump version and persist to the storage
-                self._bump_and_persist(
-                    delegation, delegation_name, persist=False
-                )
-                self._persist(delegation, rolename)
                 # update targetfile in db
                 # note: It update only if is not published see the CRUD.
                 targets_crud.update_files_to_published(
                     self._db, [file.path for file in db_role.target_files]
                 )
+                delegation_keyids = List[str]
+                if targets.signed.delegations.succinct_roles:
+                    logging.debug("delegations using succinct delegations")
+                    delegation_keyids = (
+                        targets.signed.delegations.succinct_roles.keyids
+                    )
+                else:
+                    logging.debug("delegations using custom delegations")
+                    delegation_keyids = targets.signed.delegations.roles[
+                        delegation_name
+                    ].keyids
 
-                snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                    version=delegation.signed.version
-                )
+                if (
+                    len(delegation_keyids) == 1
+                    and self._online_key.keyid in delegation_keyids
+                ):
+                    logging.debug(f"role {rolename} full online keys")
+                    logging.debug("update expiry, bump version and persist")
+                    self._bump_and_persist(
+                        delegation, delegation_name, persist=False
+                    )
+                    self._persist(delegation, rolename)
+                    snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
+                        version=delegation.signed.version
+                    )
+                    snapshot_meta_updated = True
 
-            roles = "".join(target_roles)
-            msg = f"Bumped all expired target delegation roles: {roles}"
-            logging.info(msg)
+                elif (
+                    len(delegation_keyids) > 1
+                    and self._online_key.keyid in delegation_keyids
+                ):
+                    logging.debug(f"role {rolename} online/offline keys")
+                    self._bump_expiry(delegation, rolename)
+                    if source == "storage":
+                        self._bump_version(delegation)
+                    self._sign(delegation)
+                    self.write_repository_settings(
+                        f"{rolename.upper()}_SIGNING", delegation.to_dict()
+                    )
 
-        elif bump_all:
-            db_target_roles = targets_crud.read_all_roles(self._db)
-            for db_role in db_target_roles:
-                rolename = db_role.rolename
-                delegation: Metadata[Targets] = self._storage_backend.get(
-                    db_role.rolename
-                )
-                delegation_name = BINS if bins_used else rolename
-                # update expiry, bump version and persist to the storage
-                self._bump_and_persist(
-                    delegation, delegation_name, persist=False
-                )
-                self._persist(delegation, db_role.rolename)
+                else:
+                    logging.debug(f"role {rolename} offline keys")
+                    delegation.signatures.clear()
+                    self._bump_expiry(delegation, rolename)
+                    if source == "storage":
+                        self._bump_version(delegation)
+                    self.write_repository_settings(
+                        f"{rolename.upper()}_SIGNING", delegation.to_dict()
+                    )
 
-                snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                    version=delegation.signed.version
-                )
+        if only_target:
+            snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
+                version=targets.signed.version
+            )
+            self._bump_and_persist(snapshot, Snapshot.type)
+            logging.debug("Bumped version of 'Snapshot' role")
+            snapshot_meta_updated = True
 
-            logging.info("Bumped all target delegation roles")
+        if only_snapshot:
+            self._bump_and_persist(snapshot, Snapshot.type)
+            logging.debug("Bumped version of 'Snapshot' role")
 
-        if len(db_target_roles) > 0:
+        if len(db_target_roles) > 0 and snapshot_meta_updated:
             targets_crud.update_roles_version(
                 self._db, [int(db_role.id) for db_role in db_target_roles]
             )
 
-        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
-            version=targets.signed.version
-        )
+        if snapshot_meta_updated:
+            self._bump_and_persist(snapshot, Snapshot.type)
+            logging.debug("Bumped version of 'Snapshot' role")
 
-        # update expiry, bump version and persist to the storage
-        self._bump_and_persist(snapshot, Snapshot.type)
-        logging.info("Bumped version of 'Snapshot' role")
-
-        return snapshot.signed.version
+            return snapshot.signed.version
+        else:
+            return None
 
     def _update_targets_delegations_key(self, targets: Metadata[Targets]):
         """
@@ -449,8 +520,9 @@ class MetadataRepository:
 
         else:
             for role in targets.signed.delegations.roles.values():
-                targets.signed.revoke_key(old_online_keyid, role.name)
-                targets.signed.add_key(new_online_key, role.name)
+                if old_online_keyid in role.keyids:
+                    targets.signed.revoke_key(old_online_keyid, role.name)
+                    targets.signed.add_key(new_online_key, role.name)
 
     def _get_role_for_artifact_path(self, artifact_path: str) -> Optional[str]:
         """
@@ -607,108 +679,389 @@ class MetadataRepository:
             )
 
         else:
-            delegated_roles = roles_info["delegated_roles"]
             self.write_repository_settings(
-                "CUSTOM_DELEGATED_ROLES", delegated_roles
+                "DELEGATIONS", roles_info.get("delegations")
             )
-            for deleg_name, deleg_info in delegated_roles.items():
-                name = deleg_name.upper()
-                self.write_repository_settings(
-                    f"{name}_EXPIRATION", deleg_info["expiration"]
-                )
-                self.write_repository_settings(f"{name}_THRESHOLD", 1)
-                self.write_repository_settings(f"{name}_NUM_KEYS", 1)
-                self.write_repository_settings(
-                    f"{name}_PATH_PATTERNS",
-                    delegated_roles[deleg_name]["path_patterns"],
-                )
 
-    def _setup_targets_delegations(
+    def _add_metadata_hashbin_delegations(
         self,
-        online_pub_key: Key,
         targets: Metadata[Targets],
-        custom_targets: Optional[Dict[str, Any]] = None,
     ):
         """Setup target delegations no matter if succinct hash bin or custom"""
         delegated_roles: List[str] = []
-        if custom_targets:
-            # Using custom Target roles delegations with path prefixes.
-            targets.signed.delegations = Delegations({}, {})
-            for role_name, role_info in custom_targets.items():
-                keyid = online_pub_key.keyid
-                targets.signed.delegations.roles[role_name] = DelegatedRole(
-                    role_name, [keyid], 1, True, role_info["path_patterns"]
-                )
-                targets.signed.add_key(online_pub_key, role_name)
-                custom_target = Metadata(Targets())
-                self._bump_expiry(custom_target, role_name)
-                self._sign(custom_target)
-                self._persist(custom_target, role_name)
-                delegated_roles.append(role_name)
-        else:
-            # Using succinct hash bin delegations.
-            # Calculate the bit length (Number of bits between 1 and 32)
-            # Calculate the bit length (Number of bits between 1 and 32)
-            bit_length = int(
-                log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"), 2)
-            )
-            # Succinct delegated roles (`bins`)
-            succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
-            targets.signed.delegations = Delegations(
-                keys={}, succinct_roles=succinct_roles
-            )
-            # Initialize all succinct delegated roles (`bins`), update expire,
-            # sign, add to `Snapshot` meta and persist in the backend storage
-            # service.
-            for delegated_name in succinct_roles.get_roles():
-                targets.signed.add_key(online_pub_key, delegated_name)
-                bins_role = Metadata(Targets())
-                self._bump_expiry(bins_role, BINS)
-                self._sign(bins_role)
-                self._persist(bins_role, delegated_name)
-                delegated_roles.append(delegated_name)
 
-        self.write_repository_settings(
-            "DELEGATED_ROLES_NAMES", delegated_roles
+        # Using succinct hash bin delegations.
+        # Calculate the bit length (Number of bits between 1 and 32)
+        # Calculate the bit length (Number of bits between 1 and 32)
+        bit_length = int(
+            log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"), 2)
         )
+        # Succinct delegated roles (`bins`)
+        succinct_roles = SuccinctRoles([], 1, bit_length, BINS)
+        targets.signed.delegations = Delegations(
+            keys={}, succinct_roles=succinct_roles
+        )
+        # Initialize all succinct delegated roles (`bins`), update expire,
+        # sign, add to `Snapshot` meta and persist in the backend storage
+        # service.
+        db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
+
+        for delegated_name in succinct_roles.get_roles():
+            targets.signed.add_key(self._online_key, delegated_name)
+            bins_role = Metadata(Targets())
+            db_target_roles.append(
+                targets_schema.RSTUFTargetRoleCreate(
+                    rolename=delegated_name, version=1
+                )
+            )
+            self._bump_expiry(bins_role, BINS)
+            self._sign(bins_role)
+            self._persist(bins_role, delegated_name)
+            delegated_roles.append(delegated_name)
+
+        targets_crud.create_roles(self._db, db_target_roles)
+
+    def _remove_delegated_role_keys(
+        self, targets: Metadata[Targets], delegated: DelegatedRole
+    ):
+        other_keys = []
+        logging.debug("mapping keys")
+        for not_delete in targets.signed.delegations.roles:
+            if not_delete == delegated:
+                continue
+            other_keys += targets.signed.delegations.roles[not_delete].keyids
+
+        role_keys = targets.signed.delegations.roles[delegated.name].keyids
+        for key in role_keys:
+            if key not in other_keys:
+                logging.debug(f"removing key id {key}")
+                targets.signed.delegations.keys.delete(key)
+            else:
+                logging.debug(f"key {key} used by other role")
+
+    def _add_delegated_role_keys(
+        self,
+        targets: Metadata[Targets],
+        delegations: Delegations,
+        role_name: str,
+        role_metadata: Optional[Metadata[Targets]] = None,
+    ):
+        if len(delegations.roles[role_name].keyids) == 0:
+            logging.debug(f"role '{role_name}' without key, adding online key")
+            delegations.roles[role_name].keyids.append(self._online_key.keyid)
+
+        for keyid in delegations.roles[role_name].keyids:
+            if keyid not in targets.signed.delegations.keys.keys():
+                logging.debug(f"added key id {keyid}")
+                if delegation_key := delegations.keys[keyid]:
+                    targets.signed.delegations.keys[keyid] = delegation_key
+                else:
+                    raise ValueError(f"role {role_name} has inconsistent keys")
+            if keyid == self._online_key.keyid and role_metadata:
+                logging.debug(f"role '{role_name}' using online key, signing")
+                self._sign(role_metadata)
+
+    def _update_delegated_roles(
+        self,
+        targets: Metadata[Targets],
+        updated_delegated: DelegatedRole,
+        old_delegated: DelegatedRole,
+    ):
+        # NOTE: we don't support renaming and we verify it before
+        role_name = updated_delegated.name
+        # we can detect if keys are different, remove and add
+        if updated_delegated.keyids != old_delegated.keyids:
+            logging.debug("Identified different keys remove and add")
+
+            # remove keys
+            self._remove_delegated_role_keys(targets, old_delegated)
+        else:
+            logging.debug(f"role {role_name} has same keys")
+
+        targets.signed.delegations.roles.pop(role_name)
+        targets.signed.delegations.roles[role_name] = updated_delegated
+
+        # update expire policy
+        expires = updated_delegated.unrecognized_fields[
+            "x-rstuf-expire-policy"
+        ]
+        if expires != self._settings.get_fresh(
+            f"{role_name.upper()}_EXPIRATION"
+        ):
+            logging.debug(f"updating expire policy for role {role_name} ")
+            self.write_repository_settings(
+                f"{role_name.upper()}_EXPIRATION", expires
+            )
+
+    def _add_metadata_delegation(
+        self,
+        delegations: Delegations,
+        targets: Optional[Metadata[Targets]] = None,
+        persist_targets: Optional[bool] = True,
+    ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
+        """Create a custom delegation role"""
+
+        if targets is None:
+            targets = self._storage_backend.get(Targets.type)
+
+        if targets.signed.delegations.succinct_roles:
+            raise RepositoryError(
+                "Delegations already using hash-bins, cannot add custom roles"
+            )
+
+        success = {}
+        failed = []
+        db_roles = []
+
+        logging.debug("adding roles to Targets delegations")
+        for role in delegations.roles:
+            if targets.signed.delegations.roles is None:
+                logging.debug("initializing Target delegations")
+                targets.signed.delegations.roles = {}
+
+            if (
+                role in targets.signed.delegations.roles
+                or targets_crud.read_role_deactivated_by_rolename(
+                    self._db, role
+                )
+            ):
+                logging.info(f"Role '{role}' already exists, skipping")
+                failed.append(
+                    {
+                        "role": role,
+                        "reason": (
+                            "role already exists or name used in the past",
+                        ),
+                    }
+                )
+                continue
+
+            # create delegated target role
+            role_metadata = Metadata(Targets(version=1))
+
+            # save expiration settings
+            expires = delegations.roles[role].unrecognized_fields[
+                "x-rstuf-expire-policy"
+            ]
+            self.write_repository_settings(
+                f"{role.upper()}_EXPIRATION", expires
+            )
+
+            # add keys to the delegated target role
+            # if no key is assigned, use the online key
+            if (
+                len(delegations.roles[role].keyids) == 0
+                and delegations.roles[role].threshold > 1
+            ):
+                failed.append(
+                    {
+                        "role": role,
+                        "reason": "If no keys assigned threshold must be 1",
+                    }
+                )
+
+            self._add_delegated_role_keys(
+                targets, delegations, role, role_metadata
+            )
+
+            if role not in targets.signed.delegations.roles:
+                logging.info(f"Role '{role}' added to Targets delegations")
+                targets.signed.delegations.roles[role] = delegations.roles[
+                    role
+                ]
+
+            success[role] = role_metadata
+
+            logging.debug(f"creating role db '{role}' schema")
+            db_roles = targets_schema.RSTUFTargetRoleCreate(
+                rolename=role, version=role_metadata.signed.version
+            )
+            targets_crud.create_roles(self._db, [db_roles])
+
+        if persist_targets and len(success) > 0:
+            self._bump_and_persist(targets, Targets.type)
+            self._update_timestamp(
+                self._update_snapshot(only_target=True), skip=True
+            )
+
+        return (success, failed)
+
+    def _delete_metadata_delegation(
+        self,
+        delegations: List[str],
+    ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
+        """Create a custom delegation role"""
+
+        targets = self._storage_backend.get(Targets.type)
+        snapshot = self._storage_backend.get(Snapshot.type)
+        success = []
+        failed = []
+
+        if targets.signed.delegations.succinct_roles:
+            raise RepositoryError(
+                "Delegations already using hash-bins, cannot delete custom "
+                "roles"
+            )
+
+        # remove role from Targets delegations and mapping role unique keys
+        for role in delegations.get("roles"):
+            rolename = role["name"]
+            if rolename not in targets.signed.delegations.roles:
+                logging.info(f"Role '{rolename}' does not exists, skipping")
+                failed.append(
+                    {
+                        "role": rolename,
+                        "reason": f"Role '{rolename}' does not exists",
+                    }
+                )
+                continue
+            delegated_role = targets.signed.delegations.roles[rolename]
+            self._remove_delegated_role_keys(targets, delegated_role)
+
+            logging.debug(f"removing role '{rolename}'")
+            targets.signed.delegations.roles.pop(rolename)
+            logging.debug(
+                f"role '{rolename}' removed from Targets delegations"
+            )
+            snapshot.signed.meta.pop(f"{rolename}.json", None)
+            self.write_repository_settings(f"{rolename.upper()}_SIGNING", None)
+            db_role = targets_crud.read_role_by_rolename(self._db, rolename)
+            targets_crud.update_role_to_deactivated(self._db, db_role)
+            success.append(rolename)
+
+        if success:
+            self._bump_and_persist(targets, Targets.type)
+            self._update_timestamp(
+                self._update_snapshot(only_target=True), skip=True
+            )
+
+        return (success, failed)
+
+    def _update_metadata_delegation(
+        self,
+        delegations: Delegations,
+    ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
+        """Update a custom delegation role"""
+
+        targets = self._storage_backend.get(Targets.type)
+
+        if targets.signed.delegations.succinct_roles:
+            raise RepositoryError(
+                "Delegations already using hash-bins, cannot update"
+                "custom roles"
+            )
+
+        success = {}
+        failed = []
+        u_role: DelegatedRole  # updated role
+        o_role: DelegatedRole  # old role
+        logging.debug("updating roles in Targets delegations")
+        current_delegations = copy.deepcopy(targets.signed.delegations)
+        for u_role in delegations.roles.values():
+            for o_role in current_delegations.roles.values():
+                if u_role.name == o_role.name:
+                    if len(u_role.keyids) == 0 and u_role.threshold > 1:
+                        logging.debug(f"failed {u_role} due invalid threshold")
+                        failed.append(
+                            {
+                                "role": u_role.name,
+                                "reason": (
+                                    "If no keys assigned threshold must be 1"
+                                ),
+                            }
+                        )
+                        continue
+
+                    self._update_delegated_roles(targets, u_role, o_role)
+
+                    self._add_delegated_role_keys(
+                        targets, delegations, u_role.name
+                    )
+
+                    # not need the role metadata (update later by timestamp)
+                    success[u_role.name] = None
+                else:
+                    logging.debug(f"failed role {u_role.name} doesn't exist")
+                    failed.append(
+                        {
+                            "role": u_role.name,
+                            "reason": f"role {u_role} doesn't exist.",
+                        }
+                    )
+
+        if success:
+            self._bump_and_persist(targets, Targets.type)
+            self._update_timestamp(
+                self._update_snapshot(
+                    target_roles=[r for r in success], only_target=True
+                ),
+                skip=True,
+            )
+
+        return (success, failed)
 
     def _bootstrap_online_roles(
         self,
-        root: Metadata[Root],
-        custom_targets: Optional[Dict[str, Any]] = None,
+        delegations: Optional[Delegations] = None,
     ):
         """
         Bootstrap the roles that uses the online key
         """
         # Top level roles (`Targets`, `Timestamp``, `Snapshot`) initialization
+        logging.info("Bootstrap online roles")
         targets: Metadata[Targets] = Metadata(Targets())
+        targets.signed.delegations = Delegations({}, {})
         snapshot: Metadata[Snapshot] = Metadata(Snapshot())
+        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile()
         timestamp: Metadata[Timestamp] = Metadata(Timestamp())
 
-        _keyid: str = root.signed.roles[Timestamp.type].keyids[0]
-        public_key = root.signed.keys[_keyid]
-        self._setup_targets_delegations(public_key, targets, custom_targets)
-
-        db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
-        delegated_names = self._settings.get_fresh("DELEGATED_ROLES_NAMES")
-        for role_name in delegated_names:
-            snapshot.signed.meta[f"{role_name}.json"] = MetaFile()
-
-            db_target_roles.append(
-                targets_schema.RSTUFTargetRoleCreate(
-                    rolename=role_name, version=1
-                )
+        if self._online_key.keyid not in targets.signed.delegations.keys:
+            logging.debug("online key not in targets, adding key")
+            targets.signed.delegations.keys[self._online_key.keyid] = (
+                self._online_key
             )
 
-        targets_crud.create_roles(self._db, db_target_roles)
-        snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile()
+        online_roles = {
+            Targets.type: targets,
+            Snapshot.type: snapshot,
+            Timestamp.type: timestamp,
+        }
+
+        if delegations:
+            logging.info("Bootstrap using custom delegations")
+            success, _ = self._add_metadata_delegation(
+                delegations, targets, persist_targets=False
+            )
+
+            logging.debug("verifying delegations threshold")
+            for role in success:
+                if self._validate_threshold(success[role], targets, role):
+                    # If the role uses online key it was signed by while
+                    # adding the role by self._add_metadata_delegation.
+                    # if the threshold is met, role is full signed
+                    logging.debug(f"role '{role}' uses only online key")
+                    snapshot.signed.meta[f"{role}.json"] = MetaFile(
+                        success[role].signed.version
+                    )
+                    online_roles[role] = success[role]
+
+                else:
+                    logging.debug(f"adding role '{role}'for signing")
+                    self.write_repository_settings(
+                        f"{role.upper()}_SIGNING",
+                        success[role].to_dict(),
+                    )
+
+        else:
+            logging.info("Bootstrap using custom hash bin delegations")
+            self._add_metadata_hashbin_delegations(targets)
 
         # Update expire, sign and persist the top level roles (`Targets`,
         # `Timestamp``, `Snapshot`) in the backend storage service.
-        for role in [targets, snapshot, timestamp]:
-            self._bump_expiry(role, role.signed.type)
-            self._sign(role)
-            self._persist(role, role.signed.type)
+        for role in online_roles:
+            self._bump_expiry(online_roles[role], role)
+            self._sign(online_roles[role])
+            self._persist(online_roles[role], role)
 
     @staticmethod
     def _task_result(
@@ -736,14 +1089,16 @@ class MetadataRepository:
         """
         Register the bootstrap finished.
         """
-        custom_delegated_roles: Dict[str, Any] = self._settings.get_fresh(
-            "CUSTOM_DELEGATED_ROLES"
-        )
+        pending_delegations = self._settings.get_fresh("DELEGATIONS")
+        if pending_delegations:
+            delegations = Delegations.from_dict(pending_delegations)
+        else:
+            delegations = None
         # All roles except root share the same one key and it doesn't matter
         # from which role we will get the key.
         keyid: str = root.signed.roles["timestamp"].keyids[0]
         self._online_key = root.signed.keys[keyid]
-        self._bootstrap_online_roles(root, custom_delegated_roles)
+        self._bootstrap_online_roles(delegations=delegations)
         self.write_repository_settings("ROOT_SIGNING", None)
         self._persist(root, Root.type)
         self.write_repository_settings("BOOTSTRAP", task_id)
@@ -947,7 +1302,8 @@ class MetadataRepository:
                     )
 
                 self._update_timestamp(
-                    self._update_snapshot(delegated_targets),
+                    self._update_snapshot(target_roles=delegated_targets),
+                    skip=True,
                 )
 
             # context lock finished
@@ -1160,8 +1516,7 @@ class MetadataRepository:
             force: force all target roles bump even if they have more than
             `self._hours_before_expire` hours to expire.
         """
-        timestamp: Metadata
-        snapshot_bump = False
+
         today = datetime.now(timezone.utc)
         if self._settings.get_fresh("TARGETS_ONLINE_KEY") is None:
             logging.critical("No configuration found for TARGETS_ONLINE_KEY")
@@ -1171,39 +1526,69 @@ class MetadataRepository:
                 f"{Targets.type} don't use online key, skipping 'Targets' role"
             )
         else:
-            targets: Metadata = self._storage_backend.get(Targets.type)
+            targets: Metadata[Targets] = self._storage_backend.get(
+                Targets.type
+            )
             if force or (targets.signed.expires - today) < timedelta(
                 hours=self._hours_before_expire
             ):
                 self._update_targets_delegations_key(targets)
                 self._bump_and_persist(targets, Targets.type)
                 logging.info("Bumped version of 'Targets' role")
-                snapshot_bump = True
 
         if force:
             # Updating all delegated target roles.
-            timestamp = self._update_timestamp(
-                self._update_snapshot(bump_all=True)
+            self._update_timestamp(
+                self._update_snapshot(bump_all=True, only_target=True)
             )
-            snapshot_bump = True
             logging.info("Targets and delegated Targets roles version bumped")
         else:
             # Updating only those delegated roles that have expired.
+            targets: Metadata[Targets] = self._storage_backend.get(
+                Targets.type
+            )
             delegated_roles: List[str] = []
-            delegated_names = self._settings.get_fresh("DELEGATED_ROLES_NAMES")
-            for role in delegated_names:
-                role_md: Metadata[Targets] = self._storage_backend.get(role)
+            if targets.signed.delegations.succinct_roles:
+                s_roles = targets.signed.delegations.succinct_roles.get_roles()
+                delegated_roles = [r for r in s_roles]
+            else:
+                delegated_roles = list(targets.signed.delegations.roles.keys())
+
+            for role in delegated_roles:
+                if targets_crud.read_role_deactivated_by_rolename(
+                    self._db, role
+                ):
+                    delegated_roles.remove(role)
+                    logging.debug(f"Role '{role}' is deactivated, skipping")
+                    continue
+
+                try:
+                    role_md: Metadata[Targets] = self._storage_backend.get(
+                        role
+                    )
+                except StorageError as err:
+                    if delegation_signing := self._settings.get_fresh(
+                        f"{role.upper()}_SIGNING"
+                    ):
+                        role_md = Metadata[Targets].from_dict(
+                            delegation_signing
+                        )
+                    else:
+                        raise err
+
                 if (role_md.signed.expires - today) < timedelta(
                     hours=self._hours_before_expire
                 ):
-                    delegated_roles.append(role)
+                    continue
+                else:
+                    delegated_roles.remove(role)
 
             if len(delegated_roles) > 0:
-                timestamp = self._update_timestamp(
-                    self._update_snapshot(target_roles=delegated_roles)
+                self._update_timestamp(
+                    self._update_snapshot(target_roles=delegated_roles),
+                    skip=True,
                 )
-                snapshot_bump = True
-                roles = "".join(delegated_roles)
+                roles = ",".join(delegated_roles)
                 logging.info(f"Bumped versions of expired roles: {roles}")
             else:
                 logging.debug(
@@ -1211,16 +1596,6 @@ class MetadataRepository:
                     f"{self._hours_before_expire} hour(s) to expire, "
                     "skipping"
                 )
-
-        if snapshot_bump:
-            snapshot_v = timestamp.signed.snapshot_meta.version
-            logging.info(
-                f"[scheduled bump] Snapshot version bumped: {snapshot_v}"
-            )
-            timestamp_v = timestamp.signed.version
-            logging.info(
-                f"[scheduled bump] Timestamp version bumped: {timestamp_v}"
-            )
 
     def bump_snapshot(self, force: Optional[bool] = False):
         """
@@ -1241,7 +1616,9 @@ class MetadataRepository:
         if (snapshot.signed.expires - datetime.now(timezone.utc)) < timedelta(
             hours=self._hours_before_expire
         ) or force:
-            timestamp = self._update_timestamp(self._update_snapshot())
+            timestamp = self._update_timestamp(
+                self._update_snapshot(only_snapshot=True)
+            )
             logging.info(
                 "[scheduled snapshot bump] Snapshot version bumped: "
                 f"{snapshot.signed.version + 1}"
@@ -1584,11 +1961,101 @@ class MetadataRepository:
 
         return self.metadata_update(payload, update_state)
 
+    def metadata_delegation(
+        self,
+        payload: Dict[str, Any],
+        targets: Optional[Metadata[Targets]] = None,
+        update_state: Optional[
+            Task.update_state
+        ] = None,  # It is required (see: app.py)
+    ):
+        """
+        Add delegation roles to the metadata.
+
+        Args:
+            payload: contains new metadata
+                Supported metadata types: Targets
+                example: {"metadata": {"targets": Any}}
+
+            targets: optional argument to pass the current targets metadata
+        """
+        action = payload.get("action")
+
+        match action:
+            case "add":
+                delegations: Delegations = Delegations.from_dict(
+                    payload["delegations"]
+                )
+                targets = self._storage_backend.get(Targets.type)
+                snapshot = self._storage_backend.get(Snapshot.type)
+                success, failed = self._add_metadata_delegation(
+                    delegations, targets, persist_targets=True
+                )
+                # NOTE: this portion of logic below cannot be part of the
+                # helper function `_add_metadata_delegation` because while
+                # running `_bootstrap_online_roles` targets still not exist
+                # and require to be persisted before
+                for role in success:
+                    if self._validate_threshold(success[role], targets, role):
+                        logging.debug(f"role '{role}' uses only online key")
+                        snapshot.signed.meta[f"{role}.json"] = MetaFile(
+                            success[role].signed.version
+                        )
+                        self._persist(success[role])
+
+                    else:
+                        logging.debug(f"adding role '{role}'for signing")
+                        self.write_repository_settings(
+                            f"{role.upper()}_SIGNING",
+                            success[role].to_dict(),
+                        )
+
+            case "delete":
+                delegations = payload["delegations"]
+                try:
+                    status_lock_targets = False
+                    with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+                        success, failed = self._delete_metadata_delegation(
+                            payload["delegations"]
+                        )
+                except redis.exceptions.LockNotOwnedError:
+                    if status_lock_targets is False:
+                        logging.error(
+                            "The task to bump all online roles exceeded the "
+                            f"timeout of {self._timeout} seconds."
+                        )
+                        raise redis.exceptions.LockError(
+                            "RSTUF: Task exceed `LOCK_TIMEOUT` "
+                            f"({self._timeout} seconds)"
+                        )
+
+            case "update":
+                delegations: Delegations = Delegations.from_dict(
+                    payload["delegations"]
+                )
+                success, failed = self._update_metadata_delegation(delegations)
+
+            case _:
+                raise ValueError(
+                    "metadata delegation supports 'add', 'update', 'remove'"
+                )
+
+        return self._task_result(
+            task=TaskName.METADATA_DELEGATION,
+            message="Metadata Delegation Processed",
+            error=None,
+            details={
+                "delegated_roles": [sd for sd in success] or success,
+                "failed_roles": failed,
+            },
+        )
+
     @staticmethod
     def _validate_signature(
         metadata: Metadata,
         signature: Signature,
         delegator: Optional[Metadata] = None,
+        rolename: Optional[str] = Root.type,
     ) -> bool:
         """
         Validate signature over metadata using appropriate delegator.
@@ -1598,11 +2065,24 @@ class MetadataRepository:
             delegator = metadata
 
         keyid = signature.keyid
-        if keyid not in delegator.signed.roles[Root.type].keyids:
+        keyids: List[str] = []
+        if metadata.signed.type == Root.type:
+            keyids = delegator.signed.roles.get(rolename).keyids
+            key = delegator.signed.keys.get(signature.keyid)
+
+        elif metadata.signed.type == Targets.type:
+            keyids = delegator.signed.delegations.roles.get(rolename).keyids
+            key = delegator.signed.delegations.keys.get(signature.keyid)
+
+        else:
+            raise RepositoryError(
+                f"Unsupported metadata type: {metadata.signed.Type}"
+            )
+
+        if keyid not in keyids:
             logging.info(f"signature '{keyid}' not authorized")
             return False
 
-        key = delegator.signed.keys.get(signature.keyid)
         if not key:
             logging.info(f"no key for signature '{keyid}'")
             return False
@@ -1620,7 +2100,9 @@ class MetadataRepository:
 
     @staticmethod
     def _validate_threshold(
-        metadata: Metadata, delegator: Optional[Metadata] = None
+        metadata: Metadata,
+        delegator: Optional[Metadata] = None,
+        delegated_role: Optional[str] = Root.type,
     ) -> bool:
         """
         Validate signature threshold using appropriate delegator(s).
@@ -1630,7 +2112,7 @@ class MetadataRepository:
             delegator = metadata
 
         try:
-            delegator.verify_delegate(Root.type, metadata)
+            delegator.verify_delegate(delegated_role, metadata)
 
         except UnsignedMetadataError as e:
             logging.info(e)
@@ -1680,42 +2162,35 @@ class MetadataRepository:
         signature = Signature.from_dict(payload["signature"])
         rolename = payload["role"]
 
-        # Assert requested metadata type is root
-        if rolename != Root.type:
-            msg = f"Expected '{Root.type}', got '{rolename}'"
-            return _result(False, error=msg)
-
         # Assert pending signing event exists
-        metadata_dict = self._settings.get_fresh("ROOT_SIGNING")
+        metadata_dict = self._settings.get_fresh(f"{rolename.upper()}_SIGNING")
         if metadata_dict is None:
-            msg = "No signatures pending for root"
+            msg = f"No signatures pending for {rolename}"
             return _result(False, error=msg)
 
-        # Assert metadata type is root
-        root = Metadata.from_dict(metadata_dict)
-        if not isinstance(root.signed, Root):
-            msg = f"Expected 'root', got '{root.signed.type}'"
-            return _result(False, error=msg)
+        metadata = Metadata.from_dict(metadata_dict)
 
         # If it isn't a "bootstrap" signing event, it must be "update metadata"
         bootstrap_state = self._settings.get_fresh("BOOTSTRAP")
-        if "signing" in bootstrap_state:
+        if metadata.signed.type == Root.type and "signing" in bootstrap_state:
             # Signature and threshold of initial root can only self-validate,
             # there is no "trusted root" at bootstrap time yet.
-            if not self._validate_signature(root, signature):
+            if not self._validate_signature(metadata, signature):
                 return _result(False, error="Invalid signature")
 
-            root.signatures[signature.keyid] = signature
-            if not self._validate_threshold(root):
-                self.write_repository_settings("ROOT_SIGNING", root.to_dict())
-                msg = f"Root v{root.signed.version} is pending signatures"
+            metadata.signatures[signature.keyid] = signature
+            if not self._validate_threshold(metadata):
+                self.write_repository_settings(
+                    "ROOT_SIGNING", metadata.to_dict()
+                )
+                msg = f"Root v{metadata.signed.version} is pending signatures"
                 return _result(True, bootstrap=msg)
 
             bootstrap_task_id = bootstrap_state.split("signing-")[1]
-            self._bootstrap_finalize(root, bootstrap_task_id)
+            self._bootstrap_finalize(metadata, bootstrap_task_id)
             return _result(True, bootstrap="Bootstrap Finished")
 
-        else:
+        elif metadata.signed.type == Root.type:
             # We need the "trusted root" when updating to a new root:
             # - signature could come from a key, which is only in the trusted
             #   root, OR from a key, which is only in the new root
@@ -1723,25 +2198,64 @@ class MetadataRepository:
             #   in the trusted root AND as defined in the new root
             trusted_root = self._storage_backend.get("root")
             is_valid_trusted = self._validate_signature(
-                root, signature, trusted_root
+                metadata, signature, trusted_root
             )
-            is_valid_new = self._validate_signature(root, signature)
+            is_valid_new = self._validate_signature(metadata, signature)
 
             if not (is_valid_trusted or is_valid_new):
                 return _result(False, error="Invalid signature")
 
-            root.signatures[signature.keyid] = signature
-            trusted_threshold = self._validate_threshold(root, trusted_root)
-            new_threshold = self._validate_threshold(root)
+            metadata.signatures[signature.keyid] = signature
+            trusted_threshold = self._validate_threshold(
+                metadata, trusted_root
+            )
+            new_threshold = self._validate_threshold(metadata)
             if not (trusted_threshold and new_threshold):
-                self.write_repository_settings("ROOT_SIGNING", root.to_dict())
-                msg = f"Root v{root.signed.version} is pending signatures"
+                self.write_repository_settings(
+                    "ROOT_SIGNING", metadata.to_dict()
+                )
+                msg = f"Root v{metadata.signed.version} is pending signatures"
                 return _result(True, update=msg)
 
             # Threshold reached -> finalize event
-            self._root_metadata_update_finalize(trusted_root, root)
+            self._root_metadata_update_finalize(trusted_root, metadata)
             self.write_repository_settings("ROOT_SIGNING", None)
             return _result(True, update="Metadata update finished")
+
+        else:
+            targets = self._storage_backend.get(Targets.type)
+            is_valid_trusted = self._validate_signature(
+                metadata, signature, targets, rolename
+            )
+
+            if not is_valid_trusted:
+                return _result(False, error="Invalid signature")
+
+            metadata.signatures[signature.keyid] = signature
+            trusted_threshold = self._validate_threshold(
+                metadata, targets, rolename
+            )
+            if not trusted_threshold:
+                self.write_repository_settings(
+                    f"{rolename.upper()}_SIGNING", metadata.to_dict()
+                )
+                msg = (
+                    f"{rolename} v{metadata.signed.version} is "
+                    "pending signatures"
+                )
+                return _result(True, update=msg)
+
+            # Threshold reached -> finalize event
+            logging.debug(f"finalizing '{rolename}' metadata signing")
+            snapshot = self._storage_backend.get(Snapshot.type)
+            snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
+                version=metadata.signed.version,
+            )
+            self._bump_and_persist(snapshot, Snapshot.type)
+            self._update_timestamp(snapshot.signed.version)
+            self._persist(metadata, rolename)
+            self.write_repository_settings(f"{rolename.upper()}_SIGNING", None)
+            return _result(True, update=f"Role {rolename} signing complete")
 
     def delete_sign_metadata(
         self,
