@@ -173,7 +173,7 @@ class TestMetadataRepository:
         ]
 
     def test_refresh_settings_with_sql_user_password(self, test_repo):
-        test_repo._worker_settings.DB_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.DB_SERVER = "postgresql://fake-sql:5433"
         test_repo._worker_settings.DB_USER = "psql"
         test_repo._worker_settings.DB_PASSWORD = "psqlpass"
         fake_sql = pretend.stub()
@@ -187,18 +187,29 @@ class TestMetadataRepository:
         ]
 
     def test_refresh_settings_with_sql_user_missing_password(self, test_repo):
-        test_repo._worker_settings.DB_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.DB_SERVER = "postgresql://fake-sql:5433"
         test_repo._worker_settings.DB_USER = "psql"
 
         with pytest.raises(AttributeError) as e:
             test_repo.refresh_settings()
 
-        assert "'Settings' object has no attribute 'DB_PASSWORD'" in str(e)
+        assert "'Settings' object has no attribute 'RSTUF_DB_PASSWORD'" in str(
+            e
+        )
+
+    def test_refresh_settings_with_sql_user_missing_scheme(self, test_repo):
+        test_repo._worker_settings.DB_SERVER = "fake-sql"
+        test_repo._worker_settings.DB_USER = "psql"
+
+        with pytest.raises(AttributeError) as e:
+            test_repo.refresh_settings()
+
+        assert "'RSTUF_DB_SERVER' requires a scheme" in str(e)
 
     def test_refresh_settings_with_sql_user_password_secrets(
         self, test_repo, monkeypatch
     ):
-        test_repo._worker_settings.DB_SERVER = "fake-sql:5433"
+        test_repo._worker_settings.DB_SERVER = "postgresql://fake-sql:5433"
         test_repo._worker_settings.DB_USER = "psql"
         test_repo._worker_settings.DB_PASSWORD = "/run/secrets/DB_PASSWORD"
         fake_data = pretend.stub(
@@ -240,18 +251,6 @@ class TestMetadataRepository:
 
         assert "No permission /run/secrets/*" in str(e)
         assert "No permission /run/secrets/*" == caplog.messages[0]
-
-    def test_refresh_settings_with_deprecated_sql(
-        self, test_repo, monkeypatch, caplog
-    ):
-        caplog.set_level(repository.logging.WARNING)
-        test_repo._worker_settings.SQL_SERVER = "fake-sql:5433"
-
-        test_repo.refresh_settings()
-        assert (
-            "Using RSTUF_SQL_* environment variables is deprecated. "
-            "Use RSTUF_DB_* instead."
-        ) in caplog.messages
 
     def test__sign(self, test_repo, monkeypatch):
         fake_key_dict = {"keyval": "foo", "keyid": "keyid"}
@@ -3447,26 +3446,6 @@ class TestMetadataRepository:
         }
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
-        ]
-
-    def test_metadata_rotation_deprecation_warning(self, test_repo, caplog):
-        caplog.set_level(repository.logging.WARNING)
-        payload = {"metadata": {"root": "fake_root"}}
-
-        test_repo.metadata_update = pretend.call_recorder(lambda *a: "result")
-
-        result = test_repo.metadata_rotation(payload)
-        assert result == "result"
-        assert test_repo.metadata_update.calls == [pretend.call(payload, None)]
-        assert caplog.record_tuples == [
-            (
-                "root",
-                30,
-                (
-                    "`metadata_rotation` is deprecated, use `metadata_update` "
-                    "instead. It will be removed in version 1.0.0."
-                ),
-            )
         ]
 
     def test__validate_signature(self, test_repo):

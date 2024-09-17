@@ -7,7 +7,6 @@ import copy
 import enum
 import logging
 import time
-import warnings
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from math import log
@@ -178,33 +177,23 @@ class MetadataRepository:
         #
         # DB
         #
-        # TODO: Removed deprecated RSTUF_SQL_* settings in the future
-        sql_server_url = self._worker_settings.get("SQL_SERVER")
-        sql_user = self._worker_settings.get("SQL_USER")
-        sql_password = self._worker_settings.get("SQL_PASSWORD")
-        if sql_server_url or sql_user or sql_password:
-            logging.warning(
-                "Using RSTUF_SQL_* environment variables is deprecated. "
-                "Use RSTUF_DB_* instead."
-            )
-        db_server_url = self._worker_settings.get("DB_SERVER", sql_server_url)
-        db_user = self._worker_settings.get("DB_USER", sql_user)
-        db_password = self._worker_settings.get("DB_PASSWORD", sql_password)
-
-        # TODO: Remove this warning and default to postgresql://
-        if "://" not in db_server_url:
-            logging.warning(
-                "RSTUF_DB_SERVER does not contain a scheme. "
-                "Defaulting to postgresql://"
-            )
-            db_server_url = f"postgresql://{db_server_url}"
+        db_server_url = self._worker_settings.get("DB_SERVER")
+        db_user = self._worker_settings.get("DB_USER")
+        db_password = self._worker_settings.get("DB_PASSWORD")
         uri = urlparse(db_server_url)
+
+        if not uri.scheme:
+            raise AttributeError(
+                "'Settings' object attribute 'RSTUF_DB_SERVER' "
+                "requires a scheme. Ex: postgresql://"
+            )
 
         if db_user:
             if db_password is None:
                 raise AttributeError(
-                    "'Settings' object has no attribute 'DB_PASSWORD'"
-                    "'DB_PASSWORD' is required when using 'DB_USER'"
+                    "'Settings' object has no attribute 'RSTUF_DB_PASSWORD'"
+                    "'RSTUF_DB_PASSWORD' is required when using "
+                    "'RSTUF_DB_USER'"
                 )
             if db_password.startswith("/run/secrets"):
                 try:
@@ -1944,22 +1933,6 @@ class MetadataRepository:
                 error="Unsupported Metadata type",
                 details=None,
             )
-
-    def metadata_rotation(
-        self,
-        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
-        update_state: Optional[
-            Task.update_state
-        ] = None,  # It is required (see: app.py)
-    ) -> Dict[str, Any]:
-        deprecation_message = (
-            "`metadata_rotation` is deprecated, use `metadata_update` instead."
-            " It will be removed in version 1.0.0."
-        )
-        warnings.warn(deprecation_message, DeprecationWarning)
-        logging.warn(deprecation_message)
-
-        return self.metadata_update(payload, update_state)
 
     def metadata_delegation(
         self,
