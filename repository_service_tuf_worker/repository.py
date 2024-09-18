@@ -709,6 +709,7 @@ class MetadataRepository:
             delegated_roles.append(delegated_name)
 
         targets_crud.create_roles(self._db, db_target_roles)
+        self._db.commit()
 
     def _remove_delegated_role_keys(
         self, targets: Metadata[Targets], delegated: DelegatedRole
@@ -866,6 +867,7 @@ class MetadataRepository:
                 rolename=role, version=role_metadata.signed.version
             )
             targets_crud.create_roles(self._db, [db_roles])
+            self._db.commit()
 
         if persist_targets and len(success) > 0:
             self._bump_and_persist(targets, Targets.type)
@@ -916,6 +918,7 @@ class MetadataRepository:
             self.write_repository_settings(f"{rolename.upper()}_SIGNING", None)
             db_role = targets_crud.read_role_by_rolename(self._db, rolename)
             targets_crud.update_role_to_deactivated(self._db, db_role)
+            self._db.commit()
             success.append(rolename)
 
         if success:
