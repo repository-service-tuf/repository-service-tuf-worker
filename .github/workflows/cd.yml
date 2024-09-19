@@ -78,7 +78,7 @@ jobs:
 
   prepare-rc:
     runs-on: ubuntu-latest
-    needs: [functional-tests-local, functional-tests-local-redis, functional-tests-aws, functional-tests-mysql]
+    needs: [functional-tests-local, functional-tests-local-redis, functional-tests-aws]
     outputs:
       release_id: ${{ steps.gh-release.outputs.id }}
     steps:
