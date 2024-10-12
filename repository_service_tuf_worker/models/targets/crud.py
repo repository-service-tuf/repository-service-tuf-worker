@@ -128,7 +128,7 @@ def read_roles_joint_files(
         db.query(
             models.RSTUFTargetRoles,
         )
-        .join(models.RSTUFTargetFiles)
+        .join(models.RSTUFTargetFiles, isouter=True)
         .filter(
             models.RSTUFTargetRoles.active == True,  # noqa
             models.RSTUFTargetRoles.rolename.in_(rolenames),
