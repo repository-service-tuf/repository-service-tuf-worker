@@ -128,12 +128,32 @@ def read_roles_joint_files(
         db.query(
             models.RSTUFTargetRoles,
         )
-        .join(models.RSTUFTargetFiles)
+        .join(models.RSTUFTargetFiles, isouter=True)
         .filter(
             models.RSTUFTargetRoles.active == True,  # noqa
             models.RSTUFTargetRoles.rolename.in_(rolenames),
         )
         .all()
+    )
+
+
+def read_role_joint_files(
+    db: Session, rolename: str
+) -> models.RSTUFTargetRoles:
+    """
+    Read all roles with a name in 'rolenames' joining with
+    RSTUFTargetFiles database in the process.
+    """
+    return (
+        db.query(
+            models.RSTUFTargetRoles,
+        )
+        .join(models.RSTUFTargetFiles, isouter=True)
+        .filter(
+            models.RSTUFTargetRoles.active == True,  # noqa
+            models.RSTUFTargetRoles.rolename == rolename,
+        )
+        .one()
     )
 
 
