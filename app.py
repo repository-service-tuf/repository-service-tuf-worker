@@ -5,13 +5,15 @@
 #
 # SPDX-License-Identifier: MIT
 
+import datetime
 import json
 import logging
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import redis
-from celery import Celery, schedules, signals
+from celery import Celery, chain, chord, group, schedules, shared_task, signals
+from tuf.api.metadata import MetaFile
 
 from repository_service_tuf_worker import get_worker_settings
 from repository_service_tuf_worker.repository import MetadataRepository
@@ -70,6 +72,8 @@ app = Celery(
     # (https://github.com/repository-service-tuf/vmware/issues/6)
 )
 
+repository = MetadataRepository.create_service()
+
 
 @app.task(serializer="json", bind=True)
 def repository_service_tuf_worker(
@@ -94,6 +98,87 @@ def repository_service_tuf_worker(
         result = repository_action(payload, update_state=self.update_state)
 
     return result
+
+
+@app.task(serializer="json", queue="rstuf_internals")
+def is_role_expired(role: str) -> Optional[str]:
+    """
+    Check if a role is expired.
+
+    Args:
+        role: Role to be checked.
+
+    Returns:
+        None if the role is not expired, otherwise the role name.
+    """
+    if repository._is_expired(role):
+        return repository._update_targets_delegated_role(role)
+
+
+@app.task(serializer="json", queue="rstuf_internals")
+def update_snapshot_timestamp(*args) -> Dict[str, Any]:
+    """
+    Update the snapshot timestamp.
+
+    Args:
+        args: List of arguments.
+
+    Returns:
+        Dictionary with the updated snapshot timestamp.
+    """
+    snapshot_meta = {m: MetaFile(v) for m, v in args[0][0].items()}
+    target_files = args[0][1]
+
+    def update_snapshot():
+        if snapshot_meta:
+            snapshot = repository.load_snapshot()
+            snapshot.signed.meta.update(snapshot_meta)
+            repository._bump_and_persist(snapshot, "snapshot")
+            logging.debug("Bumped version of 'Snapshot' role")
+            version = snapshot.signed.version
+            return version
+
+    repository.update_db_files_to_published(target_files)
+    repository._update_timestamp(update_snapshot())
+
+
+@app.task(serializer="json", queue="rstuf_internals")
+def update_roles(*args) -> Dict[str, Any]:
+    """
+    Update roles.
+
+    Args:
+        roles: List of roles to be updated.
+
+    Returns:
+        Dictionary with the updated roles.
+    """
+    meta = {}
+    target_files = []
+    for arg0 in args[0]:
+        # concatenate the dictionaries
+        meta.update(arg0[0])
+        target_files.extend(arg0[1])
+
+    return meta, target_files
+
+
+@app.task(serializer="json", queue="rstuf_internals")
+def chain_bump_online_roles() -> Dict[str, Any]:
+    """
+    Chain of tasks to bump online roles.
+
+    Returns:
+        Dictionary with the online roles.
+    """
+    with repository._redis.lock("LOCK_TARGETS", repository._timeout):
+        roles = repository.get_delegated_roles()
+        c = chain(
+            group(is_role_expired.s(role) for role in roles),
+            update_roles.s(),
+            update_snapshot_timestamp.s(),
+        )()
+        return c.get()
 
 
 def _publish_signals(
@@ -137,12 +222,20 @@ def task_received_notifier(**kwargs):
 
 
 app.conf.beat_schedule = {
+    # "bump_online_roles": {
+    #     "task": "app.repository_service_tuf_worker",
+    #     "schedule": schedules.crontab(minute="*/15"),
+    #     "kwargs": {
+    #         "action": "bump_online_roles",
+    #     },
+    #     "options": {
+    #         "task_id": "bump_online_roles",
+    #         "queue": "rstuf_internals",
+    #         "acks_late": True,
+    #     },
     "bump_online_roles": {
-        "task": "app.repository_service_tuf_worker",
+        "task": "app.chain_bump_online_roles",
         "schedule": schedules.crontab(minute="*/15"),
-        "kwargs": {
-            "action": "bump_online_roles",
-        },
         "options": {
             "task_id": "bump_online_roles",
             "queue": "rstuf_internals",
@@ -150,5 +243,3 @@ app.conf.beat_schedule = {
         },
     },
 }
-
-repository = MetadataRepository.create_service()
