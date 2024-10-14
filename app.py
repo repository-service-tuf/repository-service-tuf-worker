@@ -139,7 +139,7 @@ def task_received_notifier(**kwargs):
 app.conf.beat_schedule = {
     "bump_online_roles": {
         "task": "app.repository_service_tuf_worker",
-        "schedule": schedules.crontab(minute="*/10"),
+        "schedule": schedules.crontab(minute="*/15"),
         "kwargs": {
             "action": "bump_online_roles",
         },
