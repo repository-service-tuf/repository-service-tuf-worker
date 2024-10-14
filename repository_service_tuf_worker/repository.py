@@ -15,9 +15,10 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlparse
 
 import redis
+from celery import group, shared_task
 from celery.app.task import Task
 from celery.exceptions import ChordError
-from celery.result import AsyncResult, states
+from celery.result import AsyncResult, states, allow_join_result
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError, UnverifiedSignatureError
 from securesystemslib.signer import (
@@ -272,7 +273,7 @@ class MetadataRepository:
 
         bytes_data = role.to_bytes(JSONSerializer())
         self._storage_backend.put(bytes_data, filename)
-        logging.debug(f"{filename} saved")
+        # logging.debug(f"{filename} saved")
         return filename
 
     def _bump_expiry(
@@ -295,16 +296,21 @@ class MetadataRepository:
         role.signed.version += 1
 
     def _bump_and_persist(
-        self, role: Metadata, role_name: str, persist: Optional[bool] = True
+        self,
+        role: Metadata,
+        role_name: str,
+        persist: Optional[bool] = True,
+        signer: Optional[Signer] = None,
+        expire: Optional[int] = None,
     ):
         """
         Bump expiry and version, sign and persist 'role' metadata into a new
         file named VERSION.rolename.json where VERSION is the new role version.
         Optionally, if persist is false, then don't persist in a file.
         """
-        self._bump_expiry(role, role_name)
+        self._bump_expiry(role, role_name, expire)
         self._bump_version(role)
-        self._sign(role)
+        self._sign(role, signer)
         if persist:
             self._persist(role, role_name)
 
@@ -341,8 +347,8 @@ class MetadataRepository:
     def _update_snapshot(
         self,
         target_roles: Optional[List[str]] = None,
-        bump_all: Optional[bool] = False,
-        only_target: Optional[bool] = False,
+        all: Optional[bool] = False,
+        update_toplevel_targets: Optional[bool] = False,
         only_snapshot: Optional[bool] = False,
     ) -> int:
         """
@@ -351,11 +357,11 @@ class MetadataRepository:
         Returns the new snapshot version.
 
         Args:
-            target_roles: List of roles to bump. If provided, 'bump_all' arg
+            target_roles: List of roles to bump. If provided, 'all' arg
                 will NOT be taken into account.
-            bump_all: Wheter to bump all delegated target roles. If provided,
+            all: Wheter to bump all delegated target roles. If provided,
                 then 'target_roles' arg is NOT taken into acount.
-            only_target: Updates only Targets role in the Snapshot Meta.
+            update_toplevel_targets: Updates only Targets role in the Snapshot Meta.
                 It doesn't Bump and Persist Targets.
             only_snapshot: Bump and Persist Snapshot Role only.
         """
@@ -364,133 +370,60 @@ class MetadataRepository:
         bins_used = (
             True if targets.signed.delegations.succinct_roles else False
         )
+        start_time = time.time()
 
-        snapshot_meta_updated = False
+        snapshot_meta: Dict[str, MetaFile] = {}
+        if only_snapshot:
+            self._bump_and_persist(snapshot, Snapshot.type)
+            logging.debug("Bumped version of 'Snapshot' role")
+            return snapshot.signed.version
+        elif target_roles:
+            db_target_roles = self._load_db_target_roles(target_roles)
+        elif all:
+            db_target_roles = self._load_db_target_roles(all=True)
+            update_toplevel_targets = True
 
-        db_target_roles: List[targets_models.RSTUFTargetRoles] = []
-        if target_roles or bump_all:
-            if target_roles:
-                db_target_roles = targets_crud.read_roles_joint_files(
-                    self._db, target_roles
+        if bins_used:
+            snapshot_meta, target_files = (
+                self._update_targetfiles_hashbin_delegated_roles(
+                    db_target_roles
                 )
-            elif bump_all:
-                db_target_roles = targets_crud.read_all_roles(self._db)
-            else:
-                raise ValueError("'bump_all' or 'target_roles")
-
-            snapshot_meta_updated = False
-            for db_role in db_target_roles:
-                rolename = db_role.rolename
-                try:
-                    delegation: Metadata[Targets] = self._storage_backend.get(
-                        rolename
-                    )
-                    logging.debug(f"role {rolename} loaded from disk")
-                    source = "storage"
-                except StorageError as err:
-                    if delegation_signing := self._settings.get_fresh(
-                        f"{rolename.upper()}_SIGNING"
-                    ):
-                        delegation = Metadata[Targets].from_dict(
-                            delegation_signing
-                        )
-                        logging.debug(f"role {rolename} loaded from singing")
-                        source = "signing"
-                    else:
-                        raise err
-                delegation.signed.targets.clear()
-                delegation.signed.targets = {
-                    file.path: TargetFile.from_dict(file.info, file.path)
-                    for file in db_role.target_files
-                    if file.action == targets_schema.TargetAction.ADD
-                    # Filtering the files with action 'ADD' cannot be done
-                    # in CRUD. If a target role doesn't have any target
-                    # files with an action 'ADD' (only 'REMOVE') then using
-                    # CRUD will not return the target role and it won't be
-                    # updated. An example can be when there is a role with
-                    # one target file with action "REMOVE" and the CRUD
-                    # will return None for this specific role.
-                }
-                delegation_name = BINS if bins_used else rolename
-                # update targetfile in db
-                # note: It update only if is not published see the CRUD.
-                targets_crud.update_files_to_published(
-                    self._db, [file.path for file in db_role.target_files]
+            )
+        else:
+            snapshot_meta, target_files = (
+                self._update_targetfiles_custom_delegated_roles(
+                    targets, db_target_roles
                 )
-                delegation_keyids = List[str]
-                if targets.signed.delegations.succinct_roles:
-                    logging.debug("delegations using succinct delegations")
-                    delegation_keyids = (
-                        targets.signed.delegations.succinct_roles.keyids
-                    )
-                else:
-                    logging.debug("delegations using custom delegations")
-                    delegation_keyids = targets.signed.delegations.roles[
-                        delegation_name
-                    ].keyids
+            )
 
-                if (
-                    len(delegation_keyids) == 1
-                    and self._online_key.keyid in delegation_keyids
-                ):
-                    logging.debug(f"role {rolename} full online keys")
-                    logging.debug("update expiry, bump version and persist")
-                    self._bump_and_persist(
-                        delegation, delegation_name, persist=False
-                    )
-                    self._persist(delegation, rolename)
-                    snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
-                        version=delegation.signed.version
-                    )
-                    snapshot_meta_updated = True
+        targets_crud.update_files_to_published(
+            self._db, [file.path for file in target_files]
+        )
 
-                elif (
-                    len(delegation_keyids) > 1
-                    and self._online_key.keyid in delegation_keyids
-                ):
-                    logging.debug(f"role {rolename} online/offline keys")
-                    self._bump_expiry(delegation, rolename)
-                    if source == "storage":
-                        self._bump_version(delegation)
-                    self._sign(delegation)
-                    self.write_repository_settings(
-                        f"{rolename.upper()}_SIGNING", delegation.to_dict()
-                    )
-
-                else:
-                    logging.debug(f"role {rolename} offline keys")
-                    delegation.signatures.clear()
-                    self._bump_expiry(delegation, rolename)
-                    if source == "storage":
-                        self._bump_version(delegation)
-                    self.write_repository_settings(
-                        f"{rolename.upper()}_SIGNING", delegation.to_dict()
-                    )
-
-        if only_target:
-            snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
+        if update_toplevel_targets:
+            snapshot_meta["targets.json"] = MetaFile(
                 version=targets.signed.version
             )
             self._bump_and_persist(snapshot, Snapshot.type)
             logging.debug("Bumped version of 'Snapshot' role")
-            snapshot_meta_updated = True
 
-        if only_snapshot:
-            self._bump_and_persist(snapshot, Snapshot.type)
-            logging.debug("Bumped version of 'Snapshot' role")
-
-        if len(db_target_roles) > 0 and snapshot_meta_updated:
+        if len(db_target_roles) > 0 and snapshot_meta:
             targets_crud.update_roles_version(
                 self._db, [int(db_role.id) for db_role in db_target_roles]
             )
 
-        if snapshot_meta_updated:
+        version = None
+        if snapshot_meta:
+            snapshot.signed.meta.update(snapshot_meta)
             self._bump_and_persist(snapshot, Snapshot.type)
             logging.debug("Bumped version of 'Snapshot' role")
-
-            return snapshot.signed.version
+            version = snapshot.signed.version
         else:
-            return None
+            logging.debug(f"Snapshot meta not update")
+
+        total_time = time.time() - start_time
+        logging.debug(f"Updated snapshot finished in {total_time}")
+        return version
 
     def _update_targets_delegations_key(self, targets: Metadata[Targets]):
         """
@@ -721,17 +654,18 @@ class MetadataRepository:
             self._persist(bins_role, delegated_name)
             return delegated_name
 
+        start_time = time.time()
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            start_time = time.time()
             future_to_role = {
                 executor.submit(
                     process_delegated_role, delegated_name
                 ): delegated_name
                 for delegated_name in succinct_roles.get_roles()
             }
-            for future in concurrent.futures.as_completed(future_to_role):
-                rolename = future.result()
-                snapshot.signed.meta[f"{rolename}.json"] = MetaFile(version=1)
+
+        for future in concurrent.futures.as_completed(future_to_role):
+            rolename = future.result()
+            snapshot.signed.meta[f"{rolename}.json"] = MetaFile(version=1)
 
         targets_crud.create_roles(self._db, db_target_roles)
         total_time = time.time() - start_time
@@ -778,6 +712,148 @@ class MetadataRepository:
             if keyid == self._online_key.keyid and role_metadata:
                 logging.debug(f"role '{role_name}' using online key, signing")
                 self._sign(role_metadata)
+
+    def _load_db_target_roles(
+        self, target_roles: Optional[List[str]], all: Optional[bool] = False
+    ):
+        if target_roles and all:
+            raise ValueError("target_roles or all")
+
+        if target_roles:
+            logging.debug("Update snapshot with specific target roles")
+            db_target_roles = targets_crud.read_roles_joint_files(
+                self._db, target_roles
+            )
+        elif all:
+            logging.debug("Update snapshot with all target roles")
+            db_target_roles = targets_crud.read_all_roles(self._db)
+        else:
+            raise ValueError("'all' or 'target_roles")
+
+        return db_target_roles
+
+    def _update_delegated_role_target_files(self, delegation, db_role):
+        delegation.signed.targets.clear()
+        delegation.signed.targets = {
+            file.path: TargetFile.from_dict(file.info, file.path)
+            for file in db_role.target_files
+            if file.action == targets_schema.TargetAction.ADD
+            # Filtering the files with action 'ADD' cannot be done
+            # in CRUD. If a target role doesn't have any target
+            # files with an action 'ADD' (only 'REMOVE') then using
+            # CRUD will not return the target role and it won't be
+            # updated. An example can be when there is a role with
+            # one target file with action "REMOVE" and the CRUD
+            # will return None for this specific role.
+        }
+
+        return delegation
+
+    def _update_targetfiles_hashbin_delegated_roles(
+        self, db_target_roles: List[targets_models.RSTUFTargetRoles]
+    ):
+        target_files = []
+        snapshot_meta: Dict[str, MetaFile] = {}
+        signer = self._signer_store.get(self._online_key)
+        expire = self._settings.get_fresh("BINS_EXPIRATION")
+        logging.debug(f"Updating snapshot w/ {len(db_target_roles)} roles")
+
+        def update(db_role):
+            rolename = db_role.rolename
+            delegation: Metadata[Targets] = self._storage_backend.get(rolename)
+            self._update_delegated_role_target_files(delegation, db_role)
+            role_target_files = [file.path for file in db_role.target_files]
+
+            # Update expiry, bump version, and persist
+            self._bump_and_persist(
+                delegation, BINS, persist=False, signer=signer, expire=expire
+            )
+            self._persist(delegation, rolename)
+
+            snapshot_meta[f"{rolename}.json"] = MetaFile(
+                version=delegation.signed.version
+            )
+            return role_target_files
+
+        for db_role in db_target_roles:
+            update(db_role)
+
+        return snapshot_meta, target_files
+
+    def _update_targetfiles_custom_delegated_roles(
+        self,
+        targets: Metadata[Targets],
+        db_target_roles: List[targets_models.RSTUFTargetRoles],
+    ):
+        target_files = []
+        snapshot_meta: Dict[str, MetaFile] = {}
+
+        logging.debug(f"Updating snapshot w/ {len(db_target_roles)} roles")
+        for db_role in db_target_roles:
+            rolename = db_role.rolename
+            try:
+                delegation: Metadata[Targets] = self._storage_backend.get(
+                    rolename
+                )
+                # logging.debug(f"role {rolename} loaded from disk")
+                source = "storage"
+            except StorageError as err:
+                if delegation_signing := self._settings.get_fresh(
+                    f"{rolename.upper()}_SIGNING"
+                ):
+                    delegation = Metadata[Targets].from_dict(
+                        delegation_signing
+                    )
+                    logging.debug(f"role {rolename} loaded from singing")
+                    source = "signing"
+                else:
+                    raise err
+
+            self._update_delegated_role_target_files(delegation, db_role)
+
+            target_files += [file.path for file in db_role.target_files]
+
+            logging.debug("delegations using custom delegations")
+            delegation_keyids = targets.signed.delegations.roles[
+                rolename
+            ].keyids
+
+            if (
+                len(delegation_keyids) == 1
+                and self._online_key.keyid in delegation_keyids
+            ):
+                # logging.debug(f"role {rolename} full online keys")
+                # logging.debug("update expiry, bump version and persist")
+                self._bump_and_persist(delegation, rolename, persist=False)
+                self._persist(delegation, rolename)
+                snapshot_meta[f"{rolename}.json"] = MetaFile(
+                    version=delegation.signed.version
+                )
+
+            elif (
+                len(delegation_keyids) > 1
+                and self._online_key.keyid in delegation_keyids
+            ):
+                logging.debug(f"role {rolename} online/offline keys")
+                self._bump_expiry(delegation, rolename)
+                if source == "storage":
+                    self._bump_version(delegation)
+                self._sign(delegation)
+                self.write_repository_settings(
+                    f"{rolename.upper()}_SIGNING", delegation.to_dict()
+                )
+
+            else:
+                logging.debug(f"role {rolename} offline keys")
+                delegation.signatures.clear()
+                self._bump_expiry(delegation, rolename)
+                if source == "storage":
+                    self._bump_version(delegation)
+                self.write_repository_settings(
+                    f"{rolename.upper()}_SIGNING", delegation.to_dict()
+                )
+
+        return snapshot_meta, target_files
 
     def _update_delegated_roles(
         self,
@@ -899,7 +975,7 @@ class MetadataRepository:
         if persist_targets and len(success) > 0:
             self._bump_and_persist(targets, Targets.type)
             self._update_timestamp(
-                self._update_snapshot(only_target=True), skip=True
+                self._update_snapshot(update_toplevel_targets=True), skip=True
             )
 
         return (success, failed)
@@ -950,7 +1026,7 @@ class MetadataRepository:
         if success:
             self._bump_and_persist(targets, Targets.type)
             self._update_timestamp(
-                self._update_snapshot(only_target=True), skip=True
+                self._update_snapshot(update_toplevel_targets=True), skip=True
             )
 
         return (success, failed)
@@ -1011,7 +1087,8 @@ class MetadataRepository:
             self._bump_and_persist(targets, Targets.type)
             self._update_timestamp(
                 self._update_snapshot(
-                    target_roles=[r for r in success], only_target=True
+                    target_roles=[r for r in success],
+                    update_toplevel_targets=True,
                 ),
                 skip=True,
             )
@@ -1519,6 +1596,55 @@ class MetadataRepository:
             },
         )
 
+    def _is_expired(self, role: str) -> Optional[str]:
+        role_md: Metadata[Targets] = self._storage_backend.get(role)
+        today = datetime.now(timezone.utc)
+        if (role_md.signed.expires - today) < timedelta(minutes=1440):
+            return role
+        return None
+
+    def _get_expired_hashbin_roles(
+        self, targets: Metadata[Targets]
+    ) -> List[str]:
+        """
+        Get all expired hash bin roles.
+        """
+        num_hash_bins = self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS")
+        logging.debug(
+            f"Checking for expired hash bin roles ({num_hash_bins} bins)"
+        )
+
+        expired_roles = []
+        for role in targets.signed.delegations.succinct_roles.get_roles():
+            if role := self._is_expired(role):
+                expired_roles.append(role)
+
+        return expired_roles
+
+    def _get_expired_custom_roles(self, delegated_roles) -> List[str]:
+        expired_roles = []
+        logging.debug(f"Checking for {len(delegated_roles)} custom roles")
+
+        for role in delegated_roles:
+            if targets_crud.read_role_deactivated_by_rolename(self._db, role):
+                logging.debug(f"Role '{role}' is deactivated, skipping")
+                continue
+
+            try:
+                role_md: Metadata[Targets] = self._storage_backend.get(role)
+            except StorageError as err:
+                if delegation_signing := self._settings.get_fresh(
+                    f"{role.upper()}_SIGNING"
+                ):
+                    role_md = Metadata[Targets].from_dict(delegation_signing)
+                else:
+                    raise err
+
+            if self._is_expired(role_md):
+                expired_roles.append(role)
+
+        return expired_roles
+
     def _run_online_roles_bump(self, force: Optional[bool] = False):
         """
         Bumps version and expiration date of all online roles (`Targets`,
@@ -1557,7 +1683,7 @@ class MetadataRepository:
         if force:
             # Updating all delegated target roles.
             self._update_timestamp(
-                self._update_snapshot(bump_all=True, only_target=True)
+                self._update_snapshot(all=True, update_toplevel_targets=True)
             )
             logging.info("Targets and delegated Targets roles version bumped")
         else:
@@ -1565,52 +1691,30 @@ class MetadataRepository:
             targets: Metadata[Targets] = self._storage_backend.get(
                 Targets.type
             )
-            delegated_roles: List[str] = []
+            expired_roles: List[str] = []
+            start_time = time.time()
             if targets.signed.delegations.succinct_roles:
-                s_roles = targets.signed.delegations.succinct_roles.get_roles()
-                delegated_roles = [r for r in s_roles]
+                expired_roles = self._get_expired_hashbin_roles(targets)
+
             else:
-                delegated_roles = list(targets.signed.delegations.roles.keys())
-
-            for role in delegated_roles:
-                if targets_crud.read_role_deactivated_by_rolename(
-                    self._db, role
-                ):
-                    delegated_roles.remove(role)
-                    logging.debug(f"Role '{role}' is deactivated, skipping")
-                    continue
-
-                try:
-                    role_md: Metadata[Targets] = self._storage_backend.get(
-                        role
-                    )
-                except StorageError as err:
-                    if delegation_signing := self._settings.get_fresh(
-                        f"{role.upper()}_SIGNING"
-                    ):
-                        role_md = Metadata[Targets].from_dict(
-                            delegation_signing
-                        )
-                    else:
-                        raise err
-
-                if (role_md.signed.expires - today) < timedelta(
-                    hours=self._hours_before_expire
-                ):
-                    continue
-                else:
-                    delegated_roles.remove(role)
-
-            if len(delegated_roles) > 0:
+                expired_roles = self._get_expired_custom_roles(
+                    list(targets.signed.delegations.roles.keys())
+                )
+            total_time = time.time() - start_time
+            logging.debug(
+                f"Total {len(expired_roles)} expired roles in {total_time}s"
+            )
+            if len(expired_roles) > 0:
+                logging.info(f"Total expired roles is {len(expired_roles)}")
                 self._update_timestamp(
-                    self._update_snapshot(target_roles=delegated_roles),
+                    self._update_snapshot(target_roles=expired_roles),
                     skip=True,
                 )
-                roles = ",".join(delegated_roles)
+                roles = ", ".join(expired_roles)
                 logging.info(f"Bumped versions of expired roles: {roles}")
             else:
                 logging.debug(
-                    "[scheduled bump] All delegated roles have more than "
+                    "All delegated roles have more than "
                     f"{self._hours_before_expire} hour(s) to expire, "
                     "skipping"
                 )
@@ -1713,7 +1817,7 @@ class MetadataRepository:
                 roles_diff += [Targets.type]
 
             if delegated_roles == [Roles.BINS.value]:
-                self._update_timestamp(self._update_snapshot(bump_all=True))
+                self._update_timestamp(self._update_snapshot(all=True))
             else:
                 self._update_timestamp(
                     self._update_snapshot(target_roles=delegated_roles)
