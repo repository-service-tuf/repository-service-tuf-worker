@@ -137,6 +137,26 @@ def read_roles_joint_files(
     )
 
 
+def read_role_joint_files(
+    db: Session, rolename: str
+) -> models.RSTUFTargetRoles:
+    """
+    Read all roles with a name in 'rolenames' joining with
+    RSTUFTargetFiles database in the process.
+    """
+    return (
+        db.query(
+            models.RSTUFTargetRoles,
+        )
+        .join(models.RSTUFTargetFiles, isouter=True)
+        .filter(
+            models.RSTUFTargetRoles.active == True,  # noqa
+            models.RSTUFTargetRoles.rolename == rolename,
+        )
+        .one()
+    )
+
+
 def update_file_path_and_info(
     db: Session,
     target: models.RSTUFTargetFiles,

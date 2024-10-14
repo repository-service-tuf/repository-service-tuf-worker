@@ -18,7 +18,7 @@ import redis
 from celery import group, shared_task
 from celery.app.task import Task
 from celery.exceptions import ChordError
-from celery.result import AsyncResult, states, allow_join_result
+from celery.result import AsyncResult, allow_join_result, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError, UnverifiedSignatureError
 from securesystemslib.signer import (
@@ -780,6 +780,28 @@ class MetadataRepository:
             update(db_role)
 
         return snapshot_meta, target_files
+
+    def _update_targets_delegated_role(self, role: str):
+        signer = self._signer_store.get(self._online_key)
+        expire = self._settings.get_fresh("BINS_EXPIRATION")
+
+        db_target_role = targets_crud.read_role_joint_files(self._db, role)
+        rolename = db_target_role.rolename
+
+        delegation: Metadata[Targets] = self._storage_backend.get(rolename)
+        self._update_delegated_role_target_files(delegation, db_target_role)
+        role_target_files = [file.path for file in db_target_role.target_files]
+
+        # Update expiry, bump version, and persist
+        self._bump_and_persist(
+            delegation, BINS, persist=False, signer=signer, expire=expire
+        )
+        self._persist(delegation, rolename)
+
+        return (
+            {f"{rolename}.json": delegation.signed.version},
+            role_target_files,
+        )
 
     def _update_targetfiles_custom_delegated_roles(
         self,
@@ -1600,7 +1622,9 @@ class MetadataRepository:
     def _is_expired(self, role: str) -> Optional[str]:
         role_md: Metadata[Targets] = self._storage_backend.get(role)
         today = datetime.now(timezone.utc)
-        if (role_md.signed.expires - today) < timedelta(minutes=1440):
+        if (role_md.signed.expires - today) < timedelta(
+            hours=self._hours_before_expire
+        ):
             return role
         return None
 
@@ -2414,3 +2438,22 @@ class MetadataRepository:
             error=None,
             details=None,
         )
+
+    def get_delegated_roles(self) -> str:
+        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
+        if targets.signed.delegations.succinct_roles:
+            return [
+                r
+                for r in targets.signed.delegations.succinct_roles.get_roles()
+            ]
+        else:
+            return list(targets.signed.delegations.roles.keys())
+
+    def load_snapshot(self) -> Metadata[Snapshot]:
+        return self._storage_backend.get(Snapshot.type)
+
+    def update_db_files_to_published(self, target_files: List[str]) -> None:
+        """
+        Update the target files in the database to be published.
+        """
+        targets_crud.update_files_to_published(self._db, target_files)
