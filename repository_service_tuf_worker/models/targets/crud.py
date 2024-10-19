@@ -2,9 +2,10 @@
 # SPDX-FileCopyrightText: 2022-2023 VMware Inc
 #
 # SPDX-License-Identifier: MIT
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from repository_service_tuf_worker.models.targets import models, schemas
@@ -157,6 +158,25 @@ def read_role_joint_files(
     )
 
 
+def read_roles_expired(
+    db: Session, hours_before_expire: int
+) -> List[models.RSTUFTargetRoles]:
+    """
+    Read all roles that are expired.
+    """
+    today = datetime.now(timezone.utc)
+    # Query roles expiring before the threshold and are active
+    return (
+        db.query(models.RSTUFTargetRoles)
+        .filter(
+            (models.RSTUFTargetRoles.expires - today)
+            < timedelta(minutes=hours_before_expire),
+            models.RSTUFTargetRoles.active == True,  # noqa
+        )
+        .all()
+    )
+
+
 def update_file_path_and_info(
     db: Session,
     target: models.RSTUFTargetFiles,
@@ -208,6 +228,39 @@ def update_roles_version(db: Session, bins_ids: List[int]) -> None:
             models.RSTUFTargetRoles.last_update: datetime.now(timezone.utc),
         }
     )
+    db.commit()
+
+
+def update_roles_expire_version_by_rolenames(
+    db: Session, rolename_expire: Dict[str, datetime]
+) -> None:
+    """
+    Bulk update target roles: increment version, update expiration and last update timestamp.
+    """
+    # Extract rolenames
+    rolenames = list(rolename_expire.keys())
+
+    # Construct case statement for expires field
+    expires_case = case(
+        *[
+            (models.RSTUFTargetRoles.rolename == rolename, expires)
+            for rolename, expires in rolename_expire.items()
+        ]
+    )
+
+    # Perform bulk update
+    db.query(models.RSTUFTargetRoles).filter(
+        models.RSTUFTargetRoles.rolename.in_(rolenames)
+    ).update(
+        {
+            models.RSTUFTargetRoles.version: models.RSTUFTargetRoles.version
+            + 1,
+            models.RSTUFTargetRoles.expires: expires_case,
+            models.RSTUFTargetRoles.last_update: datetime.now(timezone.utc),
+        },
+        synchronize_session=False,
+    )
+
     db.commit()
 
 
