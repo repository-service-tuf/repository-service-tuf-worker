@@ -5,12 +5,12 @@
 #
 # SPDX-License-Identifier: MIT
 
-import datetime
 import json
 import logging
+import time
+import itertools
 from enum import Enum
 from typing import Any, Dict, List, Optional
-
 import redis
 from celery import Celery, chain, chord, group, schedules, shared_task, signals
 from tuf.api.metadata import MetaFile
@@ -101,84 +101,101 @@ def repository_service_tuf_worker(
 
 
 @app.task(serializer="json", queue="rstuf_internals")
-def is_role_expired(role: str) -> Optional[str]:
+def _update_online_role(role: List[str]) -> Optional[str]:
     """
-    Check if a role is expired.
-
-    Args:
-        role: Role to be checked.
-
-    Returns:
-        None if the role is not expired, otherwise the role name.
+    Check if a role is expired and update it.
     """
-    if repository._is_expired(role):
-        return repository._update_targets_delegated_role(role)
-
+    return repository._update_targets_delegated_role(role)
 
 @app.task(serializer="json", queue="rstuf_internals")
-def update_snapshot_timestamp(*args) -> Dict[str, Any]:
+def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
     """
-    Update the snapshot timestamp.
-
-    Args:
-        args: List of arguments.
-
-    Returns:
-        Dictionary with the updated snapshot timestamp.
+    Update the snapshot timestamp with the updated roles data.
     """
-    snapshot_meta = {m: MetaFile(v) for m, v in args[0][0].items()}
-    target_files = args[0][1]
-
-    def update_snapshot():
-        if snapshot_meta:
-            snapshot = repository.load_snapshot()
-            snapshot.signed.meta.update(snapshot_meta)
-            repository._bump_and_persist(snapshot, "snapshot")
-            logging.debug("Bumped version of 'Snapshot' role")
-            version = snapshot.signed.version
-            return version
-
-    repository.update_db_files_to_published(target_files)
-    repository._update_timestamp(update_snapshot())
-
-
-@app.task(serializer="json", queue="rstuf_internals")
-def update_roles(*args) -> Dict[str, Any]:
-    """
-    Update roles.
-
-    Args:
-        roles: List of roles to be updated.
-
-    Returns:
-        Dictionary with the updated roles.
-    """
-    meta = {}
+    updated_roles = list(itertools.chain.from_iterable(args[0]))
     target_files = []
-    for arg0 in args[0]:
-        # concatenate the dictionaries
-        meta.update(arg0[0])
-        target_files.extend(arg0[1])
+    snapshot_meta = {}
+    database_meta = {}
+    for role in updated_roles:
+        if role:
+            snapshot_meta.update(
+                {f"{k}": MetaFile(v["version"]) for k, v in role.items()}
+            )
+            # Update the database_meta with the expire time of the roles, except the targets
+            database_meta.update({k: v["expire"] for k, v in role.items() if k != "targets"})
+            target_files.extend([v["target_files"] for v in role.values()])
 
-    return meta, target_files
+    repository.update_timestamp(
+        repository.update_snapshot(
+            snapshot_meta, database_meta, target_files
+        ).signed.version
+    )
+
+    logging.info(f"Updated snapshot/timestamp with {len(updated_roles)} roles")
 
 
 @app.task(serializer="json", queue="rstuf_internals")
-def chain_bump_online_roles() -> Dict[str, Any]:
+def _end_chain_callback(result, start_time: float):
     """
-    Chain of tasks to bump online roles.
+    Callback to calculate the total execution time of the chain.
+
+    Args:
+        result: The result from the previous task in the chain.
+        start_time: The start time captured at the beginning of the chain.
 
     Returns:
-        Dictionary with the online roles.
+        The final result of the chain and the total execution time.
     """
-    with repository._redis.lock("LOCK_TARGETS", repository._timeout):
-        roles = repository.get_delegated_roles()
-        c = chain(
-            group(is_role_expired.s(role) for role in roles),
-            update_roles.s(),
-            update_snapshot_timestamp.s(),
-        )()
-        return c.get()
+    end_time = time.time()
+    total_time = end_time - start_time
+
+    logging.info(
+        f"Total execution time for bump_online_roles: {total_time:.2f} seconds"
+    )
+
+    # Return the final result along with the execution time for reference
+    return {"result": result, "execution_time_seconds": total_time}
+
+
+@app.task(serializer="json", queue="rstuf_internals")
+def bump_online_roles(expired: bool = False) -> None:
+    """
+    Bump all online roles.
+    """
+    start_time = time.time()
+    if repository.bootstrap_state != "finished":
+        logging.info("Bootstrap not finished yet. Skipping bump_online_roles")
+        c = chain(_end_chain_callback.s(None, start_time))()
+        return
+
+    status_lock_targets = False
+    # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker
+    # development guide documentation.
+    try:
+        with repository._redis.lock("LOCK_TARGETS", repository._timeout):
+            roles = repository.get_delegated_rolenames(expired=expired)
+            c = chain(
+                group(_update_online_role.s(role) for role in roles)(),
+                _update_snapshot_timestamp.s(),
+                _end_chain_callback.s(start_time),
+            )(queue="rstuf_internals")
+            c.get()
+            return
+    except redis.exceptions.LockNotOwnedError:
+        # The LockNotOwnedError happens when the task exceeds the timeout,
+        # and another task owns the lock.
+        # If the task time out, the lock is released. If it doesn't finish
+        # properly, it will raise (fail) the task. Otherwise, the ignores
+        # the error because another task didn't lock it.
+        if status_lock_targets is False:
+            logging.error(
+                "The task to bump all online roles exceeded the timeout "
+                f"of {repository._timeout} seconds."
+            )
+            raise redis.exceptions.LockError(
+                f"RSTUF: Task exceed `LOCK_TIMEOUT` ({repository._timeout} "
+                "seconds)"
+            )
 
 
 def _publish_signals(
@@ -222,20 +239,9 @@ def task_received_notifier(**kwargs):
 
 
 app.conf.beat_schedule = {
-    # "bump_online_roles": {
-    #     "task": "app.repository_service_tuf_worker",
-    #     "schedule": schedules.crontab(minute="*/15"),
-    #     "kwargs": {
-    #         "action": "bump_online_roles",
-    #     },
-    #     "options": {
-    #         "task_id": "bump_online_roles",
-    #         "queue": "rstuf_internals",
-    #         "acks_late": True,
-    #     },
     "bump_online_roles": {
-        "task": "app.chain_bump_online_roles",
-        "schedule": schedules.crontab(minute="*/15"),
+        "task": "app.bump_online_roles",
+        "schedule": schedules.crontab(minute="*/10"),
         "options": {
             "task_id": "bump_online_roles",
             "queue": "rstuf_internals",
