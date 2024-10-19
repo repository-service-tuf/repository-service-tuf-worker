@@ -20,7 +20,8 @@ awswrangler = "*"
 sigstore = "*"
 pymysql = "*"
 google-cloud-kms = "*"
-rsa = "4.8"  # required to solve conflict with awscli
+rsa = "*"  # required to solve conflict with awscli
+more-itertools = "*"
 
 [dev-packages]
 tox = "*"
@@ -49,4 +50,4 @@ awscli-local = "*"
 awscli = "*"
 
 [requires]
-python_version = "3.12"
+python_version = "3.13"
