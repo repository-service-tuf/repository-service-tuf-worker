@@ -173,14 +173,20 @@ def bump_online_roles(expired: bool = False) -> None:
     # development guide documentation.
     try:
         with repository._redis.lock("LOCK_TARGETS", repository._timeout):
+            chunks_size = 500
             roles = repository.get_delegated_rolenames(expired=expired)
+            group_update_roles = _update_online_role.chunks(zip(roles), chunks_size).group()
+            # c = chain(
+            #     group(_update_online_role.s(role) for role in roles)(),
+            #     _update_snapshot_timestamp.s(),
+            #     _end_chain_callback.s(start_time),
+            # )(queue="rstuf_internals")
             c = chain(
-                group(_update_online_role.s(role) for role in roles)(),
+                group_update_roles,
                 _update_snapshot_timestamp.s(),
                 _end_chain_callback.s(start_time),
             )(queue="rstuf_internals")
-            c.get()
-            return
+            return c
     except redis.exceptions.LockNotOwnedError:
         # The LockNotOwnedError happens when the task exceeds the timeout,
         # and another task owns the lock.
