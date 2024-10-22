@@ -789,10 +789,10 @@ class MetadataRepository:
         signer = self._signer_store.get(self._online_key)
         expire = self._settings.get_fresh("BINS_EXPIRATION")
 
-        db_target_role = targets_crud.read_role_joint_files(self._db, role)
+        db_target_role: targets_crud.models.RSTUFTargetRoles = targets_crud.read_role_joint_files(self._db, role)
         rolename = db_target_role.rolename
 
-        delegation: Metadata[Targets] = self._storage_backend.get(rolename)
+        delegation: Metadata[Targets] = self._storage_backend.get(rolename, db_target_role.version)
         self._update_delegated_role_target_files(delegation, db_target_role)
         role_target_files = [file.path for file in db_target_role.target_files]
 
@@ -2449,15 +2449,20 @@ class MetadataRepository:
 
         if bool(snapshot_meta) is True:
             snapshot.signed.meta.update(snapshot_meta)
+            start_time = time.time()
             targets_crud.update_files_to_published(self._db, target_files)
-            targets_crud.update_roles_expire_version_by_rolenames(
-                self._db, database_meta
-            )
+            logging.info(f"Updated target files to published time: {time.time() - start_time}")
+
+            start_time = time.time()
+            targets_crud.update_roles_expire_version_by_rolenames(self._db, database_meta)
+            logging.info(f"Updated roles expire and version: {time.time() - start_time}")
 
         # If snapshot has new meta or snapshot is expired without new meta
         # we need to bump the snapshot version
         if bool(snapshot_meta) or self._is_expired(Snapshot.type):
+            start_time = time.time()
             self._bump_and_persist(snapshot, "snapshot")
+            logging.info(f"Snapshot bumped: {time.time() - start_time}")
             logging.debug("Bumped version of 'Snapshot' role")
 
         return snapshot
