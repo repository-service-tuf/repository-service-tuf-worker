@@ -237,29 +237,16 @@ def update_roles_expire_version_by_rolenames(
     """
     Bulk update target roles: increment version, update expiration and last update timestamp.
     """
-    # Extract rolenames
-    rolenames = list(rolename_expire.keys())
+    roles_to_update = db.query(models.RSTUFTargetRoles).filter(
+        models.RSTUFTargetRoles.rolename.in_(list(rolename_expire.keys()))
+    ).all()
 
-    # Construct case statement for expires field
-    expires_case = case(
-        *[
-            (models.RSTUFTargetRoles.rolename == rolename, expires)
-            for rolename, expires in rolename_expire.items()
-        ]
-    )
-
-    # Perform bulk update
-    db.query(models.RSTUFTargetRoles).filter(
-        models.RSTUFTargetRoles.rolename.in_(rolenames)
-    ).update(
-        {
-            models.RSTUFTargetRoles.version: models.RSTUFTargetRoles.version
-            + 1,
-            models.RSTUFTargetRoles.expires: expires_case,
-            models.RSTUFTargetRoles.last_update: datetime.now(timezone.utc),
-        },
-        synchronize_session=False,
-    )
+    for role in roles_to_update:
+        role.version = role.version + 1
+        role.expires = rolename_expire[role.rolename]
+        role.last_update = datetime.now(timezone.utc)
+        db.add(role)
+        db.refresh(role)
 
     db.commit()
 

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 import redis
 from celery import Celery, chain, chord, group, schedules, shared_task, signals
 from tuf.api.metadata import MetaFile
-
+from functools import wraps
 from repository_service_tuf_worker import get_worker_settings
 from repository_service_tuf_worker.repository import MetadataRepository
 
@@ -99,9 +99,28 @@ def repository_service_tuf_worker(
 
     return result
 
+def locked():
+    """Simple decorator to skip task if it's locked, and acquire lock if available."""
+    def decorator(func):
+        @wraps(func)  # Correct use of @wraps to preserve function metadata
+        def wrapper(*args, **kwargs):
+            if not repository._redis.setnx("BOR", 0):
+                logging.info(f"Skipping {func.__name__}, already running.")
+                return  # Skip the task if the lock is already held
+
+            repository._redis.expire("BOR", 540)  # Set the lock timeout
+            try:
+                logging.info(f"Running task {func.__name__}")
+                return func(*args, **kwargs)
+            finally:
+                logging.info(f"Task {func.__name__} finished. Releasing lock.")
+                repository._redis.delete("BOR")  # Release the lock after task is done
+
+        return wrapper
+    return decorator
 
 @app.task(serializer="json", queue="rstuf_internals")
-def _update_online_role(role: List[str]) -> Optional[str]:
+def _update_online_role(role: str) -> Optional[str]:
     """
     Check if a role is expired and update it.
     """
@@ -113,23 +132,28 @@ def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
     Update the snapshot timestamp with the updated roles data.
     """
     updated_roles = list(itertools.chain.from_iterable(args[0]))
+    # updated_roles = args[0]
     target_files = []
     snapshot_meta = {}
     database_meta = {}
+    start_time = time.time()
     for role in updated_roles:
         if role:
             snapshot_meta.update(
-                {f"{k}": MetaFile(v["version"]) for k, v in role.items()}
+                {f"{k}.json": MetaFile(v["version"]) for k, v in role.items()}
             )
             # Update the database_meta with the expire time of the roles, except the targets
             database_meta.update({k: v["expire"] for k, v in role.items() if k != "targets"})
             target_files.extend([v["target_files"] for v in role.values()])
+    logging.info(f"Time parsing _update_snapshot_timestamp: {time.time() - start_time} seconds")
 
+    start_time = time.time()
     repository.update_timestamp(
         repository.update_snapshot(
             snapshot_meta, database_meta, target_files
         ).signed.version
     )
+    logging.info(f"Time updating _update_snapshot_timestamp: {time.time() - start_time} seconds")
 
     logging.info(f"Updated snapshot/timestamp with {len(updated_roles)} roles")
 
@@ -156,8 +180,8 @@ def _end_chain_callback(result, start_time: float):
     # Return the final result along with the execution time for reference
     return {"result": result, "execution_time_seconds": total_time}
 
-
 @app.task(serializer="json", queue="rstuf_internals")
+@locked()
 def bump_online_roles(expired: bool = False) -> None:
     """
     Bump all online roles.
@@ -168,49 +192,31 @@ def bump_online_roles(expired: bool = False) -> None:
         c = chain(_end_chain_callback.s(None, start_time))()
         return
 
-    # if the LOCK_BEAT is already locked, it means that another task is running
-    # and we should skip this one
-    if repository._redis.lock("LOCK_BEAT").locked():
-        logging.info("LOCK_BEAT is already locked. Skipping bump_online_roles")
-        c = chain(_end_chain_callback.s(None, start_time))()
-        return
-
     status_lock_targets = False
     # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker
     # development guide documentation.
-    with repository._redis.lock("LOCK_BEAT"):
-        try:
-            with repository._redis.lock("LOCK_TARGETS", repository._timeout):
-                # chunks_size = 500
-                roles = repository.get_delegated_rolenames(expired=expired)
-                # group_update_roles = _update_online_role.chunks(zip(roles), chunks_size).group()
-                c = chain(
-                    group(_update_online_role.s(role) for role in roles)(),
-                    _update_snapshot_timestamp.s(),
-                    _end_chain_callback.s(start_time),
-                )(queue="rstuf_internals")
-                # c = chain(
-                #     group_update_roles,
-                #     _update_snapshot_timestamp.s(),
-                #     _end_chain_callback.s(start_time),
-                # )(queue="rstuf_internals")
-                return c
-        except redis.exceptions.LockNotOwnedError:
-            # The LockNotOwnedError happens when the task exceeds the timeout,
-            # and another task owns the lock.
-            # If the task time out, the lock is released. If it doesn't finish
-            # properly, it will raise (fail) the task. Otherwise, the ignores
-            # the error because another task didn't lock it.
-            if status_lock_targets is False:
-                logging.error(
-                    "The task to bump all online roles exceeded the timeout "
-                    f"of {repository._timeout} seconds."
-                )
-                raise redis.exceptions.LockError(
-                    f"RSTUF: Task exceed `LOCK_TIMEOUT` ({repository._timeout} "
-                    "seconds)"
-                )
+    try:
+        with repository._redis.lock("LOCK_TARGETS", repository._timeout):
+            chunks_size = 500
+            roles = repository.get_delegated_rolenames(expired=expired)
+            roles_updated = _update_online_role.chunks(zip(roles), chunks_size).group()
+            c = chain(
+                roles_updated,
+                _update_snapshot_timestamp.s(roles_updated),
+                _end_chain_callback.s(start_time),
+            )(queue="rstuf_internals")
 
+            return c
+    except redis.exceptions.LockNotOwnedError:
+        if status_lock_targets is False:
+            logging.error(
+                "The task to bump all online roles exceeded the timeout "
+                f"of {repository._timeout} seconds."
+            )
+            raise redis.exceptions.LockError(
+                f"RSTUF: Task exceed `LOCK_TIMEOUT` ({repository._timeout} "
+                "seconds)"
+            )
 
 def _publish_signals(
     status: status, task_id: str, result: Optional[str] = None
