@@ -19,6 +19,7 @@ from repository_service_tuf_worker.interfaces import (
     IStorage,
     ServiceSettings,
 )
+import logging
 
 
 class AWSS3(IStorage):
@@ -110,6 +111,7 @@ class AWSS3(IStorage):
         if role == Timestamp.type:
             filename = f"{role}.json"
         else:
+            logging.debug(f"Getting role '{role}'")
             if version is None:
                 s3_path = f"s3://{self._bucket}/"
                 filenames = awswrangler.s3.list_objects(

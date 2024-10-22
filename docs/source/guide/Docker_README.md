@@ -185,13 +185,19 @@ See the AWS3 Environment Variables section below.
 
 #### (Optional) `RSTUF_LOCK_TIMEOUT`
 
-Timeout for publishing JSON metadata files. Default: 60.0 (seconds)
+Timeout for publishing JSON metadata files. Default: 300.0 (seconds)
 
 This timeout avoids race conditions leading to publishing JSON metadata files by multiple
 Worker's services. It guarantees that the metadata is consistent in the backend
 storage service (`RSTUF_STORAGE_BACKEND`).
 
-In most use cases, the timeout of 60.0 seconds is sufficient.
+In most use cases, the timeout of 300.0 seconds is sufficient.
+
+#### (Optional) `TARGETS_CHUNK_SIZE_UPDATE`
+
+Delegated roles (Targets) chunk size to update . Default: 5000
+
+Define the chunk size of updating the delegated roles expired together..
 
 #### (Optional) `RSTUF_ONLINE_KEY_DIR`
 
