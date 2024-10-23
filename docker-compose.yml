@@ -76,6 +76,7 @@ services:
       - RSTUF_DB_USER=postgres
       - RSTUF_DB_PASSWORD=secret
       - RSTUF_REDIS_SERVER=redis://redis
+      - RSTUF_LOCK_TIMEOUT=300
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage

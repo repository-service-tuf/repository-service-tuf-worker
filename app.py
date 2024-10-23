@@ -7,12 +7,14 @@
 
 import json
 import logging
+import time
+import itertools
 from enum import Enum
-from typing import Any, Dict, Optional
-
+from typing import Any, Dict, List, Optional
 import redis
-from celery import Celery, schedules, signals
-
+from celery import Celery, chain, chord, group, schedules, shared_task, signals
+from tuf.api.metadata import MetaFile
+from functools import wraps
 from repository_service_tuf_worker import get_worker_settings
 from repository_service_tuf_worker.repository import MetadataRepository
 
@@ -70,6 +72,8 @@ app = Celery(
     # (https://github.com/repository-service-tuf/vmware/issues/6)
 )
 
+repository = MetadataRepository.create_service()
+
 
 @app.task(serializer="json", bind=True)
 def repository_service_tuf_worker(
@@ -95,6 +99,124 @@ def repository_service_tuf_worker(
 
     return result
 
+def locked():
+    """Simple decorator to skip task if it's locked, and acquire lock if available."""
+    def decorator(func):
+        @wraps(func)  # Correct use of @wraps to preserve function metadata
+        def wrapper(*args, **kwargs):
+            if not repository._redis.setnx("BOR", 0):
+                logging.info(f"Skipping {func.__name__}, already running.")
+                return  # Skip the task if the lock is already held
+
+            repository._redis.expire("BOR", 540)  # Set the lock timeout
+            try:
+                logging.info(f"Running task {func.__name__}")
+                return func(*args, **kwargs)
+            finally:
+                logging.info(f"Task {func.__name__} finished. Releasing lock.")
+                repository._redis.delete("BOR")  # Release the lock after task is done
+
+        return wrapper
+    return decorator
+
+@app.task(serializer="json", queue="rstuf_internals")
+def _update_online_role(role: str) -> Optional[str]:
+    """
+    Check if a role is expired and update it.
+    """
+    return repository._update_targets_delegated_role(role)
+
+@app.task(serializer="json", queue="rstuf_internals")
+def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
+    """
+    Update the snapshot timestamp with the updated roles data.
+    """
+    updated_roles = list(itertools.chain.from_iterable(args[0]))
+    # updated_roles = args[0]
+    target_files = []
+    snapshot_meta = {}
+    database_meta = {}
+    start_time = time.time()
+    for role in updated_roles:
+        if role:
+            snapshot_meta.update(
+                {f"{k}.json": MetaFile(v["version"]) for k, v in role.items()}
+            )
+            # Update the database_meta with the expire time of the roles, except the targets
+            database_meta.update({k: v["expire"] for k, v in role.items() if k != "targets"})
+            target_files.extend([v["target_files"] for v in role.values()])
+    logging.info(f"Time parsing _update_snapshot_timestamp: {time.time() - start_time} seconds")
+
+    start_time = time.time()
+    repository.update_timestamp(
+        repository.update_snapshot(
+            snapshot_meta, database_meta, target_files
+        ).signed.version
+    )
+    logging.info(f"Time updating _update_snapshot_timestamp: {time.time() - start_time} seconds")
+
+    logging.info(f"Updated snapshot/timestamp with {len(updated_roles)} roles")
+
+
+@app.task(serializer="json", queue="rstuf_internals")
+def _end_chain_callback(result, start_time: float):
+    """
+    Callback to calculate the total execution time of the chain.
+
+    Args:
+        result: The result from the previous task in the chain.
+        start_time: The start time captured at the beginning of the chain.
+
+    Returns:
+        The final result of the chain and the total execution time.
+    """
+    end_time = time.time()
+    total_time = end_time - start_time
+
+    logging.info(
+        f"Total execution time for bump_online_roles: {total_time:.2f} seconds"
+    )
+
+    # Return the final result along with the execution time for reference
+    return {"result": result, "execution_time_seconds": total_time}
+
+@app.task(serializer="json", queue="rstuf_internals")
+@locked()
+def bump_online_roles(expired: bool = False) -> None:
+    """
+    Bump all online roles.
+    """
+    start_time = time.time()
+    if repository.bootstrap_state != "finished":
+        logging.info("Bootstrap not finished yet. Skipping bump_online_roles")
+        c = chain(_end_chain_callback.s(None, start_time))()
+        return
+
+    status_lock_targets = False
+    # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker
+    # development guide documentation.
+    try:
+        with repository._redis.lock("LOCK_TARGETS", repository._timeout):
+            chunks_size = 500
+            roles = repository.get_delegated_rolenames(expired=expired)
+            roles_updated = _update_online_role.chunks(zip(roles), chunks_size).group()
+            c = chain(
+                roles_updated,
+                _update_snapshot_timestamp.s(roles_updated),
+                _end_chain_callback.s(start_time),
+            )(queue="rstuf_internals")
+
+            return c
+    except redis.exceptions.LockNotOwnedError:
+        if status_lock_targets is False:
+            logging.error(
+                "The task to bump all online roles exceeded the timeout "
+                f"of {repository._timeout} seconds."
+            )
+            raise redis.exceptions.LockError(
+                f"RSTUF: Task exceed `LOCK_TIMEOUT` ({repository._timeout} "
+                "seconds)"
+            )
 
 def _publish_signals(
     status: status, task_id: str, result: Optional[str] = None
@@ -138,11 +260,8 @@ def task_received_notifier(**kwargs):
 
 app.conf.beat_schedule = {
     "bump_online_roles": {
-        "task": "app.repository_service_tuf_worker",
+        "task": "app.bump_online_roles",
         "schedule": schedules.crontab(minute="*/10"),
-        "kwargs": {
-            "action": "bump_online_roles",
-        },
         "options": {
             "task_id": "bump_online_roles",
             "queue": "rstuf_internals",
@@ -150,5 +269,3 @@ app.conf.beat_schedule = {
         },
     },
 }
-
-repository = MetadataRepository.create_service()

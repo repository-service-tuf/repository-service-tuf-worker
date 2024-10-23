@@ -19,6 +19,7 @@ boto3 = "*"
 awswrangler = "*"
 sigstore = "*"
 pymysql = "*"
+more-itertools = "*"
 
 [dev-packages]
 tox = "*"
