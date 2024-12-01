@@ -2,9 +2,10 @@
 # SPDX-FileCopyrightText: 2022-2023 VMware Inc
 #
 # SPDX-License-Identifier: MIT
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from repository_service_tuf_worker.models.targets import models, schemas
@@ -128,10 +129,49 @@ def read_roles_joint_files(
         db.query(
             models.RSTUFTargetRoles,
         )
-        .join(models.RSTUFTargetFiles)
+        .join(models.RSTUFTargetFiles, isouter=True)
         .filter(
             models.RSTUFTargetRoles.active == True,  # noqa
             models.RSTUFTargetRoles.rolename.in_(rolenames),
+        )
+        .all()
+    )
+
+
+def read_role_joint_files(
+    db: Session, rolename: str
+) -> models.RSTUFTargetRoles:
+    """
+    Read all roles with a name in 'rolenames' joining with
+    RSTUFTargetFiles database in the process.
+    """
+    return (
+        db.query(
+            models.RSTUFTargetRoles,
+        )
+        .join(models.RSTUFTargetFiles, isouter=True)
+        .filter(
+            models.RSTUFTargetRoles.active == True,  # noqa
+            models.RSTUFTargetRoles.rolename == rolename,
+        )
+        .one()
+    )
+
+
+def read_roles_expired(
+    db: Session, hours_before_expire: int
+) -> List[models.RSTUFTargetRoles]:
+    """
+    Read all roles that are expired.
+    """
+    today = datetime.now(timezone.utc)
+    # Query roles expiring before the threshold and are active
+    return (
+        db.query(models.RSTUFTargetRoles)
+        .filter(
+            (models.RSTUFTargetRoles.expires - today)
+            < timedelta(minutes=hours_before_expire),
+            models.RSTUFTargetRoles.active == True,  # noqa
         )
         .all()
     )
@@ -188,6 +228,26 @@ def update_roles_version(db: Session, bins_ids: List[int]) -> None:
             models.RSTUFTargetRoles.last_update: datetime.now(timezone.utc),
         }
     )
+    db.commit()
+
+
+def update_roles_expire_version_by_rolenames(
+    db: Session, rolename_expire: Dict[str, datetime]
+) -> None:
+    """
+    Bulk update target roles: increment version, update expiration and last update timestamp.
+    """
+    roles_to_update = db.query(models.RSTUFTargetRoles).filter(
+        models.RSTUFTargetRoles.rolename.in_(list(rolename_expire.keys()))
+    ).all()
+
+    for role in roles_to_update:
+        role.version = role.version + 1
+        role.expires = rolename_expire[role.rolename]
+        role.last_update = datetime.now(timezone.utc)
+        db.add(role)
+        db.refresh(role)
+
     db.commit()
 
 
