@@ -682,8 +682,6 @@ class MetadataRepository:
         snapshot: Metadata[Snapshot],
     ):
         """Setup target delegations no matter if succinct hash bin or custom"""
-        delegated_roles: List[str] = []
-
         # Using succinct hash bin delegations.
         # Calculate the bit length (Number of bits between 1 and 32)
         bit_length = int(
@@ -710,7 +708,7 @@ class MetadataRepository:
         signer = self._signer_store.get(online_key)
 
         # function to process each delegated role
-        def process_delegated_role(delegated_name):
+        def process_delegated_role(delegated_name: str) -> str:
             targets.signed.add_key(online_key, delegated_name)
             bins_role = Metadata(Targets())
             db_target_roles.append(
@@ -738,7 +736,7 @@ class MetadataRepository:
         targets_crud.create_roles(self._db, db_target_roles)
         total_time = time.time() - start_time
         logging.debug(
-            f"Added {len(delegated_roles)} hash bins in {total_time} seconds"
+            f"Added delegated roles hash bins in {total_time} seconds"
         )
 
     def _remove_delegated_role_keys(
