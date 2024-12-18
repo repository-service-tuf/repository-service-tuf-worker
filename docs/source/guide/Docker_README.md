@@ -141,7 +141,15 @@ Available types:
 
   The name of s3 bucket to use.
 
-* (Required) ``RSTUF_AWS_ACCESS_KEY_ID``
+**_NOTE:_** It requires the AWS credentials to be set in the environment variables.
+See the AWS3 Environment Variables section below.
+
+**_NOTE:_**  The AWS3 supports all `boto3`
+[environment variables](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables).
+
+
+#### (Optional) AWS Environment Variables
+*  ``RSTUF_AWS_ACCESS_KEY_ID``
 
   The access key to use when creating the client session to the S3.
 
@@ -149,7 +157,7 @@ Available types:
   volume is added to the path.
   Example: `RSTUF_AWS_ACCESS_KEY_ID=/run/secrets/S3_ACCESS_KEY`
 
-* (Required) ``RSTUF_AWS_SECRET_ACCESS_KEY``
+*  ``RSTUF_AWS_SECRET_ACCESS_KEY``
 
   The secret key to use when creating the client session to the S3.
 
@@ -157,18 +165,23 @@ Available types:
   volume is added to the path.
   Example: ``RSTUF_AWS_SECRET_ACCESS_KEY=/run/secrets/S3_SECRET_KEY``
 
-* (Optional) ``RSTUF_AWS_DEFAULT_REGION``
+*  ``RSTUF_AWS_DEFAULT_REGION``
 
   The name of the region associated with the S3.
 
-* (Optional) ``RSTUF_AWS_ENDPOINT_URL``
+*  ``RSTUF_AWS_ENDPOINT_URL``
 
   The complete URL to use for the constructed client. Normally, the
   client automatically constructs the appropriate URL to use when
   communicating with a service.
 
-**_NOTE:_**  The AWS3 supports all `boto3`
-[environment variables](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables).
+#### (Optional) Google Cloud Environment Variables
+
+*  ``RSTUF_GOOGLE_APPLICATION_CREDENTIALS``
+
+  The path to the Google Cloud credentials file.
+
+  Example: `RSTUF_GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/google-credentials.json`
 
 #### (Optional) `RSTUF_LOCK_TIMEOUT`
 
