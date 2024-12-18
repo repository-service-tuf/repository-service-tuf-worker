@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import concurrent.futures
 import copy
 import enum
 import logging
@@ -23,6 +24,7 @@ from securesystemslib.signer import (
     KEY_FOR_TYPE_AND_SCHEME,
     Key,
     Signature,
+    Signer,
     SigstoreKey,
 )
 from tuf.api.exceptions import (
@@ -238,15 +240,14 @@ class MetadataRepository:
         settings_data[key] = value
         redis_loader.write(self._settings, settings_data)
 
-    def _sign(self, role: Metadata) -> None:
+    def _sign(self, role: Metadata, signer: Optional[Signer] = None) -> None:
         """
         Re-signs metadata with role-specific key from global key store.
 
         The metadata role type is used as default key id. This is only allowed
         for top-level roles.
         """
-        signer = self._signer_store.get(self._online_key)
-        role.sign(signer)
+        role.sign(signer or self._signer_store.get(self._online_key))
 
     def _persist(self, role: Metadata, role_name: str) -> str:
         """
@@ -274,7 +275,9 @@ class MetadataRepository:
         logging.debug(f"{filename} saved")
         return filename
 
-    def _bump_expiry(self, role: Metadata, role_name: str) -> None:
+    def _bump_expiry(
+        self, role: Metadata, role_name: str, expire: Optional[int] = None
+    ) -> None:
         """
         Bumps metadata expiration date by role-specific interval.
         """
@@ -282,7 +285,8 @@ class MetadataRepository:
             microsecond=0
         ) + timedelta(
             days=int(
-                self._settings.get_fresh(f"{role_name.upper()}_EXPIRATION")
+                expire
+                or self._settings.get_fresh(f"{role_name.upper()}_EXPIRATION")
             )
         )
 
@@ -675,12 +679,10 @@ class MetadataRepository:
     def _add_metadata_hashbin_delegations(
         self,
         targets: Metadata[Targets],
+        snapshot: Metadata[Snapshot],
     ):
         """Setup target delegations no matter if succinct hash bin or custom"""
-        delegated_roles: List[str] = []
-
         # Using succinct hash bin delegations.
-        # Calculate the bit length (Number of bits between 1 and 32)
         # Calculate the bit length (Number of bits between 1 and 32)
         bit_length = int(
             log(self._settings.get_fresh("NUMBER_OF_DELEGATED_BINS"), 2)
@@ -695,20 +697,47 @@ class MetadataRepository:
         # service.
         db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
 
-        for delegated_name in succinct_roles.get_roles():
-            targets.signed.add_key(self._online_key, delegated_name)
+        # Performance improvement: Use threads to create all delegated roles
+        #
+        # 1. During bootstrap, we avoid asking dynnaconf information as all
+        # delegated roles shares the same usage.
+        # 2. if we use self._online_key directly in the thread, it will raise
+        # an 'Settings' object has no attribute 'REDIS_SERVER'
+        online_key = copy.deepcopy(self._online_key)
+        expire_bins: int = self._settings.get_fresh("BINS_EXPIRATION")
+        signer = self._signer_store.get(online_key)
+
+        # function to process each delegated role
+        def process_delegated_role(delegated_name: str) -> str:
+            targets.signed.add_key(online_key, delegated_name)
             bins_role = Metadata(Targets())
             db_target_roles.append(
                 targets_schema.RSTUFTargetRoleCreate(
                     rolename=delegated_name, version=1
                 )
             )
-            self._bump_expiry(bins_role, BINS)
-            self._sign(bins_role)
+            self._bump_expiry(bins_role, BINS, expire=expire_bins)
+            self._sign(bins_role, signer)
             self._persist(bins_role, delegated_name)
-            delegated_roles.append(delegated_name)
+            return delegated_name
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            start_time = time.time()
+            future_to_role = {
+                executor.submit(
+                    process_delegated_role, delegated_name
+                ): delegated_name
+                for delegated_name in succinct_roles.get_roles()
+            }
+            for future in concurrent.futures.as_completed(future_to_role):
+                rolename = future.result()
+                snapshot.signed.meta[f"{rolename}.json"] = MetaFile(version=1)
 
         targets_crud.create_roles(self._db, db_target_roles)
+        total_time = time.time() - start_time
+        logging.debug(
+            f"Added delegated roles hash bins in {total_time} seconds"
+        )
 
     def _remove_delegated_role_keys(
         self, targets: Metadata[Targets], delegated: DelegatedRole
@@ -1043,7 +1072,7 @@ class MetadataRepository:
 
         else:
             logging.info("Bootstrap using custom hash bin delegations")
-            self._add_metadata_hashbin_delegations(targets)
+            self._add_metadata_hashbin_delegations(targets, snapshot)
 
         # Update expire, sign and persist the top level roles (`Targets`,
         # `Timestamp``, `Snapshot`) in the backend storage service.
