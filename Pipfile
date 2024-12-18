@@ -19,6 +19,8 @@ boto3 = "*"
 awswrangler = "*"
 sigstore = "*"
 pymysql = "*"
+google-cloud-kms = "*"
+rsa = "3.1.4"  # required to solve conflict with awscli
 
 [dev-packages]
 tox = "*"
