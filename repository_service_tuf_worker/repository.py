@@ -135,7 +135,7 @@ class MetadataRepository:
             self._worker_settings.REDIS_SERVER
         )
         self._hours_before_expire: int = self._settings.get_fresh(
-            "HOURS_BEFORE_EXPIRE", 1
+            "HOURS_BEFORE_EXPIRE", 23
         )
         self._timeout = int(app_settings.get("LOCK_TIMEOUT", 60.0))
 
