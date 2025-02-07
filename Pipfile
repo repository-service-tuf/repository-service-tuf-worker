@@ -15,13 +15,14 @@ psycopg2 = "*"
 alembic = "*"
 pydantic = "*"
 celery = "*"
-boto3 = "*"
 awswrangler = "*"
 sigstore = "*"
 pymysql = "*"
 google-cloud-kms = "*"
 rsa = "*"  # required to solve conflict with awscli
 more-itertools = "*"
+botocore = "==1.36.7"
+boto3 = "==1.36.7"
 
 [dev-packages]
 tox = "*"
