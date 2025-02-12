@@ -656,8 +656,8 @@ class MetadataRepository:
             self._persist(bins_role, delegated_name)
             return delegated_name
 
-        start_time = time.time()
         with concurrent.futures.ThreadPoolExecutor() as executor:
+            start_time = time.time()
             future_to_role = {
                 executor.submit(
                     process_delegated_role, delegated_name
@@ -665,9 +665,9 @@ class MetadataRepository:
                 for delegated_name in succinct_roles.get_roles()
             }
 
-        for future in concurrent.futures.as_completed(future_to_role):
-            rolename = future.result()
-            snapshot.signed.meta[f"{rolename}.json"] = MetaFile(version=1)
+            for future in concurrent.futures.as_completed(future_to_role):
+                rolename = future.result()
+                snapshot.signed.meta[f"{rolename}.json"] = MetaFile(version=1)
 
         targets_crud.create_roles(self._db, db_target_roles)
         total_time = time.time() - start_time
