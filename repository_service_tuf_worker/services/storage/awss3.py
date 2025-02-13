@@ -28,6 +28,7 @@ class AWSS3(IStorage):
         s3_session: boto3.Session,
         s3_client: Any,
         s3_resource: Any,
+        s3_object_acl: Optional[str] = None,
         region: Optional[str] = None,
         endpoint_url: Optional[str] = None,
     ) -> None:
@@ -37,6 +38,7 @@ class AWSS3(IStorage):
         self._s3_session = s3_session
         self._s3_client = s3_client
         self._s3_resource = s3_resource
+        self._s3_object_acl = s3_object_acl or "public-read"
 
     @classmethod
     def configure(cls, settings: Dynaconf) -> "AWSS3":
@@ -44,6 +46,7 @@ class AWSS3(IStorage):
         secret_access_key = parse_if_secret(settings.AWS_SECRET_ACCESS_KEY)
         region = settings.get("AWS_DEFAULT_REGION")
         endpoint = settings.get("AWS_ENDPOINT_URL")
+        object_acl = settings.get("AWS_S3_OBJECT_ACL")
 
         s3_session = boto3.Session(
             aws_access_key_id=access_key,
@@ -71,7 +74,13 @@ class AWSS3(IStorage):
         )
 
         return cls(
-            bucket_name, s3_session, s3_client, s3_resource, region, endpoint
+            bucket_name,
+            s3_session,
+            s3_client,
+            s3_resource,
+            object_acl,
+            region,
+            endpoint,
         )
 
     @classmethod
@@ -95,6 +104,10 @@ class AWSS3(IStorage):
             ),
             ServiceSettings(
                 names=["AWS_ENDPOINT_URL"],
+                required=False,
+            ),
+            ServiceSettings(
+                names=["AWS_S3_OBJECT_ACL"],
                 required=False,
             ),
         ]
@@ -152,7 +165,10 @@ class AWSS3(IStorage):
         """
         try:
             self._s3_client.put_object(
-                Body=data, Bucket=self._bucket, Key=filename
+                Body=data,
+                Bucket=self._bucket,
+                Key=filename,
+                ACL=self._s3_object_acl,
             )
         except ClientError:
             raise StorageError(f"Can't write role file '{filename}'")
