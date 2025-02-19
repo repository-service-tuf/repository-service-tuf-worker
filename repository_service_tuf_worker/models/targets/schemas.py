@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2023 Repository Service for TUF Contributors
+# SPDX-FileCopyrightText: 2023-2025 Repository Service for TUF Contributors
 # SPDX-FileCopyrightText: 2022-2023 VMware Inc
 #
 # SPDX-License-Identifier: MIT
@@ -17,6 +17,9 @@ class TargetAction(enum.Enum):
 class RSTUFTargetRoleCreate(BaseModel):
     rolename: str
     version: int
+    expires: datetime
+    active: Optional[bool] = True
+    last_update: Optional[datetime] = datetime.now(timezone.utc)
 
     class Config:
         orm_mode = True
