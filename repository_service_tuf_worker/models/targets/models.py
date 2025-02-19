@@ -36,7 +36,8 @@ class RSTUFTargetFiles(Base):
 class RSTUFTargetRoles(Base):
     __tablename__ = "rstuf_target_roles"
     id = Column(Integer, primary_key=True, index=True)
-    rolename = Column(String, nullable=False, unique=True)
+    rolename = Column(String, nullable=False, unique=True, index=True)
+    expires = Column(DateTime, nullable=False)
     version = Column(Integer, nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     last_update = Column(DateTime, default=datetime.now(timezone.utc))
