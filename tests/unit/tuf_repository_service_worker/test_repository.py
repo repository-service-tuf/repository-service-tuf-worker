@@ -128,6 +128,41 @@ class TestMetadataRepository:
             pretend.call("ONLINE_KEY", expected_dict)
         ]
 
+    @pytest.mark.parametrize(
+        "mock_setting, expected",
+        [
+            (
+                None,
+                None,
+            ),
+            (
+                "pre-<somehash",
+                "pre",
+            ),
+            ("signing", "signing"),
+            (
+                "anythingelse",
+                "finished",
+            ),
+        ],
+    )
+    def test_bootstrap_state(
+        self, monkeypatch, test_repo, mock_setting, expected
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: mock_setting)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        result = test_repo.bootstrap_state
+        assert result == expected
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("BOOTSTRAP")
+        ]
+
     def test_refresh_settings_with_none_arg(self, test_repo):
         test_repo.refresh_settings()
 
@@ -341,6 +376,45 @@ class TestMetadataRepository:
     def test__persist_root(self, test_repo):
         self._test_helper_persist(test_repo, "root", 2, "2.root.json")
 
+    @pytest.mark.parametrize(
+        "role, mocked_metadata, expected",
+        [
+            (
+                "bins-0",
+                pretend.stub(
+                    signed=pretend.stub(
+                        expires=datetime.datetime(
+                            2015, 6, 16, 9, 5, 1, tzinfo=timezone.utc
+                        )
+                    )
+                ),
+                "bins-0",
+            ),
+            (
+                "bins-1",
+                pretend.stub(
+                    signed=pretend.stub(
+                        expires=datetime.datetime(
+                            2029, 6, 16, 9, 5, 1, tzinfo=timezone.utc
+                        )
+                    )
+                ),
+                None,
+            ),
+        ],
+    )
+    def test__is_expired(
+        self, mocked_metadata, role, expected, test_repo, mocked_datetime
+    ):
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda *a: mocked_metadata)
+        )
+
+        result = test_repo._is_expired(role)
+
+        assert result == expected
+        assert test_repo._storage_backend.get.calls == [pretend.call(role)]
+
     def test_bump_expiry(self, monkeypatch, test_repo, mocked_datetime):
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: 1460)
@@ -372,7 +446,7 @@ class TestMetadataRepository:
     def test__bump_and_persist(self, test_repo):
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._bump_version = pretend.call_recorder(lambda *a: None)
-        test_repo._sign = pretend.call_recorder(lambda a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
 
         timestamp = Metadata(Timestamp(expires=datetime.datetime.now()))
@@ -380,10 +454,10 @@ class TestMetadataRepository:
 
         assert result is None
         assert test_repo._bump_expiry.calls == [
-            pretend.call(timestamp, Timestamp.type)
+            pretend.call(timestamp, Timestamp.type, None)
         ]
         assert test_repo._bump_version.calls == [pretend.call(timestamp)]
-        assert test_repo._sign.calls == [pretend.call(timestamp)]
+        assert test_repo._sign.calls == [pretend.call(timestamp, None)]
         assert test_repo._persist.calls == [
             pretend.call(timestamp, Timestamp.type)
         ]
@@ -391,18 +465,20 @@ class TestMetadataRepository:
     def test__bump_and_persist_without_persist(self, test_repo):
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._bump_version = pretend.call_recorder(lambda *a: None)
-        test_repo._sign = pretend.call_recorder(lambda a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
 
         timestamp = Metadata(Timestamp(expires=datetime.datetime.now()))
-        result = test_repo._bump_and_persist(timestamp, Timestamp.type, False)
+        result = test_repo._bump_and_persist(
+            timestamp, Timestamp.type, persist=False
+        )
 
         assert result is None
         assert test_repo._bump_expiry.calls == [
-            pretend.call(timestamp, Timestamp.type)
+            pretend.call(timestamp, Timestamp.type, None)
         ]
         assert test_repo._bump_version.calls == [pretend.call(timestamp)]
-        assert test_repo._sign.calls == [pretend.call(timestamp)]
+        assert test_repo._sign.calls == [pretend.call(timestamp, None)]
         assert test_repo._persist.calls == []
 
     def test__update_timestamp(self, monkeypatch, test_repo):
@@ -1476,7 +1552,7 @@ class TestMetadataRepository:
             },
         }
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TARGETS, timeout=60.0),
+            pretend.call(repository.LOCK_TARGETS, timeout=500.0),
         ]
         assert fake_crud_read_roles_with_unpublished_files.calls == [
             pretend.call(test_repo._db)
@@ -1521,7 +1597,7 @@ class TestMetadataRepository:
             },
         }
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TARGETS, timeout=60.0),
+            pretend.call(repository.LOCK_TARGETS, timeout=500.0),
         ]
         assert test_repo._update_snapshot.calls == [
             pretend.call(target_roles=["bins-0", "bins-e"])
@@ -1571,7 +1647,7 @@ class TestMetadataRepository:
             },
         }
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TARGETS, timeout=60.0),
+            pretend.call(repository.LOCK_TARGETS, timeout=500.0),
         ]
         assert fake_crud_read_roles_with_unpublished_files.calls == [
             pretend.call(test_repo._db)
@@ -1595,9 +1671,9 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo.publish_artifacts()
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e)
         assert test_repo._redis.lock.calls == [
-            pretend.call("LOCK_TARGETS", timeout=60)
+            pretend.call("LOCK_TARGETS", timeout=500)
         ]
 
     def test_publish_artifacts_without_targets_to_publish(
@@ -1634,7 +1710,7 @@ class TestMetadataRepository:
             },
         }
         assert test_repo._redis.lock.calls == [
-            pretend.call("LOCK_TARGETS", timeout=60.0)
+            pretend.call("LOCK_TARGETS", timeout=500.0)
         ]
         assert (
             repository.targets_crud.read_roles_with_unpublished_files.calls
@@ -2569,7 +2645,7 @@ class TestMetadataRepository:
         result = test_repo.bump_online_roles()
         assert result is True
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TARGETS, timeout=60)
+            pretend.call(repository.LOCK_TARGETS, timeout=500)
         ]
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
@@ -2648,12 +2724,12 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo.bump_online_roles()
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e)
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TARGETS, timeout=60)
+            pretend.call(repository.LOCK_TARGETS, timeout=500)
         ]
 
     def test__verify_new_root_signing(self, test_repo):
@@ -3201,7 +3277,7 @@ class TestMetadataRepository:
             pretend.call(fake_old_root_md, fake_new_root_md)
         ]
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TARGETS, timeout=60.0)
+            pretend.call(repository.LOCK_TARGETS, timeout=500.0)
         ]
         assert test_repo._persist.calls == [
             pretend.call(fake_new_root_md, repository.Root.type)
@@ -3258,7 +3334,7 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo._root_metadata_update(fake_new_root_md)
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (60 seconds)" in str(e)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e)
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Root.type)
         ]
@@ -3324,7 +3400,7 @@ class TestMetadataRepository:
             )
 
         assert test_repo._redis.lock.calls == [
-            pretend.call(repository.LOCK_TARGETS, timeout=60.0)
+            pretend.call(repository.LOCK_TARGETS, timeout=500.0)
         ]
         assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
         assert fake_key_obj.from_dict.calls == [

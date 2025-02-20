@@ -135,9 +135,10 @@ class MetadataRepository:
             self._worker_settings.REDIS_SERVER
         )
         self._hours_before_expire: int = self._settings.get_fresh(
-            "HOURS_BEFORE_EXPIRE", 23
+            "HOURS_BEFORE_EXPIRE", 1
         )
-        self._timeout = int(app_settings.get("LOCK_TIMEOUT", 60.0))
+        self._expire_timedelta = timedelta(hours=self._hours_before_expire)
+        self._timeout = int(app_settings.get("LOCK_TIMEOUT", 500.0))
 
     @property
     def _settings(self) -> Dynaconf:
@@ -158,6 +159,21 @@ class MetadataRepository:
             key_dict["keyid"] = key.keyid
             self.write_repository_settings("ONLINE_KEY", key_dict)
             return key
+
+    @property
+    def bootstrap_state(self) -> Optional[str]:
+        bootstrap = self._settings.get_fresh("BOOTSTRAP")
+        if bootstrap is None:
+            return None
+
+        elif bootstrap.startswith("pre-"):
+            return "pre"
+
+        elif bootstrap.startswith("signing"):
+            return "signing"
+
+        else:
+            return "finished"
 
     @_online_key.setter
     def _online_key(self, key: Key):
@@ -272,8 +288,14 @@ class MetadataRepository:
 
         bytes_data = role.to_bytes(JSONSerializer())
         self._storage_backend.put(bytes_data, filename)
-        logging.debug(f"{filename} saved")
         return filename
+
+    def _is_expired(self, role: str) -> Optional[str]:
+        role_md: Metadata[Targets] = self._storage_backend.get(role)
+        today = datetime.now(timezone.utc)
+        if (role_md.signed.expires - today) < self._expire_timedelta:
+            return role
+        return None
 
     def _bump_expiry(
         self, role: Metadata, role_name: str, expire: Optional[int] = None
@@ -295,18 +317,48 @@ class MetadataRepository:
         role.signed.version += 1
 
     def _bump_and_persist(
-        self, role: Metadata, role_name: str, persist: Optional[bool] = True
+        self,
+        role: Metadata,
+        role_name: str,
+        persist: Optional[bool] = True,
+        signer: Optional[Signer] = None,
+        expire: Optional[int] = None,
     ):
         """
         Bump expiry and version, sign and persist 'role' metadata into a new
         file named VERSION.rolename.json where VERSION is the new role version.
         Optionally, if persist is false, then don't persist in a file.
         """
-        self._bump_expiry(role, role_name)
+        self._bump_expiry(role, role_name, expire)
         self._bump_version(role)
-        self._sign(role)
+        self._sign(role, signer)
         if persist:
             self._persist(role, role_name)
+
+    def update_snapshot(
+        self, snapshot_meta, database_meta, target_files
+    ) -> Metadata[Snapshot]:
+        snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
+
+        if bool(snapshot_meta) is True:
+            snapshot.signed.meta.update(snapshot_meta)
+            start_time = time.time()
+            targets_crud.update_roles_expire_version_by_rolenames(
+                self._db, database_meta
+            )
+            logging.info(
+                f"Updated roles expire and version: {time.time() - start_time}"
+            )
+
+        # If snapshot has new meta or snapshot is expired without new meta
+        # we need to bump the snapshot version
+        if bool(snapshot_meta) or self._is_expired(Snapshot.type):
+            start_time = time.time()
+            self._bump_and_persist(snapshot, "snapshot")
+            logging.info(f"Snapshot bumped: {time.time() - start_time}")
+            logging.debug("Bumped version of 'Snapshot' role")
+
+        return snapshot
 
     def _update_timestamp(
         self,
@@ -536,6 +588,35 @@ class MetadataRepository:
 
         return role_name
 
+    def get_delegated_rolenames(self, expired: bool = False) -> List[str]:
+        """
+        Get all delegated roles names.
+
+        expired: If True, return only expired delegated roles.
+        """
+        # we don't store Target top level role in the database
+        # we create the object for the metadata update (without action in db)
+        if expired:
+            roles = [
+                r.rolename
+                for r in targets_crud.read_roles_expired(
+                    self._db, self._expire_timedelta
+                )
+            ]
+
+            targets: Metadata[Targets] = self._storage_backend.get(
+                Targets.type
+            )
+            today = datetime.now(timezone.utc)
+            if (targets.signed.expires - today) < self._expire_timedelta:
+                roles.append(Targets.type)
+
+        else:
+            roles = [r.rolename for r in targets_crud.read_all_roles(self._db)]
+            roles.append(Targets.type)
+
+        return roles
+
     def _update_task(
         self,
         roles_to_artifacts: Dict[str, List[targets_models.RSTUFTargetFiles]],
@@ -711,13 +792,18 @@ class MetadataRepository:
         def process_delegated_role(delegated_name: str) -> str:
             targets.signed.add_key(online_key, delegated_name)
             bins_role = Metadata(Targets())
-            db_target_roles.append(
-                targets_schema.RSTUFTargetRoleCreate(
-                    rolename=delegated_name, version=1
-                )
-            )
+
             self._bump_expiry(bins_role, BINS, expire=expire_bins)
             self._sign(bins_role, signer)
+
+            db_target_roles.append(
+                targets_schema.RSTUFTargetRoleCreate(
+                    rolename=delegated_name,
+                    version=1,
+                    expires=bins_role.signed.expires,
+                )
+            )
+
             self._persist(bins_role, delegated_name)
             return delegated_name
 
@@ -1017,6 +1103,67 @@ class MetadataRepository:
             )
 
         return (success, failed)
+
+    def _update_delegated_role_target_files(self, delegation, db_role):
+        delegation.signed.targets.clear()
+        delegation.signed.targets = {
+            file.path: TargetFile.from_dict(file.info, file.path)
+            for file in db_role.target_files
+            if file.action == targets_schema.TargetAction.ADD
+            # Filtering the files with action 'ADD' cannot be done
+            # in CRUD. If a target role doesn't have any target
+            # files with an action 'ADD' (only 'REMOVE') then using
+            # CRUD will not return the target role and it won't be
+            # updated. An example can be when there is a role with
+            # one target file with action "REMOVE" and the CRUD
+            # will return None for this specific role.
+        }
+
+        return delegation
+
+    def update_targets_delegated_role(self, role: str):
+
+        if role == Targets.type:
+            targets: Metadata[Targets] = self._storage_backend.get(
+                Targets.type
+            )
+            self._bump_and_persist(targets, Targets.type)
+
+            return {
+                Targets.type: {
+                    "version": targets.signed.version,
+                    "expire": targets.signed.expires,
+                    "target_files": [],
+                }
+            }
+
+        signer = self._signer_store.get(self._online_key)
+        expire = self._settings.get_fresh("BINS_EXPIRATION")
+
+        db_target_role: targets_crud.models.RSTUFTargetRoles = (
+            targets_crud.read_role_joint_files(self._db, role)
+        )
+        rolename = db_target_role.rolename
+
+        delegation: Metadata[Targets] = self._storage_backend.get(
+            rolename, db_target_role.version
+        )
+        self._update_delegated_role_target_files(delegation, db_target_role)
+        role_target_files = [file.path for file in db_target_role.target_files]
+
+        # Update expiry, bump version, and persist
+        self._bump_and_persist(
+            delegation, BINS, persist=False, signer=signer, expire=expire
+        )
+        self._persist(delegation, rolename)
+
+        return {
+            rolename: {
+                "version": delegation.signed.version,
+                "expire": delegation.signed.expires,
+                "target_files": role_target_files,
+            }
+        }
 
     def _bootstrap_online_roles(
         self,
@@ -1547,8 +1694,9 @@ class MetadataRepository:
             targets: Metadata[Targets] = self._storage_backend.get(
                 Targets.type
             )
-            if force or (targets.signed.expires - today) < timedelta(
-                hours=self._hours_before_expire
+            if (
+                force
+                or (targets.signed.expires - today) < self._expire_timedelta
             ):
                 self._update_targets_delegations_key(targets)
                 self._bump_and_persist(targets, Targets.type)
@@ -1594,9 +1742,7 @@ class MetadataRepository:
                     else:
                         raise err
 
-                if (role_md.signed.expires - today) < timedelta(
-                    hours=self._hours_before_expire
-                ):
+                if (role_md.signed.expires - today) < self._expire_timedelta:
                     continue
                 else:
                     delegated_roles.remove(role)
@@ -1631,9 +1777,9 @@ class MetadataRepository:
         """
 
         snapshot = self._storage_backend.get(Snapshot.type)
-        if (snapshot.signed.expires - datetime.now(timezone.utc)) < timedelta(
-            hours=self._hours_before_expire
-        ) or force:
+        if (
+            snapshot.signed.expires - datetime.now(timezone.utc)
+        ) < self._expire_timedelta or force:
             timestamp = self._update_timestamp(
                 self._update_snapshot(only_snapshot=True)
             )

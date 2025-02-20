@@ -113,6 +113,23 @@ Redis Server DB number for Result Backend (tasks). Default: 0
 
 Important: It should use the same db id as used by RSTUF API.
 
+#### (Optional) `RSTUF_BUMP_ONLINE_ROLES_TTL`
+
+Bump Online Roles lock time to lease (TTL) in seconds. Default: 600
+
+This tasks runs every 10 minutes. This is the TTL time in case a task gets
+longer.
+It avoid one or more RSTUF Workers running at the same task.
+
+#### (Optional) `RSTUF_BUMP_ONLINE_ROLES_CHUNK_SIZE`
+
+Define the bump online roles chunk size. Default: 500
+
+RSTUF Worker can have large number of delegations (ex: hash bins).
+
+RSTUF Worker calculates automatically the chunk. Depending on the
+number of Workers and Roles it can be customized.
+
 #### (Optional) `RSTUF_REDIS_SERVER_DB_REPO_SETTINGS`
 
 Redis Server DB number for repository settings. Default: 1
