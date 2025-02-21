@@ -23,6 +23,7 @@ class TestAWSS3Service:
         assert service._s3_session == "session"
         assert service._s3_client == "client"
         assert service._s3_resource == "resource"
+        assert service._s3_object_acl == "public-read"
         assert service._region is None
         assert service._endpoint_url is None
 
@@ -32,6 +33,7 @@ class TestAWSS3Service:
             "session",
             "client",
             "resource",
+            "private",
             "region",
             "http://localstack:4566",
         )
@@ -40,6 +42,7 @@ class TestAWSS3Service:
         assert service._s3_session == "session"
         assert service._s3_client == "client"
         assert service._s3_resource == "resource"
+        assert service._s3_object_acl == "private"
         assert service._region == "region"
         assert service._endpoint_url == "http://localstack:4566"
 
@@ -156,6 +159,10 @@ class TestAWSS3Service:
                 names=["AWS_ENDPOINT_URL"],
                 required=False,
             ),
+            awss3.ServiceSettings(
+                names=["AWS_S3_OBJECT_ACL"],
+                required=False,
+            ),
         ]
 
     def test_get(self, mocked_boto3):
@@ -205,12 +212,12 @@ class TestAWSS3Service:
 
     def test_get_endpoint_url_not_none(self, mocked_boto3):
         service = awss3.AWSS3(
-            "bucket",
-            "session",
-            "client",
-            "resource",
-            "region",
-            "http://localstack",
+            bucket="bucket",
+            s3_session="session",
+            s3_client="client",
+            s3_resource="resource",
+            region="region",
+            endpoint_url="http://localstack",
         )
         awss3.awswrangler.s3.list_objects = pretend.call_recorder(
             lambda *a, **kw: [
@@ -253,12 +260,12 @@ class TestAWSS3Service:
 
     def test_get_timestamp(self, mocked_boto3):
         service = awss3.AWSS3(
-            "bucket",
-            "session",
-            "client",
-            "resource",
-            "region",
-            "http://localstack:4566",
+            bucket="bucket",
+            s3_session="session",
+            s3_client="client",
+            s3_resource="resource",
+            region="region",
+            endpoint_url="http://localstack:4566",
         )
 
         awss3.awswrangler.s3.list_objects = pretend.call_recorder(
@@ -295,12 +302,12 @@ class TestAWSS3Service:
 
     def test_get_max_version_ValueError(self, mocked_boto3, monkeypatch):
         service = awss3.AWSS3(
-            "bucket",
-            "session",
-            "client",
-            "resource",
-            "region",
-            "http://localstack:4566",
+            bucket="bucket",
+            s3_session="session",
+            s3_client="client",
+            s3_resource="resource",
+            region="region",
+            endpoint_url="http://localstack:4566",
         )
 
         awss3.awswrangler.s3.list_objects = pretend.call_recorder(
@@ -343,12 +350,12 @@ class TestAWSS3Service:
 
     def test_get_DeserializationError(self, mocked_boto3):
         service = awss3.AWSS3(
-            "bucket",
-            "session",
-            "client",
-            "resource",
-            "region",
-            "http://localstack:4566",
+            bucket="bucket",
+            s3_session="session",
+            s3_client="client",
+            s3_resource="resource",
+            region="region",
+            endpoint_url="http://localstack:4566",
         )
 
         awss3.awswrangler.s3.list_objects = pretend.call_recorder(
@@ -403,7 +410,10 @@ class TestAWSS3Service:
         assert result is None
         assert service._s3_client.put_object.calls == [
             pretend.call(
-                Body=fake_file_data, Bucket=service._bucket, Key="3.bin-e.json"
+                Body=fake_file_data,
+                Bucket=service._bucket,
+                Key="3.bin-e.json",
+                ACL="public-read",
             )
         ]
 

@@ -175,6 +175,13 @@ See the AWS3 Environment Variables section below.
   client automatically constructs the appropriate URL to use when
   communicating with a service.
 
+*  ``RSTUF_AWS_S3_OBJECT_ACL``
+
+  Define the ACL creation to the JSON TUF Metadata in the S3 bucket.
+
+  Default is ``public-read``. See [Boto3 documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/client/put_object_acl.html)
+  for all supported Options.
+
 #### (Optional) Google Cloud Environment Variables
 
 *  ``RSTUF_GOOGLE_APPLICATION_CREDENTIALS``
