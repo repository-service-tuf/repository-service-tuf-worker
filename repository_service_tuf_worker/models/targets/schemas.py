@@ -17,6 +17,9 @@ class TargetAction(enum.Enum):
 class RSTUFTargetRoleCreate(BaseModel):
     rolename: str
     version: int
+    expires: datetime
+    active: Optional[bool] = True
+    last_update: Optional[datetime] = datetime.now(timezone.utc)
 
     class Config:
         orm_mode = True
