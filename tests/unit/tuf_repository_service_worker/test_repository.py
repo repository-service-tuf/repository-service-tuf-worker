@@ -640,6 +640,48 @@ class TestMetadataRepository:
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
 
+    @pytest.mark.parametrize(
+        "expired, targets_expired, expected",
+        [
+            # Case 0: Role and Targets are expired
+            (True, True, ["bins-0", "targets"]),
+            # Case 1: Role is expired but Targets are not
+            (True, False, ["bins-0"]),
+            # Case 2: All roles
+            (
+                False,
+                False,
+                ["bins-0", "bins-1", "bins-2", "bins-3", "targets"],
+            ),
+        ],
+    )
+    def test_get_delegated_rolenames(
+        self,
+        monkeypatch,
+        test_repo,
+        expired,
+        targets_expired,
+        expected,
+    ):
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_roles_rolenames_expired",
+            pretend.call_recorder(lambda *a: ["bins-0"]),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_all_roles_rolenames",
+            pretend.call_recorder(
+                lambda *a: ["bins-0", "bins-1", "bins-2", "bins-3"]
+            ),
+        )
+        test_repo._is_expired = pretend.call_recorder(
+            lambda a: targets_expired
+        )
+
+        result = test_repo.get_delegated_rolenames(expired)
+        assert result == expected
+
     def test__get_role_for_artifact_path(self, test_repo):
         fake_targets = pretend.stub(
             signed=pretend.stub(
