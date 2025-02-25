@@ -13,7 +13,14 @@ import pytest
 from celery.exceptions import ChordError
 from celery.result import states
 from securesystemslib.exceptions import StorageError
-from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp
+from tuf.api.metadata import (
+    Metadata,
+    MetaFile,
+    Root,
+    Snapshot,
+    Targets,
+    Timestamp,
+)
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
@@ -480,6 +487,106 @@ class TestMetadataRepository:
         assert test_repo._bump_version.calls == [pretend.call(timestamp)]
         assert test_repo._sign.calls == [pretend.call(timestamp, None)]
         assert test_repo._persist.calls == []
+
+    @pytest.mark.parametrize(
+        "snapshot_meta, expired_snapshot, expected_result",
+        [
+            # Case 0: New snapshot meta and snapshot is not expired
+            (
+                {"bins-9.json": MetaFile(1)},
+                False,
+                Metadata(
+                    Snapshot(
+                        version=6,
+                        expires=datetime.datetime(2035, 6, 16, 9, 5, 1),
+                        meta={"bins-9.json": MetaFile(1)},
+                    )
+                ),
+            ),
+            # Case 1: New snapshot meta and snapshot is expired
+            (
+                {"bins-9.json": MetaFile(1)},
+                True,
+                Metadata(
+                    Snapshot(
+                        version=6,
+                        expires=datetime.datetime(2035, 6, 16, 9, 5, 1),
+                        meta={"bins-9.json": MetaFile(1)},
+                    )
+                ),
+            ),
+            # Case 2: No new snapshot meta and snapshot is not expired
+            (
+                None,
+                False,
+                Metadata(
+                    Snapshot(
+                        version=5,
+                        expires=datetime.datetime(2019, 6, 16, 9, 5, 1),
+                        meta={},
+                    )
+                ),
+            ),
+        ],
+    )
+    def test_update_snapshot(
+        self,
+        monkeypatch,
+        test_repo,
+        snapshot_meta,
+        expired_snapshot,
+        expected_result,
+    ):
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_roles_expire_version_by_rolenames",
+            pretend.call_recorder(lambda *a: None),
+        )
+
+        mocked_snapshot = Metadata(
+            Snapshot(
+                version=5,
+                expires=datetime.datetime(2019, 6, 16, 9, 5, 1),
+                meta={},
+            )
+        )
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda *a: mocked_snapshot)
+        )
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+            md.signed.expires = datetime.datetime(2035, 6, 16, 9, 5, 1)
+            # md.signed.meta.update(snapshot_meta)
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            fake__bump_and_persist
+        )
+        test_repo._is_expired = pretend.call_recorder(
+            lambda *a: expired_snapshot
+        )
+
+        result = test_repo.update_snapshot(snapshot_meta, {"database_meta"})
+
+        assert result.to_dict() == expected_result.to_dict()
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(Snapshot.type)
+        ]
+        if mocked_snapshot.signed.version == 5:
+            assert test_repo._bump_and_persist.calls == []
+            assert (
+                repository.targets_crud.update_roles_expire_version_by_rolenames.calls  # noqa
+                == []
+            )
+        else:
+            assert test_repo._bump_and_persist.calls == [
+                pretend.call(mocked_snapshot, Snapshot.type)
+            ]
+            assert (
+                repository.targets_crud.update_roles_expire_version_by_rolenames.calls  # noqa
+                == [pretend.call(test_repo._db, {"database_meta"})]
+            )
 
     def test__update_timestamp(self, monkeypatch, test_repo):
         snapshot_version = 3

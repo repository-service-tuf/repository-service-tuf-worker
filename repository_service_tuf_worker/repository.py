@@ -336,7 +336,7 @@ class MetadataRepository:
             self._persist(role, role_name)
 
     def update_snapshot(
-        self, snapshot_meta, database_meta, target_files
+        self, snapshot_meta: MetaFile, database_meta
     ) -> Metadata[Snapshot]:
         snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
 
