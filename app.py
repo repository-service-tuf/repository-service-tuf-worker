@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import redis
 from celery import Celery, chain, schedules, signals
@@ -80,18 +80,6 @@ app = Celery(
     # broker_use_ssl=BROKER_USE_SSL
     # (https://github.com/repository-service-tuf/vmware/issues/6)
 )
-
-
-def _calculate_chunk_size(num_roles: int) -> int:
-    chunk_size_cfg = repository._settings.get_fresh(
-        "BUMP_ONLINE_ROLES_CHUNK_SIZE", 500
-    )
-    if num_roles <= chunk_size_cfg:
-        chunk_size = int(num_roles / 2)
-    else:
-        chunk_size = chunk_size_cfg
-
-    return chunk_size
 
 
 @app.task(serializer="json", bind=True)
@@ -176,7 +164,6 @@ def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
         f"{time.time() - start_time} seconds"
     )
 
-    start_time = time.time()
     repository._update_timestamp(
         repository.update_snapshot(
             snapshot_meta, database_meta, target_files
@@ -187,28 +174,43 @@ def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
         f"{time.time() - start_time} seconds"
     )
 
-    logging.info(f"Updated snapshot/timestamp with {len(updated_roles)} roles")
+    logging.info(
+        f"Updated snapshot/timestamp with {len(updated_roles)} role(s)"
+    )
 
 
 @app.task(serializer="json", queue="rstuf_internals")
-def bump_online_roles(expired: bool = False) -> None:
+def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
     """
     Bump all online roles.
     """
+
+    def _calculate_chunk_size(num_roles: int) -> int:
+        chunk_size_cfg = repository._settings.get_fresh(
+            "BUMP_ONLINE_ROLES_CHUNK_SIZE", 500
+        )
+        if num_roles <= chunk_size_cfg:
+            chunk_size = int(num_roles / 2)
+        else:
+            chunk_size = chunk_size_cfg
+
+        return chunk_size
+
+    start_time = time.time()
 
     # Try to acquire lock
     if not repository._redis.set(BOR_LOCK, "locked", ex=BOR_TTL, nx=True):
         logging.info(
             "Skipping bump_online_roles, another task is already running."
         )
-        return
+        _end_bor_chain_callback(None, start_time)
+        return []
 
-    start_time = time.time()
     if repository.bootstrap_state != "finished":
-        logging.info("Bootstrap not finished yet. Skipping bump_online_roles")
+        logging.info("Skipping bump_online_roles, bootstrap not finished.")
         # call end within the bump_online_role task
         _end_bor_chain_callback(None, start_time)
-        return
+        return []
 
     status_lock_targets = False
     # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker
@@ -221,23 +223,25 @@ def bump_online_roles(expired: bool = False) -> None:
             # No expired roles, call end within the bump_online_role task
             if len(roles) == 0:
                 _end_bor_chain_callback(None, start_time)
-                return
+                return roles
 
             chunk_size = _calculate_chunk_size(len(roles))
 
-            # It is a corner
+            # It is a corner cases
             # We have only one role to be update and chunk_size is 0
             # _calculate_chunk_size() will return (1 / 2) = 0
             # Celery chunks cannot have group equal 1, so we execute
             # without groups, directly.
-            if chunk_size == 0:
+            # it also applies when there is one role independet of the chunk
+            # size
+            if chunk_size == 0 and len(roles) == 1:
                 # call the update and end of chain within bump_online_role task
                 _update_snapshot_timestamp(
                     [[repository.update_targets_delegated_role(roles[0])]]
                 )
                 _end_bor_chain_callback(None, start_time)
 
-                return
+                return roles
 
             else:
                 # Run updates in chain using chunks which improves the
@@ -250,20 +254,20 @@ def bump_online_roles(expired: bool = False) -> None:
                 task_groups = _update_online_role.chunks(
                     zip(roles), chunk_size
                 ).group()
-                logging.debug(
+                logging.info(
                     f"Tasks: {len(task_groups)} | Chunk size: {chunk_size}"
                 )
                 # create the chain with task groups and call a task
                 # _update_snapshot_timestamp with the result of
                 # _update_online_role task
                 # when finished, call _end_bor_chain_callback task
-                c = chain(
+                chain(
                     task_groups,
                     _update_snapshot_timestamp.s(task_groups),
                     _end_bor_chain_callback.s(start_time),
                 )(queue="rstuf_internals")
 
-                return c
+                return roles
     except redis.exceptions.LockNotOwnedError:
         if status_lock_targets is False:
             logging.error(
