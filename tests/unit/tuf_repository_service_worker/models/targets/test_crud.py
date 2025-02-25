@@ -186,6 +186,28 @@ class TestCrud:
         ]
         assert mocked_all.all.calls == [pretend.call()]
 
+    def test_read_all_roles_rolenames(self, monkeypatch):
+        monkeypatch.setattr(
+            crud.models,
+            "RSTUFTargetRoles",
+            pretend.stub(rolename="bins-0", active=True),
+        )
+        mocked_all = pretend.stub(
+            all=pretend.call_recorder(
+                lambda: [(crud.models.RSTUFTargetRoles.rolename,)]
+            )
+        )
+        mocked_filter = pretend.stub(
+            filter=pretend.call_recorder(lambda *a: mocked_all)
+        )
+        mocked_db = pretend.stub(
+            query=pretend.call_recorder(lambda *a: mocked_filter)
+        )
+        test_result = crud.read_all_roles_rolenames(mocked_db)
+        assert test_result == ["bins-0"]
+        assert mocked_db.query.calls == [pretend.call("bins-0")]
+        assert mocked_all.all.calls == [pretend.call()]
+
     def test_read_roles_joint_files(self):
         crud.models.RSTUFTargetRoles = pretend.stub(
             rolename=pretend.stub(in_=pretend.call_recorder(lambda *a: True)),
@@ -249,7 +271,7 @@ class TestCrud:
         ]
         assert mocked_one.one.calls == [pretend.call()]
 
-    def test_read_roles_expired(self, monkeypatch):
+    def test_read_roles_rolenames_expired(self, monkeypatch):
         monkeypatch.setattr(
             crud.models,
             "RSTUFTargetRoles",
@@ -262,7 +284,9 @@ class TestCrud:
             ),
         )
         mocked_all = pretend.stub(
-            all=pretend.call_recorder(lambda: [crud.models.RSTUFTargetRoles])
+            all=pretend.call_recorder(
+                lambda: [(crud.models.RSTUFTargetRoles.rolename,)]
+            )
         )
         mocked_filter = pretend.stub(
             filter=pretend.call_recorder(lambda *a: mocked_all)
@@ -271,11 +295,13 @@ class TestCrud:
             query=pretend.call_recorder(lambda *a: mocked_filter)
         )
         expire_timedelta = datetime.timedelta(hours=-1)
-        test_result = crud.read_roles_expired(mocked_db, expire_timedelta)
+        test_result = crud.read_roles_rolenames_expired(
+            mocked_db, expire_timedelta
+        )
 
-        assert test_result == [crud.models.RSTUFTargetRoles]
+        assert test_result == ["bins-0"]
         assert mocked_db.query.calls == [
-            pretend.call(crud.models.RSTUFTargetRoles)
+            pretend.call(crud.models.RSTUFTargetRoles.rolename)
         ]
         assert mocked_filter.filter.calls == [pretend.call(True, True)]
         assert mocked_all.all.calls == [pretend.call()]

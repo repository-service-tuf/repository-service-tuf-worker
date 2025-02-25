@@ -117,6 +117,21 @@ def read_all_roles(db: Session) -> List[models.RSTUFTargetRoles]:
     )
 
 
+def read_all_roles_rolenames(db: Session) -> List[Optional[str]]:
+    """
+    Read a all Target bin roles.
+    """
+    result = (
+        db.query(models.RSTUFTargetRoles.rolename)
+        .filter(models.RSTUFTargetRoles.active == True)  # noqa
+        .all()
+    )
+    if result is None:
+        return []
+    else:
+        return [rolename[0] for rolename in result]
+
+
 def read_roles_joint_files(
     db: Session, rolenames: List[str]
 ) -> List[models.RSTUFTargetRoles]:
@@ -157,22 +172,27 @@ def read_role_joint_files(
     )
 
 
-def read_roles_expired(
+def read_roles_rolenames_expired(
     db: Session, expire_timedelta: timedelta
-) -> List[models.RSTUFTargetRoles]:
+) -> List[Optional[str]]:
     """
     Read all roles that are expired.
     """
     today = datetime.now(timezone.utc)
     # Query roles expiring before the threshold and are active
-    return (
-        db.query(models.RSTUFTargetRoles)
+    result = (
+        db.query(models.RSTUFTargetRoles.rolename)
         .filter(
             (models.RSTUFTargetRoles.expires - today) < expire_timedelta,
             models.RSTUFTargetRoles.active == True,  # noqa
         )
         .all()
     )
+
+    if result is None:
+        return []
+    else:
+        return [rolename[0] for rolename in result]
 
 
 def update_file_path_and_info(

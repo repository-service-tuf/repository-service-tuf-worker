@@ -594,25 +594,19 @@ class MetadataRepository:
 
         expired: If True, return only expired delegated roles.
         """
+
         # we don't store Target top level role in the database
         # we create the object for the metadata update (without action in db)
         if expired:
-            roles = [
-                r.rolename
-                for r in targets_crud.read_roles_expired(
-                    self._db, self._expire_timedelta
-                )
-            ]
-
-            targets: Metadata[Targets] = self._storage_backend.get(
-                Targets.type
+            roles = targets_crud.read_roles_rolenames_expired(
+                self._db, self._expire_timedelta
             )
-            today = datetime.now(timezone.utc)
-            if (targets.signed.expires - today) < self._expire_timedelta:
+
+            if self._is_expired(Targets.type):
                 roles.append(Targets.type)
 
         else:
-            roles = [r.rolename for r in targets_crud.read_all_roles(self._db)]
+            roles = targets_crud.read_all_roles_rolenames(self._db)
             roles.append(Targets.type)
 
         return roles
