@@ -2,7 +2,7 @@
 #
 
 # Base
-FROM python:3.12-slim as base_os
+FROM python:3.13-slim as base_os
 
 # Builder requirements and deps
 FROM base_os as builder
@@ -22,7 +22,7 @@ RUN apt-get remove gcc --purge -y \
 FROM base_os as pre-final
 RUN apt-get update && apt-get install libpq-dev -y && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /root/.local/bin /usr/local/bin/
-COPY --from=builder /root/.local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages/
+COPY --from=builder /root/.local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages/
 
 # Final stage
 FROM pre-final
