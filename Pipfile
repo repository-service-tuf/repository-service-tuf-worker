@@ -20,7 +20,7 @@ awswrangler = "*"
 sigstore = "*"
 pymysql = "*"
 google-cloud-kms = "*"
-rsa = "4.8"  # required to solve conflict with awscli
+rsa = "4.9.1"  # required to solve conflict with awscli
 
 [dev-packages]
 tox = "*"
