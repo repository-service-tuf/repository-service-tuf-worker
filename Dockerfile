@@ -29,11 +29,12 @@ COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/pytho
 FROM pre-final
 
 WORKDIR /opt/repository-service-tuf-worker
-RUN mkdir /data
+ENV DATA_DIR=/data
+RUN mkdir $DATA_DIR
 COPY alembic.ini /opt/repository-service-tuf-worker/
 COPY alembic /opt/repository-service-tuf-worker/alembic
 COPY app.py /opt/repository-service-tuf-worker
 COPY entrypoint.sh /opt/repository-service-tuf-worker
-COPY supervisor.conf /opt/repository-service-tuf-worker/
+COPY supervisor.conf ${DATA_DIR}/
 COPY repository_service_tuf_worker /opt/repository-service-tuf-worker/repository_service_tuf_worker
 ENTRYPOINT ["bash", "entrypoint.sh"]
