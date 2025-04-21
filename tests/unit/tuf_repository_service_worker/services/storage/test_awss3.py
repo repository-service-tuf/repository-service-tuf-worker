@@ -3,9 +3,11 @@
 #
 # SPDX-License-Identifier: MIT
 
+from typing import Optional
+
 import pretend
 import pytest
-from tuf.api.metadata import Metadata, Optional, Root, Timestamp
+from tuf.api.metadata import Metadata, Root, Timestamp
 
 from repository_service_tuf_worker.services.storage import awss3
 
