@@ -20,7 +20,9 @@ awswrangler = "*"
 sigstore = "*"
 pymysql = "*"
 google-cloud-kms = "*"
-rsa = "4.9.1"  # required to solve conflict with awscli
+rsa = "*"  # required to solve conflict with awscli
+awscli-local = "*"
+bcdoc = "*"
 
 [dev-packages]
 tox = "*"
@@ -45,8 +47,7 @@ sphinxcontrib-qthelp = "*"
 sphinxcontrib-serializinghtml = "*"
 pre-commit = "*"
 bandit = "*"
-awscli-local = "*"
-awscli = "*"
+myst-parser = "*"
 
 [requires]
 python_version = "3.13"
