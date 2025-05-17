@@ -198,6 +198,18 @@ class MetadataRepository:
         """Class Method for MetadataRepository service creation."""
         return cls()
 
+    def _storage_load_snapshot(self) -> Metadata[Snapshot]:
+        """
+        Loads 'snapshot' metadata from the storage backend.
+        """
+        return self._storage_backend.get(Snapshot.type)
+
+    def _storage_load_targets(self) -> Metadata[Targets]:
+        """
+        Loads 'targets' metadata from the storage backend.
+        """
+        return self._storage_backend.get(Targets.type)
+
     def get_delegation_keyids(self, rolename: str) -> List[str]:
         if self.uses_succinct_roles:
             logging.debug("delegations using succinct delegations")
@@ -2209,8 +2221,8 @@ class MetadataRepository:
                 delegations: Delegations = Delegations.from_dict(
                     payload["delegations"]
                 )
-                targets = self._storage_backend.get(Targets.type)
-                snapshot = self._storage_backend.get(Snapshot.type)
+                targets = self._storage_load_targets()
+                snapshot = self._storage_load_snapshot()
                 success, failed = self._add_metadata_delegation(
                     delegations, targets, persist_targets=True
                 )
@@ -2224,7 +2236,7 @@ class MetadataRepository:
                         snapshot.signed.meta[f"{role}.json"] = MetaFile(
                             success[role].signed.version
                         )
-                        self._persist(success[role])
+                        self._persist(success[role], role)
 
                     else:
                         logging.debug(f"adding role '{role}'for signing")
