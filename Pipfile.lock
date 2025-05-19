@@ -424,20 +424,20 @@
         },
         "google-auth": {
             "hashes": [
-                "sha256:c277cf39f7c192d8540eb6331c08b5a0796e8041af8343ae73dd6b269732ca6c",
-                "sha256:dc3a5078acb1043c3e43685c22d628afe40af8559cf561de388e0c939280fcc8"
+                "sha256:58f0e8416a9814c1d86c9b7f6acf6816b51aba167b2c76821965271bac275540",
+                "sha256:ed4cae4f5c46b41bae1d19c036e06f6c371926e97b19e816fc854eff811974ee"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==2.40.0"
+            "version": "==2.40.1"
         },
         "google-cloud-kms": {
             "hashes": [
-                "sha256:aeeff2095dd32ba7c5921785e1adca1eeab200d5c27f875eee5808a7e65075ce",
-                "sha256:f41a97dc1ed294080cd8b65a385bc73de3253c6f8fb673dc9de5969598596ea5"
+                "sha256:6d8993a745fe6e5307812899e087af66344cd1d0eb3a94bd5a399bf7aa7fbe41",
+                "sha256:e70acbf226dd10024ce0f243346674637dac092d0f868f2353d2762a54d620ec"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.7'",
-            "version": "==3.4.1"
+            "version": "==3.5.0"
         },
         "googleapis-common-protos": {
             "extras": [
