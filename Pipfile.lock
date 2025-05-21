@@ -83,20 +83,20 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:38ecb477ba9fc4edcf97133bf1fe33261ebec6c58d59982abff3cea167624211",
-                "sha256:bd723bfbc109bdc63e017ead74dd22f2cf8a7515e24e730870b8a70af823e626"
+                "sha256:0494bafa771561c02ae5926143ce69b6ee4017f11ced22d0293a8372acb7472a",
+                "sha256:aa1424213678a249fe828fb9345deac5e33f9a2266fd1b23ec72e02857b018a2"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==1.38.18"
+            "version": "==1.38.20"
         },
         "botocore": {
             "hashes": [
-                "sha256:0b5ddf195f15218f30ec63d8aba9e55cf60af2984c068276b9fd206059043310",
-                "sha256:ae4c97383e797e9648f8721bb0217fd9efd228e9fbc661d83dc0959be083ec5c"
+                "sha256:03a5027a207fc66cd0bf8cd1abb98db41fd4d23e6bd5f43f68586af9736240fc",
+                "sha256:70feba9b3f73946a9739d0c16703190d79379f065cf6e29883b5d7f791b247b8"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==1.38.18"
+            "version": "==1.38.20"
         },
         "cachetools": {
             "hashes": [
@@ -430,12 +430,12 @@
         },
         "google-cloud-kms": {
             "hashes": [
-                "sha256:6d8993a745fe6e5307812899e087af66344cd1d0eb3a94bd5a399bf7aa7fbe41",
-                "sha256:e70acbf226dd10024ce0f243346674637dac092d0f868f2353d2762a54d620ec"
+                "sha256:11dc9a1b4edcc6794c5fee7e4e7dbd14b051bde99f4702bd70fec193d152abdc",
+                "sha256:b5f1ac87f8dc9a6642439e93baa5a63ee2d4d18c140669941689e9ab5abed1d9"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.7'",
-            "version": "==3.5.0"
+            "version": "==3.5.1"
         },
         "googleapis-common-protos": {
             "extras": [
