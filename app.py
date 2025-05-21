@@ -9,13 +9,14 @@ import itertools
 import json
 import logging
 import time
+import ssl
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import redis
 from celery import Celery, chain, schedules, signals
 
-from repository_service_tuf_worker import get_worker_settings
+from repository_service_tuf_worker import get_worker_settings, parse_if_secret
 from repository_service_tuf_worker.repository import (
     MetadataRepository,
     MetaFile,
@@ -49,13 +50,15 @@ redis_backend = redis.StrictRedis.from_url(
     db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0),
 )
 
-# TODO: Issue https://github.com/repository-service-tuf/vmware/issues/6
-# BROKER_USE_SSL = {
-#     "keyfile": "data/certs/engine_mq.pem",
-#     "certfile": "data/certs/engine_mq.crt",
-#     "ca_certs": "data/certs/ca_mq.crt",
-#     "cert_reqs": ssl.CERT_REQUIRED,
-# }
+if worker_settings.get("BROKER_SSL_ENABLE", "false") == "false":
+    BROKER_USE_SSL = None
+else:
+    BROKER_USE_SSL = {
+        "keyfile": parse_if_secret(worker_settings.BROKER_SSL_KEYFILE),
+        "certfile": parse_if_secret(worker_settings.BROKER_SSL_CERTFILE),
+        "ca_certs": parse_if_secret(worker_settings.BROKER_SSL_CA_CERTS),
+        "cert_reqs": ssl.CERT_REQUIRED,
+    }
 
 repository = MetadataRepository.create_service()
 
@@ -71,11 +74,15 @@ app = Celery(
     result_persistent=True,
     task_acks_late=True,
     task_track_started=True,
-    broker_heartbeat=0,
-    # broker_use_ssl=BROKER_USE_SSL
-    # (https://github.com/repository-service-tuf/vmware/issues/6)
+    broker_heartbeat=0
 )
 
+if BROKER_USE_SSL:
+    app.conf.broker_use_ssl = BROKER_USE_SSL
+    app.conf.redis_backend_use_ssl = BROKER_USE_SSL
+    logging.info(
+        "SSL explicitly configured for Celery broker. Ensure BROKER_SERVER URL uses an SSL scheme (e.g., amqps:// or rediss://)."
+    )
 
 @app.task(serializer="json", bind=True)
 def repository_service_tuf_worker(
