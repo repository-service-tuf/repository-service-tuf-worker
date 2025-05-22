@@ -74,7 +74,7 @@ app = Celery(
     result_persistent=True,
     task_acks_late=True,
     task_track_started=True,
-    broker_heartbeat=0
+    broker_heartbeat=0,
 )
 
 if BROKER_USE_SSL:
@@ -83,6 +83,7 @@ if BROKER_USE_SSL:
     logging.info(
         "SSL explicitly configured for Celery broker. Ensure BROKER_SERVER URL uses an SSL scheme (e.g., amqps:// or rediss://)."
     )
+
 
 @app.task(serializer="json", bind=True)
 def repository_service_tuf_worker(
