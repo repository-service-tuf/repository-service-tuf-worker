@@ -8,8 +8,8 @@
 import itertools
 import json
 import logging
-import time
 import ssl
+import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -81,7 +81,9 @@ if BROKER_USE_SSL:
     app.conf.broker_use_ssl = BROKER_USE_SSL
     app.conf.redis_backend_use_ssl = BROKER_USE_SSL
     logging.info(
-        "SSL explicitly configured for Celery broker. Ensure BROKER_SERVER URL uses an SSL scheme (e.g., amqps:// or rediss://)."
+        "SSL explicitly configured for Celery broker. "
+        "Ensure BROKER_SERVER URL uses an SSL scheme "
+        "(e.g., amqps:// or rediss://)."
     )
 
 
