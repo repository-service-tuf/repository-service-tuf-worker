@@ -50,13 +50,16 @@ redis_backend = redis.StrictRedis.from_url(
     db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0),
 )
 
-if worker_settings.get("BROKER_SSL_ENABLE", "false") == "false":
+if worker_settings.get("BROKER_SSL_ENABLE", False) is False:
     BROKER_USE_SSL = None
 else:
+    keyfile = worker_settings.get("BROKER_SSL_KEYFILE")
+    certfile = worker_settings.get("BROKER_SSL_CERTFILE")
+    ca_certs = worker_settings.get("BROKER_SSL_CA_CERTS")
     BROKER_USE_SSL = {
-        "keyfile": parse_if_secret(worker_settings.BROKER_SSL_KEYFILE),
-        "certfile": parse_if_secret(worker_settings.BROKER_SSL_CERTFILE),
-        "ca_certs": parse_if_secret(worker_settings.BROKER_SSL_CA_CERTS),
+        "keyfile": parse_if_secret(keyfile),
+        "certfile": parse_if_secret(certfile),
+        "ca_certs": parse_if_secret(ca_certs),
         "cert_reqs": ssl.CERT_REQUIRED,
     }
 
