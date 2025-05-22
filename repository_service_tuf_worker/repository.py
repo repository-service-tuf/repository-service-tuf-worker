@@ -309,9 +309,8 @@ class MetadataRepository:
         """
         Persists metadata using the configured storage backend.
 
-        The metadata role type is used as default role name. This is only
-        allowed for top-level roles. All names but 'timestamp' are prefixed
-        with a version number.
+        role: Metadata to persist.
+        role_name: Name of the role to persist.
         """
         filename = f"{role_name}.json"
         if role_name != Timestamp.type:
