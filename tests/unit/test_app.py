@@ -20,6 +20,82 @@ class TestApp:
 
         assert app.Celery.__name__ == "Celery"
 
+    @pytest.mark.parametrize(
+        "broker_ssl_enable_env, keyfile_env, certfile_env, ca_certs_env, "
+        "expect_ssl_config, expected_parse_secret_calls",
+        [
+            # Case 1: SSL disabled, no other SSL vars set
+            ("False", None, None, None, False, 0),
+            # Case 2: SSL disabled, other SSL vars set (should be ignored)
+            ("False", "tls.key", "tls.crt", "ca.crt", False, 0),
+            # Case 3: SSL enabled, all SSL vars set
+            ("True", "tls.key", "tls.crt", "ca.crt", True, 3),
+        ],
+    )
+    def test_broker_ssl_config(
+        self,
+        app,
+        monkeypatch,
+        broker_ssl_enable_env,
+        keyfile_env,
+        certfile_env,
+        ca_certs_env,
+        expect_ssl_config,
+        expected_parse_secret_calls,
+    ):
+        monkeypatch.setenv("RSTUF_WORKER_ID", "test_ssl_worker")
+        monkeypatch.setenv("RSTUF_BROKER_SERVER", "rediss://redis")
+        monkeypatch.setenv("RSTUF_REDIS_SERVER", "rediss://redis")
+
+        # Set SSL-related environment variables based on test parameters
+        monkeypatch.setenv("RSTUF_BROKER_SSL_ENABLE", broker_ssl_enable_env)
+        if keyfile_env:
+            monkeypatch.setenv("RSTUF_BROKER_SSL_KEYFILE", keyfile_env)
+        else:
+            monkeypatch.delenv("RSTUF_BROKER_SSL_KEYFILE", raising=False)
+        if certfile_env:
+            monkeypatch.setenv("RSTUF_BROKER_SSL_CERTFILE", certfile_env)
+        else:
+            monkeypatch.delenv("RSTUF_BROKER_SSL_CERTFILE", raising=False)
+        if ca_certs_env:
+            monkeypatch.setenv("RSTUF_BROKER_SSL_CA_CERTS", ca_certs_env)
+        else:
+            monkeypatch.delenv("RSTUF_BROKER_SSL_CA_CERTS", raising=False)
+
+        mock_parse_if_secret = pretend.call_recorder(lambda x: f"parsed_{x}")
+        monkeypatch.setattr(
+            "repository_service_tuf_worker.parse_if_secret",
+            mock_parse_if_secret,
+        )
+
+        import importlib
+
+        import app as application_module
+
+        importlib.reload(application_module)
+
+        import ssl
+
+        if expect_ssl_config:
+            assert app.BROKER_USE_SSL is not None
+            expected_ssl_dict = {
+                "keyfile": f"parsed_{keyfile_env}",
+                "certfile": f"parsed_{certfile_env}",
+                "ca_certs": f"parsed_{ca_certs_env}",
+                "cert_reqs": ssl.CERT_REQUIRED,
+            }
+            assert app.BROKER_USE_SSL == expected_ssl_dict
+            assert app.app.conf.broker_use_ssl == expected_ssl_dict
+            assert app.app.conf.redis_backend_use_ssl == expected_ssl_dict
+            parse_if_secret_calls = len(mock_parse_if_secret.calls)
+            assert parse_if_secret_calls == expected_parse_secret_calls
+        else:
+            assert app.BROKER_USE_SSL is None
+            assert app.app.conf.broker_use_ssl is False
+            assert app.app.conf.redis_backend_use_ssl is None
+            parse_if_secret_calls = len(mock_parse_if_secret.calls)
+            assert parse_if_secret_calls == expected_parse_secret_calls
+
     def test_repository_service_tuf_worker(self, app):
         app.repository = pretend.stub(
             refresh_settings=pretend.call_recorder(lambda *a: None),

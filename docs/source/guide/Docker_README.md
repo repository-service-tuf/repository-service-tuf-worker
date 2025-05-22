@@ -237,6 +237,31 @@ Custom Worker ID.  Default: `hostname` (Container hostname)
 
 Container data directory. Default: `/data`
 
+#### (Optional) Broker/Backend SSL Connection environment variables
+*  ``RSTUF_BROKER_SSL_ENABLE``
+
+  This environment variable is used to toggle broker/backend SSL
+  connection. This needs to be set to enable SSL. Default: false
+
+  Example: `RSTUF_BROKER_SSL_ENABLE=true`
+
+*  ``RSTUF_BROKER_SSL_KEYFILE``
+
+  The path to broker/backend SSL key file.
+
+  Example: ``RSTUF_BROKER_SSL_KEYFILE=/run/secrets/brokerSsl/tls.key``
+
+*  ``RSTUF_BROKER_SSL_CERTFILE``
+
+  The path to broker/backend SSL certificate file.
+
+  Example: ``RSTUF_BROKER_SSL_CERTFILE=/run/secrets/brokerSsl/tls.crt``
+
+*  ``RSTUF_BROKER_SSL_CA_CERTS``
+
+  The path to broker/backend SSL ca-certificate file.
+
+  Example: ``RSTUF_BROKER_SSL_CA_CERTS=/run/secrets/brokerSsl/ca.crt``
 
 ### Persistent data
 
