@@ -5,7 +5,7 @@
 
 import datetime
 from contextlib import contextmanager
-from copy import copy
+from copy import copy, deepcopy
 from datetime import timezone
 
 import pretend
@@ -3703,6 +3703,158 @@ class TestMetadataRepository:
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
+
+    def test_metadata_delegation_add(self, test_repo, mocked_datetime):
+        # test repository.MetadataRepository.metadata_delegation
+        payload = {
+            "action": "add",
+            "delegations": {
+                "keys": {},
+                "roles": [
+                    {
+                        "keyids": [],
+                        "name": "delegation-1",
+                        "paths": ["*"],
+                        "terminating": True,
+                        "threshold": 2,
+                        "x-rstuf-expire-policy": 365,
+                    }
+                ],
+            },
+        }
+
+        mocked_delegations = repository.Delegations.from_dict(
+            deepcopy(payload["delegations"])
+        )
+        test_repo.Delegations = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: mocked_delegations)
+        )
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: Metadata(Snapshot())
+        )
+        mocked_targets = Metadata(Targets())
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: mocked_targets
+        )
+        mocked_delegatedrole = repository.DelegatedRole.from_dict(
+            copy(payload["delegations"]["roles"][0])
+        )
+        mocked_delegatedrole.signed = pretend.stub(version=1)
+        test_repo._add_metadata_delegation = pretend.call_recorder(
+            lambda *a, **kw: ({"delegation-1": mocked_delegatedrole}, [])
+        )
+        test_repo._validate_threshold = pretend.call_recorder(lambda *a: True)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        result = test_repo.metadata_delegation(payload, None)
+
+        assert test_repo._storage_load_snapshot.calls == [pretend.call()]
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
+        assert test_repo._add_metadata_delegation.calls == [
+            pretend.call(
+                mocked_delegations, mocked_targets, persist_targets=True
+            )
+        ]
+        assert test_repo._validate_threshold.calls == [
+            pretend.call(mocked_delegatedrole, mocked_targets, "delegation-1")
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(mocked_delegatedrole, "delegation-1")
+        ]
+        assert test_repo.write_repository_settings.calls == []
+        assert result == {
+            "task": repository.TaskName.METADATA_DELEGATION,
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Metadata Delegation Processed",
+            "error": None,
+            "details": {
+                "delegated_roles": ["delegation-1"],
+                "failed_roles": [],
+            },
+        }
+
+    def test_metadata_delegation_add_no_treshold(
+        self, test_repo, mocked_datetime
+    ):
+        # test repository.MetadataRepository.metadata_delegation
+        payload = {
+            "action": "add",
+            "delegations": {
+                "keys": {},
+                "roles": [
+                    {
+                        "keyids": [],
+                        "name": "delegation-1",
+                        "paths": ["*"],
+                        "terminating": True,
+                        "threshold": 2,
+                        "x-rstuf-expire-policy": 365,
+                    }
+                ],
+            },
+        }
+
+        mocked_delegations = repository.Delegations.from_dict(
+            deepcopy(payload["delegations"])
+        )
+        test_repo.Delegations = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: mocked_delegations)
+        )
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: Metadata(Snapshot())
+        )
+        mocked_targets = Metadata(Targets())
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: mocked_targets
+        )
+        mocked_delegatedrole = repository.DelegatedRole.from_dict(
+            copy(payload["delegations"]["roles"][0])
+        )
+        mocked_delegatedrole.signed = pretend.stub(version=1)
+        test_repo._add_metadata_delegation = pretend.call_recorder(
+            lambda *a, **kw: ({"delegation-1": mocked_delegatedrole}, [])
+        )
+        test_repo._validate_threshold = pretend.call_recorder(lambda *a: False)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        result = test_repo.metadata_delegation(payload, None)
+
+        assert test_repo._storage_load_snapshot.calls == [pretend.call()]
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
+
+        assert test_repo._add_metadata_delegation.calls == [
+            pretend.call(
+                mocked_delegations, mocked_targets, persist_targets=True
+            )
+        ]
+        assert test_repo._validate_threshold.calls == [
+            pretend.call(mocked_delegatedrole, mocked_targets, "delegation-1")
+        ]
+        assert test_repo._persist.calls == []
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call(
+                "DELEGATION-1_SIGNING",
+                mocked_delegatedrole.to_dict(),
+            )
+        ]
+        assert result == {
+            "task": repository.TaskName.METADATA_DELEGATION,
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Metadata Delegation Processed",
+            "error": None,
+            "details": {
+                "delegated_roles": ["delegation-1"],
+                "failed_roles": [],
+            },
+        }
 
     def test__validate_signature(self, test_repo):
         fake_root_md = pretend.stub(

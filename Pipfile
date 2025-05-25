@@ -20,7 +20,7 @@ awswrangler = "*"
 sigstore = "*"
 pymysql = "*"
 google-cloud-kms = "*"
-rsa = "*"  # required to solve conflict with awscli
+rsa = "*"
 awscli-local = "*"
 bcdoc = "*"
 
@@ -48,6 +48,7 @@ sphinxcontrib-serializinghtml = "*"
 pre-commit = "*"
 bandit = "*"
 myst-parser = "*"
+dynaconf = {extras = ["ini"], version = "*"}  # required to build docs
 
 [requires]
 python_version = "3.13"
