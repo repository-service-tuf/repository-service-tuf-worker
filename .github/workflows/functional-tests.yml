@@ -47,6 +47,9 @@ on:
         type: string
         required: False
 
+permissions:
+  contents: read # Required: checkout repositories
+
 jobs:
   functional-das:
     name: "DAS"

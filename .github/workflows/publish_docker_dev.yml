@@ -17,6 +17,10 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read # Required: To checkout the repository code
+  packages: write # Required: To push Docker images to GitHub Container Registry
+
 jobs:
   build:
     runs-on: ubuntu-latest
