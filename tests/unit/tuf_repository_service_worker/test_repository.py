@@ -4789,3 +4789,168 @@ class TestMetadataRepository:
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Targets.type)
         ]
+
+    @pytest.mark.parametrize(
+        "delegation_keyids, from_storage, expected_calls",
+        [
+            # Case 1: Single online key
+            (
+                ["online_keyid"],
+                True,
+                {
+                    "bump_and_persist": 1,
+                    "persist": 1,
+                    "bump_expiry": 0,
+                    "bump_version": 0,
+                    "sign": 0,
+                    "write_settings": 0,
+                },
+            ),
+            # Case 2: Multiple keys including online key
+            (
+                ["online_keyid", "offline_keyid"],
+                True,
+                {
+                    "bump_and_persist": 0,
+                    "persist": 0,
+                    "bump_expiry": 1,
+                    "bump_version": 1,
+                    "sign": 1,
+                    "write_settings": 1,
+                },
+            ),
+            # Case 3: Multiple keys including online key, not from storage
+            (
+                ["online_keyid", "offline_keyid"],
+                False,
+                {
+                    "bump_and_persist": 0,
+                    "persist": 0,
+                    "bump_expiry": 1,
+                    "bump_version": 0,
+                    "sign": 1,
+                    "write_settings": 1,
+                },
+            ),
+            # Case 4: Only offline keys
+            (
+                ["offline_keyid1", "offline_keyid2"],
+                True,
+                {
+                    "bump_and_persist": 0,
+                    "persist": 0,
+                    "bump_expiry": 1,
+                    "bump_version": 1,
+                    "sign": 0,
+                    "write_settings": 1,
+                },
+            ),
+            # Case 5: Only offline keys, not from storage
+            (
+                ["offline_keyid1", "offline_keyid2"],
+                False,
+                {
+                    "bump_and_persist": 0,
+                    "persist": 0,
+                    "bump_expiry": 1,
+                    "bump_version": 0,
+                    "sign": 0,
+                    "write_settings": 1,
+                },
+            ),
+        ],
+    )
+    def test_bump_persist_role(
+        self,
+        monkeypatch,
+        test_repo,
+        delegation_keyids,
+        from_storage,
+        expected_calls,
+    ):
+        rolename = "test-role"
+        delegation = pretend.stub(
+            signatures={},
+            signed=pretend.stub(),
+            to_dict=pretend.call_recorder(lambda: {"fake": "metadata"}),
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo._bump_version = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo._sign = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+
+        test_repo.get_delegation_keyids = pretend.call_recorder(
+            lambda role: delegation_keyids
+        )
+
+        fake_key_dict = {
+            "keyid": "online_keyid",
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {"public": "abcd1234"},
+        }
+
+        def fake_get_fresh(key: str):
+            if key == "ONLINE_KEY":
+                return fake_key_dict
+            return None
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: fake_get_fresh(*a)),
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        monkeypatch.setattr(test_repo, "_uses_succinct_roles", False)
+
+        test_repo.bump_persist_role(delegation, rolename, from_storage)
+
+        assert (
+            len(test_repo._bump_and_persist.calls)
+            == expected_calls["bump_and_persist"]
+        )
+        assert len(test_repo._persist.calls) == expected_calls["persist"]
+        assert (
+            len(test_repo._bump_expiry.calls) == expected_calls["bump_expiry"]
+        )
+        assert (
+            len(test_repo._bump_version.calls)
+            == expected_calls["bump_version"]
+        )
+        assert len(test_repo._sign.calls) == expected_calls["sign"]
+        assert (
+            len(test_repo.write_repository_settings.calls)
+            == expected_calls["write_settings"]
+        )
+
+        if expected_calls["bump_and_persist"] > 0:
+            assert test_repo._bump_and_persist.calls == [
+                pretend.call(delegation, rolename, persist=False, expire=None)
+            ]
+        if expected_calls["persist"] > 0:
+            assert test_repo._persist.calls == [
+                pretend.call(delegation, rolename)
+            ]
+        if expected_calls["bump_expiry"] > 0:
+            assert test_repo._bump_expiry.calls == [
+                pretend.call(delegation, rolename)
+            ]
+        if expected_calls["write_settings"] > 0:
+            assert test_repo.write_repository_settings.calls == [
+                pretend.call(
+                    f"{rolename.upper()}_SIGNING", {"fake": "metadata"}
+                )
+            ]
+            assert delegation.to_dict.calls == [pretend.call()]
