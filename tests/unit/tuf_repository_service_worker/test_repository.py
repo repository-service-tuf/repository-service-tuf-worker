@@ -4738,3 +4738,54 @@ class TestMetadataRepository:
             "error": "No role provided for deletion.",
             "details": None,
         }
+
+    def test_get_delegation_keyids_succinct_roles(
+        self, test_repo, monkeypatch
+    ):
+        monkeypatch.setattr(test_repo, "_uses_succinct_roles", True)
+        fake_key_dict = {
+            "keyid": "fake-online-keyid",
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {"public": "abcd1234"},
+        }
+
+        def fake_get_fresh(key: str):
+            if key == "ONLINE_KEY":
+                return fake_key_dict
+            return None
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: fake_get_fresh(*a)),
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(fake_get_fresh),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        keyids = test_repo.get_delegation_keyids("bins-0")
+        assert keyids == ["fake-online-keyid"]
+
+    def test_get_delegation_keyids_custom_delegations(
+        self, test_repo, monkeypatch
+    ):
+        monkeypatch.setattr(test_repo, "_uses_succinct_roles", False)
+        fake_role = pretend.stub(keyids=["key1", "key2"])
+        fake_delegations = pretend.stub(
+            roles={"custom-role": fake_role}, succinct_roles=None
+        )
+        fake_targets_signed = pretend.stub(delegations=fake_delegations)
+        fake_targets = pretend.stub(signed=fake_targets_signed)
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda role_type: fake_targets)
+        )
+        keyids = test_repo.get_delegation_keyids("custom-role")
+
+        assert keyids == ["key1", "key2"]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(repository.Targets.type)
+        ]
