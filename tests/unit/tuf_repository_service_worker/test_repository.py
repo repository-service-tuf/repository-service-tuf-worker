@@ -24,6 +24,7 @@ from tuf.api.metadata import (
 
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
+from repository_service_tuf_worker.models.targets import crud
 
 REPOSITORY_PATH = "repository_service_tuf_worker.repository"
 
@@ -4986,6 +4987,64 @@ class TestMetadataRepository:
                     2023, 6, 15, 9, 5, 1, tzinfo=timezone.utc
                 ),
                 "target_files": [],
+            }
+        }
+        assert result == expected_result
+
+    def test_update_targets_delegated_role_from_storage(self, test_repo):
+        fake_target_file1 = pretend.stub(path="file1.txt")
+        fake_target_file2 = pretend.stub(path="file2.txt")
+        fake_db_role = pretend.stub(
+            rolename="test-role",
+            version=3,
+            target_files=[fake_target_file1, fake_target_file2],
+        )
+        test_repo._db = pretend.stub()
+        crud.read_role_joint_files = pretend.call_recorder(
+            lambda db, role: fake_db_role
+        )
+        fake_delegation = pretend.stub(
+            signed=pretend.stub(
+                version=4,
+                expires=datetime.datetime(
+                    2023, 6, 15, 9, 5, 1, tzinfo=timezone.utc
+                ),
+            )
+        )
+
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(
+                lambda _role, _version=None: fake_delegation
+            )
+        )
+        test_repo._update_db_role_target_files = pretend.call_recorder(
+            lambda _delegation, _db_role: fake_delegation
+        )
+        test_repo.bump_persist_role = pretend.call_recorder(
+            lambda *_args: None
+        )
+
+        result = test_repo.update_targets_delegated_role("test-role")
+
+        assert crud.read_role_joint_files.calls == [
+            pretend.call(test_repo._db, "test-role")
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call("test-role", 3)
+        ]
+        assert test_repo._update_db_role_target_files.calls == [
+            pretend.call(fake_delegation, fake_db_role)
+        ]
+        assert test_repo.bump_persist_role.calls == [
+            pretend.call(fake_delegation, "test-role", True)
+        ]
+        expected_result = {
+            "test-role": {
+                "version": 4,
+                "expire": datetime.datetime(
+                    2023, 6, 15, 9, 5, 1, tzinfo=timezone.utc
+                ),
+                "target_files": ["file1.txt", "file2.txt"],
             }
         }
         assert result == expected_result
