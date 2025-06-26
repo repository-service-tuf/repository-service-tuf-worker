@@ -5048,3 +5048,84 @@ class TestMetadataRepository:
             }
         }
         assert result == expected_result
+
+    def test_update_targets_delegated_role_from_settings(
+        self, test_repo, monkeypatch
+    ):
+        fake_target_file1 = pretend.stub(path="file1.txt")
+        fake_target_file2 = pretend.stub(path="file2.txt")
+        fake_db_role = pretend.stub(
+            rolename="test-role",
+            version=3,
+            target_files=[fake_target_file1, fake_target_file2],
+        )
+        test_repo._db = pretend.stub()
+        crud.read_role_joint_files = pretend.call_recorder(
+            lambda db, role: fake_db_role
+        )
+        fake_delegation = pretend.stub(
+            signed=pretend.stub(
+                version=4,
+                expires=datetime.datetime(
+                    2023, 6, 15, 0, 0, 0, tzinfo=timezone.utc
+                ),
+            )
+        )
+        crud.read_role_joint_files = pretend.call_recorder(
+            lambda db, role: fake_db_role
+        )
+
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.raiser(StorageError("Role not found"))
+        )
+
+        fake_delegation_dict = {
+            "signed": {"version": 4, "expires": "2023-06-15T00:00:00Z"}
+        }
+
+        def fake_get_fresh(key: str):
+            if key == "TEST-ROLE_SIGNING":
+                return fake_delegation_dict
+            return None
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: fake_get_fresh(*a)),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_delegation
+        )
+
+        test_repo._update_db_role_target_files = pretend.call_recorder(
+            lambda _delegation, _db_role: fake_delegation
+        )
+        test_repo.bump_persist_role = pretend.call_recorder(
+            lambda *_args: None
+        )
+
+        result = test_repo.update_targets_delegated_role("test-role")
+
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("TEST-ROLE_SIGNING")
+        ]
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call(fake_delegation_dict)
+        ]
+        assert test_repo.bump_persist_role.calls == [
+            pretend.call(fake_delegation, "test-role", False)
+        ]
+        expected_result = {
+            "test-role": {
+                "version": 4,
+                "expire": datetime.datetime(
+                    2023, 6, 15, 0, 0, 0, tzinfo=timezone.utc
+                ),
+                "target_files": ["file1.txt", "file2.txt"],
+            }
+        }
+        assert result == expected_result
