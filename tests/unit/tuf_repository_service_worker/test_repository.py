@@ -4954,3 +4954,38 @@ class TestMetadataRepository:
                 )
             ]
             assert delegation.to_dict.calls == [pretend.call()]
+
+    def test_update_targets_delegated_role_main_targets(self, test_repo):
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(
+                version=4,
+                expires=datetime.datetime(
+                    2023, 6, 15, 9, 5, 1, tzinfo=timezone.utc
+                ),
+            )
+        )
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda _role: mocked_targets)
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+
+        result = test_repo.update_targets_delegated_role("targets")
+
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call("targets")
+        ]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(mocked_targets, "targets")
+        ]
+        expected_result = {
+            "targets": {
+                "version": 4,
+                "expire": datetime.datetime(
+                    2023, 6, 15, 9, 5, 1, tzinfo=timezone.utc
+                ),
+                "target_files": [],
+            }
+        }
+        assert result == expected_result
