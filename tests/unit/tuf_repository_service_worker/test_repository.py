@@ -5129,3 +5129,31 @@ class TestMetadataRepository:
             }
         }
         assert result == expected_result
+
+    def test_update_targets_delegated_role_error(self, test_repo, monkeypatch):
+        fake_db_role = pretend.stub(
+            rolename="test-role", version=3, target_files=[]
+        )
+        crud.read_role_joint_files = pretend.call_recorder(
+            lambda db, role: fake_db_role
+        )
+        storage_error = StorageError("Role not found")
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.raiser(storage_error)
+        )
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *_args: None),
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        with pytest.raises(StorageError) as exc_info:
+            test_repo.update_targets_delegated_role("test-role")
+
+        assert exc_info.value is storage_error
+        assert test_repo._settings.get_fresh.calls == [
+            pretend.call("TEST-ROLE_SIGNING")
+        ]
