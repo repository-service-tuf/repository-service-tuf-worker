@@ -3906,6 +3906,44 @@ class TestMetadataRepository:
             },
         }
 
+    def test_metadata_delegation_delete_lock_timeout(self, caplog, test_repo):
+        payload = {
+            "action": "delete",
+            "delegations": {
+                "keys": {},
+                "roles": [
+                    {
+                        "keyids": [],
+                        "name": "delegation-1",
+                        "paths": ["*"],
+                        "terminating": True,
+                        "threshold": 2,
+                        "x-rstuf-expire-policy": 365,
+                    }
+                ],
+            },
+        }
+
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            raise repository.redis.exceptions.LockNotOwnedError("timeout")
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock)
+        )
+        with caplog.at_level("ERROR"):
+            with pytest.raises(repository.redis.exceptions.LockError) as e:
+                test_repo.metadata_delegation(payload)
+
+        assert (
+            f"The task to bump all online roles exceeded the timeout of "
+            f"{test_repo._timeout} seconds." in caplog.text
+        )
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e)
+        assert test_repo._redis.lock.calls == [
+            pretend.call("LOCK_TARGETS", timeout=500)
+        ]
+
     def test__validate_signature(self, test_repo):
         fake_root_md = pretend.stub(
             signatures=[{"keyid": "k1", "sig": "s1"}],
