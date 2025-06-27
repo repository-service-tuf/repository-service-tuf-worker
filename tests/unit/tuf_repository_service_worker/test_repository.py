@@ -3857,6 +3857,55 @@ class TestMetadataRepository:
             },
         }
 
+    def test_metadata_delegation_delete(self, test_repo, mocked_datetime):
+        payload = {
+            "action": "delete",
+            "delegations": {
+                "keys": {},
+                "roles": [
+                    {
+                        "keyids": [],
+                        "name": "delegation-1",
+                        "paths": ["*"],
+                        "terminating": True,
+                        "threshold": 2,
+                        "x-rstuf-expire-policy": 365,
+                    }
+                ],
+            },
+        }
+
+        @contextmanager
+        def mocked_lock(lock, timeout):
+            yield lock, timeout
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock)
+        )
+        test_repo._delete_metadata_delegation = pretend.call_recorder(
+            lambda delegations: ({"delegation-1": "deleted"}, [])
+        )
+
+        result = test_repo.metadata_delegation(payload)
+
+        assert test_repo._redis.lock.calls == [
+            pretend.call(repository.LOCK_TARGETS, timeout=test_repo._timeout)
+        ]
+        assert test_repo._delete_metadata_delegation.calls == [
+            pretend.call(payload["delegations"])
+        ]
+        assert result == {
+            "task": repository.TaskName.METADATA_DELEGATION,
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Metadata Delegation Processed",
+            "error": None,
+            "details": {
+                "delegated_roles": ["delegation-1"],
+                "failed_roles": [],
+            },
+        }
+
     def test__validate_signature(self, test_repo):
         fake_root_md = pretend.stub(
             signatures=[{"keyid": "k1", "sig": "s1"}],
