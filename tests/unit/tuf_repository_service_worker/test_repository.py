@@ -3944,6 +3944,49 @@ class TestMetadataRepository:
             pretend.call("LOCK_TARGETS", timeout=500)
         ]
 
+    def test_metadata_delegation_update(self, test_repo, mocked_datetime):
+        payload = {
+            "action": "update",
+            "delegations": {
+                "keys": {},
+                "roles": [
+                    {
+                        "keyids": [],
+                        "name": "delegation-1",
+                        "paths": ["*"],
+                        "terminating": True,
+                        "threshold": 2,
+                        "x-rstuf-expire-policy": 365,
+                    }
+                ],
+            },
+        }
+        mocked_delegations = repository.Delegations.from_dict(
+            deepcopy(payload["delegations"])
+        )
+        test_repo.Delegations = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: mocked_delegations)
+        )
+        test_repo._update_metadata_delegation = pretend.call_recorder(
+            lambda delegations: ({"delegation-1": None}, [])
+        )
+        result = test_repo.metadata_delegation(payload)
+
+        assert test_repo._update_metadata_delegation.calls == [
+            pretend.call(mocked_delegations)
+        ]
+        assert result == {
+            "task": repository.TaskName.METADATA_DELEGATION,
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Metadata Delegation Processed",
+            "error": None,
+            "details": {
+                "delegated_roles": ["delegation-1"],
+                "failed_roles": [],
+            },
+        }
+
     def test__validate_signature(self, test_repo):
         fake_root_md = pretend.stub(
             signatures=[{"keyid": "k1", "sig": "s1"}],
