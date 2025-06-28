@@ -3987,6 +3987,17 @@ class TestMetadataRepository:
             },
         }
 
+    def test_metadata_delegation_invalid_action(self, test_repo):
+        payload = {
+            "action": "invalid",
+            "delegations": {},
+        }
+        with pytest.raises(ValueError) as excinfo:
+            test_repo.metadata_delegation(payload)
+        assert "metadata delegation supports 'add', 'update', 'remove'" in str(
+            excinfo.value
+        )
+
     def test__validate_signature(self, test_repo):
         fake_root_md = pretend.stub(
             signatures=[{"keyid": "k1", "sig": "s1"}],
