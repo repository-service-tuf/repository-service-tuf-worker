@@ -4841,6 +4841,107 @@ class TestMetadataRepository:
             pretend.call("TARGETS_SIGNING", "fake_targets_dict")
         ]
 
+    def test_sign_metadata_non_root_role(
+        self, test_repo, monkeypatch, mocked_datetime
+    ):
+        def fake_get_fresh(key):
+            if key == "TARGETS_SIGNING":
+                return {
+                    "signed": {"version": 1, "type": "targets"},
+                    "signatures": {},
+                }
+            if key == "BOOTSTRAP":
+                return "<task-id>"
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(fake_get_fresh)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_signature = pretend.stub(keyid="fake")
+        repository.Signature.from_dict = pretend.call_recorder(
+            lambda *a: fake_signature
+        )
+        fake_targets_md = repository.Metadata(
+            signed=repository.Targets(version=1)
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_targets_md
+        )
+        fake_snapshot_md = repository.Metadata(
+            signed=repository.Snapshot(version=1)
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda r: fake_targets_md if r == "targets" else fake_snapshot_md
+        )
+        test_repo._validate_signature = pretend.call_recorder(
+            lambda *a, **kw: True
+        )
+        test_repo._validate_threshold = pretend.call_recorder(
+            lambda *a, **kw: True
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        payload = {"signature": "fake", "role": "targets"}
+        result = test_repo.sign_metadata(payload)
+
+        assert result == {
+            "task": "sign_metadata",
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Signature Processed",
+            "error": None,
+            "details": {"update": "Role targets signing complete"},
+        }
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("TARGETS_SIGNING"),
+            pretend.call("BOOTSTRAP"),
+        ]
+        assert repository.Signature.from_dict.calls == [pretend.call("fake")]
+        assert repository.Metadata.from_dict.calls == [
+            pretend.call(
+                {"signed": {"version": 1, "type": "targets"}, "signatures": {}}
+            )
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call("targets"),
+            pretend.call("snapshot"),
+        ]
+        assert test_repo._validate_signature.calls == [
+            pretend.call(
+                fake_targets_md, fake_signature, fake_targets_md, "targets"
+            )
+        ]
+        assert test_repo._validate_threshold.calls == [
+            pretend.call(fake_targets_md, fake_targets_md, "targets")
+        ]
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(
+                test_repo._storage_backend.get("snapshot"), "snapshot"
+            )
+        ]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call(fake_targets_md.signed.version)
+        ]
+        assert test_repo._persist.calls == [
+            pretend.call(fake_targets_md, "targets")
+        ]
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call("TARGETS_SIGNING", None)
+        ]
+
     def test_delete_sign_metadata_bootstrap_signing_state(
         self, test_repo, monkeypatch, mocked_datetime
     ):
