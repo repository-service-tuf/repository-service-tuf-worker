@@ -84,7 +84,7 @@ jobs:
     steps:
       - id: gh-release
         name: Publish GitHub release candiate
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8
         with:
           draft: true
           name: ${{ github.ref_name }}-rc
@@ -98,7 +98,7 @@ jobs:
 
     steps:
     - name: Login to GitHub Container Registry
-      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1
       with:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
