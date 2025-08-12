@@ -77,6 +77,60 @@ app = Celery(
 )
 
 
+# Opentelemetry Setup
+from celery.signals import worker_process_init
+import logging
+import os
+
+@worker_process_init.connect(weak=False)
+def init_tracing(**kwargs):
+    """
+    Run after each Celery worker fork so every child gets its own
+    exporter and file-descriptor state (prevents EINVAL/epoll issues).
+    Selects HTTP exporter if OTEL_EXPORTER_OTLP_PROTOCOL contains "http",
+    otherwise defaults to gRPC exporter.
+    """
+    if os.getenv("ENABLE_OTEL") != "1":
+        logging.info("OpenTelemetry disabled (ENABLE_OTEL != 1)")
+        return
+
+    try:
+        # imports only if enabled
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        from opentelemetry.instrumentation.celery import CeleryInstrumentor
+        CeleryInstrumentor().instrument()
+
+        provider = TracerProvider()
+
+        otlp_protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf").lower()
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://172.17.0.1:4318")
+        timeout = int(os.getenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5"))
+
+        if "http" in otlp_protocol:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+            span_exporter = OTLPSpanExporter(endpoint=otlp_endpoint, timeout=timeout)
+        else:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+            ep = otlp_endpoint
+            if ep.startswith("http://") or ep.startswith("https://"):
+                ep = ep.split("://", 1)[1]
+            insecure_env = os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "").lower()
+            insecure_flag = insecure_env in ("1", "true", "yes")
+            span_exporter = OTLPSpanExporter(endpoint=ep, insecure=insecure_flag, timeout=timeout)
+
+        span_processor = BatchSpanProcessor(span_exporter)
+        provider.add_span_processor(span_processor)
+        trace.set_tracer_provider(provider)
+
+        logging.info("OpenTelemetry tracing initialized in worker (protocol=%s)", otlp_protocol)
+    except Exception as e:
+        logging.error("Failed to initialize OpenTelemetry: %s", e, exc_info=True)
+
+
+
 @app.task(serializer="json", bind=True)
 def repository_service_tuf_worker(
     self,
