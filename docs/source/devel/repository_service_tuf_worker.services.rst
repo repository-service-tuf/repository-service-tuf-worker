@@ -14,5 +14,5 @@ Module contents
 
 .. automodule:: repository_service_tuf_worker.services
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:
