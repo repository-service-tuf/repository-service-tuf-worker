@@ -1,0 +1,105 @@
+# Default development deployment
+version: "3.9"
+
+volumes:
+  repository-service-tuf-storage:
+  repository-service-tuf-api-data:
+  repository-service-tuf-mq-data:
+  repository-service-tuf-settings:
+  repository-service-tuf-redis-data:
+  repository-service-tuf-pgsql-data:
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.10.7-management-alpine
+    volumes:
+     - "repository-service-tuf-mq-data:/var/lib/rabbitmq"
+    ports:
+      - 5672:5672
+      - 15672:15672
+    healthcheck:
+      test: "exit 0"
+    restart: always
+
+  postgres:
+    image: postgres:17.5-alpine3.21
+    ports:
+      # 5432 may already in use by another PostgreSQL on host
+      - "5433:5432"
+    environment:
+      - POSTGRES_PASSWORD=secret
+    volumes:
+      - "repository-service-tuf-pgsql-data:/var/lib/postgresql/data"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "postgres"]
+      interval: 1s
+
+  repository-service-tuf-api:
+    image: ghcr.io/repository-service-tuf/repository-service-tuf-api:${API_VERSION}
+    volumes:
+      - repository-service-tuf-api-data:/data
+    ports:
+      - 80:80
+    environment:
+      - RSTUF_BROKER_SERVER="amqp://guest:guest@rabbitmq:5672"
+      - RSTUF_REDIS_SERVER="redis://redis"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  web:
+    image: python:3.13
+    command: python -m http.server -d /var/opt/repository-service-tuf/storage 8080
+    volumes:
+      - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
+    ports:
+      - "8080:8080"
+
+  redis:
+    image: redis:8.0.0-alpine3.21
+    volumes:
+      - repository-service-tuf-redis-data:/data
+    ports:
+      - "6379:6379"
+
+  repository-service-tuf-worker:
+    build:
+      context: ../
+    entrypoint: ["bash"]
+    command: ["-c", "set -euo pipefail && echo '[otel] Installing runtime Python deps...' && python -m pip install --no-cache-dir opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp opentelemetry-instrumentation opentelemetry-instrumentation-celery opentelemetry-distro opentelemetry-semantic-conventions && echo '[otel] Launching original entrypoint...' && exec bash entrypoint-dev.sh"]
+    environment:
+      - DATA_DIR=./data
+      - RSTUF_STORAGE_BACKEND=LocalStorage
+      - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
+      - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
+      - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
+      - RSTUF_DB_SERVER=postgresql://postgres:5432
+      - RSTUF_DB_USER=postgres
+      - RSTUF_DB_PASSWORD=secret
+      - RSTUF_REDIS_SERVER=redis://redis
+      # --- OpenTelemetry ---
+      - ENABLE_OTEL=1
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318/v1/traces
+      - OTEL_SERVICE_NAME=repository-service-tuf-worker
+      - OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
+      - OTEL_METRICS_EXPORTER=none
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./:/opt/repository-service-tuf-worker:z
+      - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
+      - ./tests/files/key_storage/:/var/opt/repository-service-tuf/key_storage
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    tty: true
+    stdin_open: true
+
+  rstuf-ft-runner:
+    image: python:3.13-slim
+    command: python -V
+    working_dir: /rstuf-runner
+    volumes:
+      - ./:/rstuf-runner

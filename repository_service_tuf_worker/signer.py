@@ -15,6 +15,7 @@ from securesystemslib.signer import (
     SecretsHandler,
     Signer,
 )
+from repository_service_tuf_worker.otel_tracer import trace_function
 
 
 class FileNameSigner(CryptoSigner):
@@ -45,6 +46,7 @@ class FileNameSigner(CryptoSigner):
     DIR_VAR = "ONLINE_KEY_DIR"
 
     @classmethod
+    @trace_function()
     def from_priv_key_uri(
         cls,
         priv_key_uri: str,
@@ -116,6 +118,7 @@ class SignerStore:
 
         self._signers: dict[str, Signer] = {}
 
+    @trace_function()
     def get(self, key: Key) -> Signer:
         """Return signer for passed key.
 

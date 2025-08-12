@@ -62,6 +62,8 @@ from repository_service_tuf_worker.models import (
 )
 from repository_service_tuf_worker.signer import SignerStore
 
+from .otel_tracer import trace_function, get_tracer
+
 KEY_FOR_TYPE_AND_SCHEME.update(
     {
         ("sigstore-oidc", "Fulcio"): SigstoreKey,
@@ -77,6 +79,7 @@ class Roles(enum.Enum):
     BINS = "bins"
 
     @staticmethod
+    @trace_function()
     def is_role(input: Any) -> bool:
         if not isinstance(input, str):
             return False
@@ -142,10 +145,12 @@ class MetadataRepository:
         self._uses_succinct_roles: Optional[bool] = None
 
     @property
+    @trace_function()
     def _settings(self) -> Dynaconf:
         return get_repository_settings()
 
     @property
+    @trace_function()
     def _online_key(self) -> Key:
         key_dict = self._settings.get_fresh("ONLINE_KEY")
         if key_dict is not None:
@@ -162,12 +167,14 @@ class MetadataRepository:
             return key
 
     @_online_key.setter
+    @trace_function()
     def _online_key(self, key: Key):
         key_dict = key.to_dict()
         key_dict["keyid"] = key.keyid
         self.write_repository_settings("ONLINE_KEY", key_dict)
 
     @property
+    @trace_function()
     def bootstrap_state(self) -> Optional[str]:
         bootstrap = self._settings.get_fresh("BOOTSTRAP")
         if bootstrap is None:
@@ -183,6 +190,7 @@ class MetadataRepository:
             return "finished"
 
     @property
+    @trace_function()
     def uses_succinct_roles(self) -> bool:
         if self._uses_succinct_roles is None:
             targets: Metadata[Targets] = self._storage_load_targets()
@@ -192,28 +200,33 @@ class MetadataRepository:
         return self._uses_succinct_roles
 
     @classmethod
+    @trace_function()
     def create_service(cls) -> "MetadataRepository":
         """Class Method for MetadataRepository service creation."""
         return cls()
 
+    @trace_function()
     def _storage_load_snapshot(self) -> Metadata[Snapshot]:
         """
         Loads 'snapshot' metadata from the storage backend.
         """
         return self._storage_backend.get(Snapshot.type)
 
+    @trace_function()
     def _storage_load_targets(self) -> Metadata[Targets]:
         """
         Loads 'targets' metadata from the storage backend.
         """
         return self._storage_backend.get(Targets.type)
 
+    @trace_function()
     def _storage_load_root(self) -> Metadata[Root]:
         """
         Loads 'root' metadata from the storage backend
         """
         return self._storage_backend.get(Root.type)
 
+    @trace_function()
     def get_delegation_keyids(self, rolename: str) -> List[str]:
         if self.uses_succinct_roles:
             logging.debug("delegations using succinct delegations")
@@ -228,6 +241,7 @@ class MetadataRepository:
 
         return delegation_keyids
 
+    @trace_function()
     def refresh_settings(self, worker_settings: Optional[Dynaconf] = None):
         """Refreshes the MetadataRepository settings."""
         if worker_settings is None:
@@ -277,6 +291,7 @@ class MetadataRepository:
         self._worker_settings = settings
         return settings
 
+    @trace_function()
     def write_repository_settings(self, key: str, value: Any):
         """
         Writes repository settings.
@@ -298,6 +313,7 @@ class MetadataRepository:
         settings_data[key] = value
         redis_loader.write(self._settings, settings_data)
 
+    @trace_function()
     def _sign(self, role: Metadata, signer: Optional[Signer] = None) -> None:
         """
         Re-signs metadata with role-specific key from global key store.
@@ -307,6 +323,7 @@ class MetadataRepository:
         """
         role.sign(signer or self._signer_store.get(self._online_key))
 
+    @trace_function()
     def _persist(self, role: Metadata, role_name: str) -> str:
         """
         Persists metadata using the configured storage backend.
@@ -331,6 +348,7 @@ class MetadataRepository:
         self._storage_backend.put(bytes_data, filename)
         return filename
 
+    @trace_function()
     def _is_expired(self, role: str) -> Optional[str]:
         role_md: Metadata[Targets] = self._storage_backend.get(role)
         today = datetime.now(timezone.utc)
@@ -338,6 +356,7 @@ class MetadataRepository:
             return role
         return None
 
+    @trace_function()
     def _bump_expiry(
         self, role: Metadata, role_name: str, expire: Optional[int] = None
     ) -> None:
@@ -353,10 +372,12 @@ class MetadataRepository:
             )
         )
 
+    @trace_function()
     def _bump_version(self, role: Metadata) -> None:
         """Bumps metadata version by 1."""
         role.signed.version += 1
 
+    @trace_function()
     def _bump_and_persist(
         self,
         role: Metadata,
@@ -376,6 +397,7 @@ class MetadataRepository:
         if persist:
             self._persist(role, role_name)
 
+    @trace_function()
     def update_snapshot(
         self,
         snapshot_meta: MetaFile,
@@ -403,6 +425,7 @@ class MetadataRepository:
 
         return snapshot
 
+    @trace_function()
     def _update_timestamp(
         self,
         snapshot_version: Optional[int] = None,
@@ -433,6 +456,7 @@ class MetadataRepository:
         logging.debug("Bumped version of 'Target' role")
         return timestamp
 
+    @trace_function()
     def _update_snapshot(
         self,
         target_roles: Optional[List[str]] = None,
@@ -586,6 +610,7 @@ class MetadataRepository:
         else:
             return None
 
+    @trace_function()
     def _update_targets_delegations_key(self, targets: Metadata[Targets]):
         """
         Update the key used by delegations referenced in targets metadata.
@@ -611,6 +636,7 @@ class MetadataRepository:
                     targets.signed.revoke_key(old_online_keyid, role.name)
                     targets.signed.add_key(new_online_key, role.name)
 
+    @trace_function()
     def _get_role_for_artifact_path(self, artifact_path: str) -> Optional[str]:
         """
         Return role name by target file path
@@ -630,6 +656,7 @@ class MetadataRepository:
 
         return role_name
 
+    @trace_function()
     def get_delegated_rolenames(self, expired: bool = False) -> List[str]:
         """
         Get all delegated roles names.
@@ -653,6 +680,7 @@ class MetadataRepository:
 
         return roles
 
+    @trace_function()
     def _update_task(
         self,
         roles_to_artifacts: Dict[str, List[targets_models.RSTUFTargetFiles]],
@@ -728,6 +756,7 @@ class MetadataRepository:
             else:
                 break
 
+    @trace_function()
     def _send_publish_artifacts_task(
         self, task_id: str, delegated_artifacts: Optional[List[str]]
     ):  # pragma: no cover
@@ -747,6 +776,7 @@ class MetadataRepository:
             acks_late=True,
         )
 
+    @trace_function()
     def save_settings(self, root: Metadata[Root], roles_info: Dict[str, Any]):
         """
         Save settings to the repository settings.
@@ -793,6 +823,7 @@ class MetadataRepository:
                 "DELEGATIONS", roles_info.get("delegations")
             )
 
+    @trace_function()
     def _add_metadata_hashbin_delegations(
         self,
         targets: Metadata[Targets],
@@ -861,6 +892,7 @@ class MetadataRepository:
             f"Added delegated roles hash bins in {total_time} seconds"
         )
 
+    @trace_function()
     def _remove_delegated_role_keys(
         self, targets: Metadata[Targets], delegated: DelegatedRole
     ):
@@ -879,6 +911,7 @@ class MetadataRepository:
             else:
                 logging.debug(f"key {key} used by other role")
 
+    @trace_function()
     def _add_delegated_role_keys(
         self,
         targets: Metadata[Targets],
@@ -901,6 +934,7 @@ class MetadataRepository:
                 logging.debug(f"role '{role_name}' using online key, signing")
                 self._sign(role_metadata)
 
+    @trace_function()
     def _update_delegated_roles(
         self,
         targets: Metadata[Targets],
@@ -933,6 +967,7 @@ class MetadataRepository:
                 f"{role_name.upper()}_EXPIRATION", expires
             )
 
+    @trace_function()
     def _add_metadata_delegation(
         self,
         delegations: Delegations,
@@ -1028,6 +1063,7 @@ class MetadataRepository:
 
         return (success, failed)
 
+    @trace_function()
     def _delete_metadata_delegation(
         self,
         delegations: List[str],
@@ -1080,6 +1116,7 @@ class MetadataRepository:
 
         return (success, failed)
 
+    @trace_function()
     def _update_metadata_delegation(
         self,
         delegations: Delegations,
@@ -1143,6 +1180,7 @@ class MetadataRepository:
 
         return (success, failed)
 
+    @trace_function()
     def _update_db_role_target_files(self, delegation, db_role):
         delegation.signed.targets.clear()
         delegation.signed.targets = {
@@ -1160,13 +1198,13 @@ class MetadataRepository:
 
         return delegation
 
+    @trace_function()
     def bump_persist_role(
         self,
         delegation: Metadata[Targets],
         rolename: str,
         from_storage: bool,
     ):
-
         delegation_keyids = self.get_delegation_keyids(rolename)
 
         if (
@@ -1206,6 +1244,7 @@ class MetadataRepository:
                 f"{rolename.upper()}_SIGNING", delegation.to_dict()
             )
 
+    @trace_function()
     def update_targets_delegated_role(self, role: str):
         if role == Targets.type:
             targets: Metadata[Targets] = self._storage_load_targets()
@@ -1251,6 +1290,7 @@ class MetadataRepository:
             }
         }
 
+    @trace_function()
     def _bootstrap_online_roles(
         self,
         delegations: Optional[Delegations] = None,
@@ -1315,6 +1355,7 @@ class MetadataRepository:
             self._persist(online_roles[role], role)
 
     @staticmethod
+    @trace_function()
     def _task_result(
         task: TaskName,
         message: str,
@@ -1336,6 +1377,7 @@ class MetadataRepository:
         )
         return asdict(result)
 
+    @trace_function()
     def _bootstrap_finalize(self, root: Metadata[Root], task_id: str):
         """
         Register the bootstrap finished.
@@ -1354,6 +1396,7 @@ class MetadataRepository:
         self._persist(root, Root.type)
         self.write_repository_settings("BOOTSTRAP", task_id)
 
+    @trace_function()
     def bootstrap(
         self,
         payload: Dict[str, Any],
@@ -1445,6 +1488,7 @@ class MetadataRepository:
             details={"bootstrap": message},
         )
 
+    @trace_function()
     def update_settings(
         self,
         payload: Dict[str, Any],
@@ -1508,6 +1552,7 @@ class MetadataRepository:
             details=details,
         )
 
+    @trace_function()
     def publish_artifacts(
         self,
         payload: Optional[Dict[str, Any]] = None,
@@ -1583,6 +1628,7 @@ class MetadataRepository:
             },
         )
 
+    @trace_function()
     def add_artifacts(
         self, payload: Dict[str, Any], update_state: Task.update_state
     ) -> Optional[Dict[str, Any]]:
@@ -1672,6 +1718,7 @@ class MetadataRepository:
             },
         )
 
+    @trace_function()
     def remove_artifacts(
         self, payload: Dict[str, Any], update_state: Task.update_state
     ) -> Dict[str, Any]:
@@ -1752,6 +1799,7 @@ class MetadataRepository:
             },
         )
 
+    @trace_function()
     def _run_online_roles_bump(self, force: Optional[bool] = False):
         """
         Bumps version and expiration date of all online roles (`Targets`,
@@ -1843,6 +1891,7 @@ class MetadataRepository:
                     "skipping"
                 )
 
+    @trace_function()
     def bump_snapshot(self, force: Optional[bool] = False):
         """
         Bumps version and expiration date of TUF 'snapshot' role metadata.
@@ -1882,6 +1931,7 @@ class MetadataRepository:
                 f"{self._hours_before_expire} hour, skipping"
             )
 
+    @trace_function()
     def bump_online_roles(self, force: Optional[bool] = False) -> bool:
         """
         Bump online roles (Snapshot, Timestamp, Targets and delegated roles).
@@ -1924,6 +1974,7 @@ class MetadataRepository:
 
         return True
 
+    @trace_function()
     def _run_force_online_metadata_update(self, roles: List[str]) -> List[str]:
         "Run the actual metadata update for set of online roles."
         roles_diff: List[str] = []
@@ -1960,6 +2011,7 @@ class MetadataRepository:
 
         return roles_diff
 
+    @trace_function()
     def force_online_metadata_update(
         self,
         payload: Dict[str, Any],
@@ -2021,6 +2073,7 @@ class MetadataRepository:
             },
         )
 
+    @trace_function()
     def _verify_new_root_signing(
         self, current_root: Metadata[Root], new_root: Metadata[Root]
     ):
@@ -2045,6 +2098,7 @@ class MetadataRepository:
         # Verify that new root is signed by itself
         new_root.verify_delegate(Root.type, new_root)
 
+    @trace_function()
     def _root_metadata_update(
         self, new_root: Metadata[Root]
     ) -> Dict[str, Any]:
@@ -2092,6 +2146,7 @@ class MetadataRepository:
             details={"role": Root.type},
         )
 
+    @trace_function()
     def _root_metadata_update_finalize(
         self, current_root: Metadata[Root], new_root: Metadata[Root]
     ) -> None:
@@ -2143,6 +2198,7 @@ class MetadataRepository:
                         f"({self._timeout} seconds)"
                     )
 
+    @trace_function()
     def metadata_update(
         self,
         payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
@@ -2191,6 +2247,7 @@ class MetadataRepository:
                 details=None,
             )
 
+    @trace_function()
     def metadata_delegation(
         self,
         payload: Dict[str, Any],
@@ -2284,6 +2341,7 @@ class MetadataRepository:
         )
 
     @staticmethod
+    @trace_function()
     def _validate_signature(
         metadata: Metadata,
         signature: Signature,
@@ -2332,6 +2390,7 @@ class MetadataRepository:
         return True
 
     @staticmethod
+    @trace_function()
     def _validate_threshold(
         metadata: Metadata,
         delegator: Optional[Metadata] = None,
@@ -2353,6 +2412,7 @@ class MetadataRepository:
 
         return True
 
+    @trace_function()
     def sign_metadata(
         self,
         payload: Dict[str, Any],
@@ -2490,6 +2550,7 @@ class MetadataRepository:
             self.write_repository_settings(f"{rolename.upper()}_SIGNING", None)
             return _result(True, update=f"Role {rolename} signing complete")
 
+    @trace_function()
     def delete_sign_metadata(
         self,
         payload: Dict[str, Any],

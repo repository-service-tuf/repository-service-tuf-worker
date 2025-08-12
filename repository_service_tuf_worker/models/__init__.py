@@ -15,7 +15,10 @@ from repository_service_tuf_worker.models.targets import (  # noqa
     schemas as targets_schema,
 )
 
+from repository_service_tuf_worker.otel_tracer import trace_function
 
+
+@trace_function()
 def rstuf_db(db_server: str) -> sessionmaker:
     engine = create_engine(db_server)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -19,6 +19,7 @@ from repository_service_tuf_worker.interfaces import (
     IStorage,
     ServiceSettings,
 )
+from repository_service_tuf_worker.otel_tracer import trace_function
 
 
 class AWSS3(IStorage):
@@ -41,6 +42,7 @@ class AWSS3(IStorage):
         self._s3_object_acl = s3_object_acl or "public-read"
 
     @classmethod
+    @trace_function()
     def configure(cls, settings: Dynaconf) -> "AWSS3":
         access_key = parse_if_secret(settings.AWS_ACCESS_KEY_ID)
         secret_access_key = parse_if_secret(settings.AWS_SECRET_ACCESS_KEY)
@@ -84,6 +86,7 @@ class AWSS3(IStorage):
         )
 
     @classmethod
+    @trace_function()
     def settings(cls) -> List[ServiceSettings]:
         return [
             ServiceSettings(
@@ -112,6 +115,7 @@ class AWSS3(IStorage):
             ),
         ]
 
+    @trace_function()
     def get(self, role: str, version: Optional[int] = None) -> Metadata[T]:
         """
         Returns TUF role metadata object for the passed role name,
@@ -155,6 +159,7 @@ class AWSS3(IStorage):
             if file_object is not None:
                 file_object.close()
 
+    @trace_function()
     def put(
         self,
         data: bytes,

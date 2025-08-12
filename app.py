@@ -77,7 +77,119 @@ app = Celery(
 )
 
 
+# Opentelemetry Setup
+from celery.signals import worker_process_init
+import logging
+import os
+
+@worker_process_init.connect(weak=False)
+def init_tracing(**kwargs):
+    """
+    Run after each Celery worker fork so every child gets its own
+    exporter and file-descriptor state (prevents EINVAL/epoll issues).
+    Selects HTTP exporter if OTEL_EXPORTER_OTLP_PROTOCOL contains "http",
+    otherwise defaults to gRPC exporter.
+    """
+    if os.getenv("ENABLE_OTEL") != "1":
+        logging.info("OpenTelemetry disabled (ENABLE_OTEL != 1)")
+        return
+
+    try:
+        # imports only if enabled
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        from opentelemetry.instrumentation.celery import CeleryInstrumentor
+        CeleryInstrumentor().instrument()
+
+        provider = TracerProvider()
+
+        otlp_protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf").lower()
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://172.17.0.1:4318")
+        timeout = int(os.getenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5"))
+
+        if "http" in otlp_protocol:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+            span_exporter = OTLPSpanExporter(endpoint=otlp_endpoint, timeout=timeout)
+        else:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+            ep = otlp_endpoint
+            if ep.startswith("http://") or ep.startswith("https://"):
+                ep = ep.split("://", 1)[1]
+            insecure_env = os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "").lower()
+            insecure_flag = insecure_env in ("1", "true", "yes")
+            span_exporter = OTLPSpanExporter(endpoint=ep, insecure=insecure_flag, timeout=timeout)
+
+        span_processor = BatchSpanProcessor(span_exporter)
+        provider.add_span_processor(span_processor)
+        trace.set_tracer_provider(provider)
+
+        logging.info("OpenTelemetry tracing initialized in worker (protocol=%s)", otlp_protocol)
+    except Exception as e:
+        logging.error("Failed to initialize OpenTelemetry: %s", e, exc_info=True)
+
+from functools import wraps
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+def get_tracer():
+    """Get tracer instance, handling case where OTEL might not be initialized"""
+    try:
+        return trace.get_tracer(__name__)
+    except:
+        # Return a no-op tracer if OpenTelemetry isn't initialized
+        return trace.NoOpTracer()
+
+def trace_task(operation_name: str = None):
+    """Decorator to add OpenTelemetry tracing to Celery tasks"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            tracer = get_tracer()
+            span_name = operation_name or f"celery.task.{func.__name__}"
+            
+            with tracer.start_as_current_span(span_name) as span:
+                try:
+                    # Add task context as span attributes
+                    if args and hasattr(args[0], 'request'):
+                        span.set_attribute("celery.task_id", args[0].request.id)
+                        span.set_attribute("celery.task_name", func.__name__)
+                    
+                    # Add custom attributes based on function arguments
+                    if kwargs:
+                        for key, value in kwargs.items():
+                            if isinstance(value, (str, int, float, bool)):
+                                span.set_attribute(f"task.arg.{key}", value)
+                    
+                    # Execute the original function
+                    result = func(*args, **kwargs)
+                    
+                    # Mark span as successful
+                    span.set_status(Status(StatusCode.OK))
+                    
+                    # Add result information if it's serializable
+                    if isinstance(result, (str, int, float, bool)):
+                        span.set_attribute("task.result", str(result))
+                    elif isinstance(result, (list, dict)) and len(str(result)) < 1000:
+                        span.set_attribute("task.result_type", type(result).__name__)
+                        span.set_attribute("task.result_length", len(result))
+                    
+                    return result
+                    
+                except Exception as e:
+                    # Mark span as error and record exception
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    span.record_exception(e)
+                    raise
+                    
+        return wrapper
+    return decorator
+
+
+
 @app.task(serializer="json", bind=True)
+@trace_task()
 def repository_service_tuf_worker(
     self,
     action: str,
@@ -103,6 +215,7 @@ def repository_service_tuf_worker(
 
 
 @app.task(serializer="json", queue="rstuf_internals")
+@trace_task()
 def _end_bor_chain_callback(result, start_time: float):
     """
     Callback to calculate the total execution time of the chain.
@@ -126,6 +239,7 @@ def _end_bor_chain_callback(result, start_time: float):
 
 
 @app.task(serializer="json", queue="rstuf_internals")
+@trace_task()
 def _update_online_role(role: str) -> Optional[str]:
     """
     Update online role (DB and JSON)
@@ -134,6 +248,7 @@ def _update_online_role(role: str) -> Optional[str]:
 
 
 @app.task(serializer="json", queue="rstuf_internals")
+@trace_task()
 def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
     """
     Update the snapshot timestamp with the updated roles data.
@@ -175,6 +290,7 @@ def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
 
 
 @app.task(serializer="json", queue="rstuf_internals")
+@trace_task()
 def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
     """
     Bump all online roles.
