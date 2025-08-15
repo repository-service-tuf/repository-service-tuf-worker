@@ -14,6 +14,8 @@ from celery.exceptions import ChordError
 from celery.result import states
 from securesystemslib.exceptions import StorageError
 from tuf.api.metadata import (
+    DelegatedRole,
+    Delegations,
     Metadata,
     MetaFile,
     Root,
@@ -3750,6 +3752,15 @@ class TestMetadataRepository:
             lambda *a: None
         )
 
+        def mock_bump_and_persist(role, role_name, **kwargs):
+            role.signed.version += 1
+            return None
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            mock_bump_and_persist
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
+
         result = test_repo.metadata_delegation(payload, None)
 
         assert test_repo._storage_load_snapshot.calls == [pretend.call()]
@@ -3823,7 +3834,17 @@ class TestMetadataRepository:
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
+
         test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        def mock_bump_and_persist(role, role_name, **kwargs):
+            role.signed.version += 1
+            return None
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            mock_bump_and_persist
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
         result = test_repo.metadata_delegation(payload, None)
 
@@ -3857,23 +3878,78 @@ class TestMetadataRepository:
             },
         }
 
-    def test_metadata_delegation_delete(self, test_repo, mocked_datetime):
+    def test_metadata_delegation_delete(
+        self, test_repo, mocked_datetime, monkeypatch
+    ):
         payload = {
             "action": "delete",
             "delegations": {
-                "keys": {},
                 "roles": [
                     {
-                        "keyids": [],
                         "name": "delegation-1",
-                        "paths": ["*"],
-                        "terminating": True,
-                        "threshold": 2,
-                        "x-rstuf-expire-policy": 365,
                     }
                 ],
             },
         }
+
+        mock_targets = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={},
+                    roles={
+                        "delegation-1": DelegatedRole.from_dict(
+                            {
+                                "keyids": [],
+                                "name": "delegation-1",
+                                "paths": ["*"],
+                                "terminating": True,
+                                "threshold": 1,
+                            }
+                        )
+                    },
+                )
+            )
+        )
+
+        mock_snapshot = Metadata(
+            Snapshot(meta={"delegation-1.json": MetaFile(version=1)})
+        )
+
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(
+                lambda role: (
+                    deepcopy(mock_targets)
+                    if role == Targets.type
+                    else deepcopy(mock_snapshot)
+                )
+            )
+        )
+
+        test_repo._remove_delegated_role_keys = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_snapshot = pretend.call_recorder(lambda *a, **kw: 1)
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_by_rolename",
+            pretend.call_recorder(lambda *a: pretend.stub()),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_role_to_deactivated",
+            pretend.call_recorder(lambda *a: None),
+        )
 
         @contextmanager
         def mocked_lock(lock, timeout):
@@ -3882,18 +3958,18 @@ class TestMetadataRepository:
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock)
         )
-        test_repo._delete_metadata_delegation = pretend.call_recorder(
-            lambda delegations: ({"delegation-1": "deleted"}, [])
-        )
 
         result = test_repo.metadata_delegation(payload)
 
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=test_repo._timeout)
         ]
-        assert test_repo._delete_metadata_delegation.calls == [
-            pretend.call(payload["delegations"])
+        snapshot_persist_calls = [
+            call
+            for call in test_repo._persist.calls
+            if call.args[1] == Snapshot.type
         ]
+        assert len(snapshot_persist_calls) == 1
         assert result == {
             "task": repository.TaskName.METADATA_DELEGATION,
             "status": True,
@@ -5537,3 +5613,66 @@ class TestMetadataRepository:
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("TEST-ROLE_SIGNING")
         ]
+
+    def test_metadata_delegation_add_persists_snapshot_correctly(
+        self, test_repo
+    ):
+        payload = {
+            "action": "add",
+            "delegations": {
+                "keys": {},
+                "roles": [
+                    {
+                        "keyids": ["online_keyid"],
+                        "name": "delegation-1",
+                        "paths": ["*"],
+                        "terminating": True,
+                        "threshold": 1,
+                        "x-rstuf-expire-policy": 365,
+                    }
+                ],
+            },
+        }
+
+        mock_snapshot = Metadata(Snapshot())
+        mock_targets = Metadata(Targets())
+
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: deepcopy(mock_snapshot)
+        )
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: deepcopy(mock_targets)
+        )
+
+        mocked_delegated_role = repository.DelegatedRole.from_dict(
+            copy(payload["delegations"]["roles"][0])
+        )
+        mocked_delegated_role.signed = pretend.stub(version=1)
+        test_repo._add_metadata_delegation = pretend.call_recorder(
+            lambda *a, **kw: ({"delegation-1": mocked_delegated_role}, [])
+        )
+
+        test_repo._validate_threshold = pretend.call_recorder(lambda *a: True)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        def mock_bump_and_persist(role, role_name, **kwargs):
+            role.signed.version += 1
+            return None
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            mock_bump_and_persist
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        result = test_repo.metadata_delegation(payload, None)
+        assert result["status"] is True
+
+        snapshot_persist_calls = [
+            call
+            for call in test_repo._bump_and_persist.calls
+            if call.args[1] == "snapshot"
+        ]
+        assert len(snapshot_persist_calls) == 1
