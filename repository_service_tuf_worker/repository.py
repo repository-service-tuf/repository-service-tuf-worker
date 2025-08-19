@@ -151,7 +151,7 @@ class MetadataRepository:
         if key_dict is not None:
             return Key.from_dict(key_dict.pop("keyid"), key_dict)
         else:
-            root: Metadata[Root] = self._storage_backend.get(Root.type)
+            root: Metadata[Root] = self._storage_load_root()
             # All roles except root share the same one key and it doesn't
             # matter from which role we will get the key.
             keyid: str = root.signed.roles["timestamp"].keyids[0]
@@ -185,9 +185,7 @@ class MetadataRepository:
     @property
     def uses_succinct_roles(self) -> bool:
         if self._uses_succinct_roles is None:
-            targets: Metadata[Targets] = self._storage_backend.get(
-                Targets.type
-            )
+            targets: Metadata[Targets] = self._storage_load_targets()
             self._uses_succinct_roles = (
                 True if targets.signed.delegations.succinct_roles else False
             )
@@ -210,6 +208,12 @@ class MetadataRepository:
         """
         return self._storage_backend.get(Targets.type)
 
+    def _storage_load_root(self) -> Metadata[Root]:
+        """
+        Loads 'root' metadata from the storage backend
+        """
+        return self._storage_backend.get(Root.type)
+
     def get_delegation_keyids(self, rolename: str) -> List[str]:
         if self.uses_succinct_roles:
             logging.debug("delegations using succinct delegations")
@@ -217,9 +221,7 @@ class MetadataRepository:
             delegation_keyids = [self._online_key.keyid]
         else:
             logging.debug("delegations using custom delegations")
-            targets: Metadata[Targets] = self._storage_backend.get(
-                Targets.type
-            )
+            targets: Metadata[Targets] = self._storage_load_targets()
             delegation_keyids = targets.signed.delegations.roles[
                 rolename
             ].keyids
@@ -379,7 +381,7 @@ class MetadataRepository:
         snapshot_meta: MetaFile,
         database_meta: Dict[str, Tuple[datetime, int]],
     ) -> Metadata[Snapshot]:
-        snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
+        snapshot: Metadata[Snapshot] = self._storage_load_snapshot()
 
         if bool(snapshot_meta) is True:
             snapshot.signed.meta.update(snapshot_meta)
@@ -452,8 +454,8 @@ class MetadataRepository:
                 It doesn't Bump and Persist Targets.
             only_snapshot: Bump and Persist Snapshot Role only.
         """
-        snapshot: Metadata[Snapshot] = self._storage_backend.get(Snapshot.type)
-        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
+        snapshot: Metadata[Snapshot] = self._storage_load_snapshot()
+        targets: Metadata[Targets] = self._storage_load_targets()
         bins_used = (
             True if targets.signed.delegations.succinct_roles else False
         )
@@ -592,7 +594,7 @@ class MetadataRepository:
         Args:
             targets: current top level targets metadata.
         """
-        current_root = self._storage_backend.get(Root.type)
+        current_root = self._storage_load_root()
         old_online_keyid = current_root.signed.roles[Targets.type].keyids[0]
         # New online keyid is set to self._online_key before function call.
         new_online_key = self._online_key
@@ -614,7 +616,7 @@ class MetadataRepository:
         """
         Return role name by target file path
         """
-        targets: Metadata[Targets] = self._storage_backend.get(Targets.type)
+        targets: Metadata[Targets] = self._storage_load_targets()
         delegations = targets.signed.delegations
         # Note: there could be more than one matching custom delegated role,
         # for this artifact path, but we get the first match. If we want to get
@@ -941,7 +943,7 @@ class MetadataRepository:
         """Create a custom delegation role"""
 
         if targets is None:
-            targets = self._storage_backend.get(Targets.type)
+            targets = self._storage_load_targets()
 
         if targets.signed.delegations.succinct_roles:
             raise RepositoryError(
@@ -1033,8 +1035,8 @@ class MetadataRepository:
     ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
         """Create a custom delegation role"""
 
-        targets = self._storage_backend.get(Targets.type)
-        snapshot = self._storage_backend.get(Snapshot.type)
+        targets = self._storage_load_targets()
+        snapshot = self._storage_load_snapshot()
         success = []
         failed = []
 
@@ -1084,7 +1086,7 @@ class MetadataRepository:
     ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
         """Update a custom delegation role"""
 
-        targets = self._storage_backend.get(Targets.type)
+        targets = self._storage_load_targets()
 
         if targets.signed.delegations.succinct_roles:
             raise RepositoryError(
@@ -1206,9 +1208,7 @@ class MetadataRepository:
 
     def update_targets_delegated_role(self, role: str):
         if role == Targets.type:
-            targets: Metadata[Targets] = self._storage_backend.get(
-                Targets.type
-            )
+            targets: Metadata[Targets] = self._storage_load_targets()
             self._bump_and_persist(targets, Targets.type)
 
             return {
@@ -1777,9 +1777,7 @@ class MetadataRepository:
                 f"{Targets.type} don't use online key, skipping 'Targets' role"
             )
         else:
-            targets: Metadata[Targets] = self._storage_backend.get(
-                Targets.type
-            )
+            targets: Metadata[Targets] = self._storage_load_targets()
             if (
                 force
                 or (targets.signed.expires - today) < self._expire_timedelta
@@ -1796,9 +1794,7 @@ class MetadataRepository:
             logging.info("Targets and delegated Targets roles version bumped")
         else:
             # Updating only those delegated roles that have expired.
-            targets: Metadata[Targets] = self._storage_backend.get(
-                Targets.type
-            )
+            targets: Metadata[Targets] = self._storage_load_targets()
             delegated_roles: List[str] = []
             if targets.signed.delegations.succinct_roles:
                 s_roles = targets.signed.delegations.succinct_roles.get_roles()
@@ -1862,7 +1858,7 @@ class MetadataRepository:
                 expire (`self._hours_before_expire`)
         """
 
-        snapshot = self._storage_backend.get(Snapshot.type)
+        snapshot = self._storage_load_snapshot()
         if (
             snapshot.signed.expires - datetime.now(timezone.utc)
         ) < self._expire_timedelta or force:
@@ -1940,7 +1936,7 @@ class MetadataRepository:
         if Targets.type in roles or len(delegated_roles) > 0:
             roles_diff = [Snapshot.type, Timestamp.type]
             if Targets.type in roles:
-                targets = self._storage_backend.get(Targets.type)
+                targets = self._storage_load_targets()
                 self._bump_and_persist(targets, Targets.type)
                 roles_diff += [Targets.type]
 
@@ -1958,7 +1954,7 @@ class MetadataRepository:
             roles_diff = [Snapshot.type, Timestamp.type]
 
         elif Timestamp.type in roles:
-            snapshot = self._storage_backend.get(Snapshot.type)
+            snapshot = self._storage_load_snapshot()
             self._update_timestamp(snapshot.signed.version)
             roles_diff = [Timestamp.type]
 
@@ -2053,7 +2049,7 @@ class MetadataRepository:
         self, new_root: Metadata[Root]
     ) -> Dict[str, Any]:
         """Updates to new root metadata, if it is trusted."""
-        current_root: Metadata[Root] = self._storage_backend.get(Root.type)
+        current_root: Metadata[Root] = self._storage_load_root()
 
         try:
             self._verify_new_root_signing(current_root, new_root)
@@ -2457,7 +2453,7 @@ class MetadataRepository:
             return _result(True, update="Metadata update finished")
 
         else:
-            targets = self._storage_backend.get(Targets.type)
+            targets = self._storage_load_targets()
             is_valid_trusted = self._validate_signature(
                 metadata, signature, targets, rolename
             )
@@ -2481,7 +2477,7 @@ class MetadataRepository:
 
             # Threshold reached -> finalize event
             logging.debug(f"finalizing '{rolename}' metadata signing")
-            snapshot = self._storage_backend.get(Snapshot.type)
+            snapshot = self._storage_load_snapshot()
             snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
                 version=metadata.signed.version,
             )
