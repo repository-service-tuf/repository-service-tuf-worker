@@ -566,7 +566,6 @@ class MetadataRepository:
             snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
                 version=targets.signed.version
             )
-            self._bump_and_persist(snapshot, Snapshot.type)
             logging.debug("Bumped version of 'Snapshot' role")
             snapshot_meta_updated = True
 
@@ -1067,6 +1066,7 @@ class MetadataRepository:
                 f"role '{rolename}' removed from Targets delegations"
             )
             snapshot.signed.meta.pop(f"{rolename}.json", None)
+            self._persist(snapshot, Snapshot.type)
             self.write_repository_settings(f"{rolename.upper()}_SIGNING", None)
             db_role = targets_crud.read_role_by_rolename(self._db, rolename)
             targets_crud.update_role_to_deactivated(self._db, db_role)
@@ -2239,6 +2239,9 @@ class MetadataRepository:
                             f"{role.upper()}_SIGNING",
                             success[role].to_dict(),
                         )
+
+                self._bump_and_persist(snapshot, Snapshot.type)
+                self._update_timestamp(snapshot.signed.version)
 
             case "delete":
                 delegations = payload["delegations"]
