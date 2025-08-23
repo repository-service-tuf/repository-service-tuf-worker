@@ -16,6 +16,7 @@ from repository_service_tuf_worker.interfaces import (
     IStorage,
     ServiceSettings,
 )
+from repository_service_tuf_worker.otel_tracer import trace_function
 
 
 class LocalStorage(IStorage):
@@ -23,6 +24,7 @@ class LocalStorage(IStorage):
         self._path: str = path
 
     @classmethod
+    @trace_function()
     def configure(cls, settings: Dynaconf) -> "LocalStorage":
         path = settings.get("LOCAL_STORAGE_BACKEND_PATH") or settings.get(
             "LOCAL_STORAGE_PATH"
@@ -31,6 +33,7 @@ class LocalStorage(IStorage):
         return cls(path)
 
     @classmethod
+    @trace_function()
     def settings(cls) -> List[ServiceSettings]:
         return [
             ServiceSettings(
@@ -39,6 +42,7 @@ class LocalStorage(IStorage):
             ),
         ]
 
+    @trace_function()
     def get(self, role: str, version: Optional[int] = None) -> Metadata[T]:
         """
         Returns TUF role metadata object for the passed role name, from the
@@ -74,6 +78,7 @@ class LocalStorage(IStorage):
             if file_object is not None:
                 file_object.close()
 
+    @trace_function()
     def put(
         self,
         file_data: bytes,

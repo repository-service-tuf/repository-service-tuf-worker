@@ -6,6 +6,14 @@ ifeq ($(DC),)
 DC := docker-compose.yml
 endif
 
+ifeq ($(DCO),)
+DCO := docker-compose-otel.yml
+endif
+
+ifeq ($(DCS),)
+DCS := ./otel_signoz_config/docker-compose-signoz.yml
+endif
+
 build-dev:  ## Build the dev image
 	docker build -t repository-service-tuf-worker:dev .
 
@@ -16,14 +24,21 @@ run-dev:  ## Run the development environment
 
 	docker compose -f $(DC) up --remove-orphans
 
-
+run-dev-otel: export API_VERSION = dev
+run-dev-otel:  ## Run dev environment with OpenTelemetry
+	$(MAKE) build-dev
+	docker pull ghcr.io/repository-service-tuf/repository-service-tuf-api:dev
+	docker compose -f $(DCO) -f $(DCS) up -d
+	docker compose -f $(DCO) logs -f
 
 db-migration:  ## Run a database migration
 	if [ -z "$(M)" ]; then echo "Use: make db-migration M=\'message here\'"; exit 1; fi
 	docker compose run --rm --entrypoint='alembic revision --autogenerate -m "$(M)"' repository-service-tuf-worker
 
 stop:  ## Stop the development environment
-	docker compose -f $(DC) down -v
+	docker compose -f $(DCO) down -v --remove-orphans
+	docker compose -f $(DCS) down -v --remove-orphans
+	docker compose -f $(DC) down -v --remove-orphans
 
 clean:  ## Clean up the development environment
 	$(MAKE) stop

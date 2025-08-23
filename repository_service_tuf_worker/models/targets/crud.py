@@ -7,9 +7,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from repository_service_tuf_worker.otel_tracer import trace_function
+
 from repository_service_tuf_worker.models.targets import models, schemas
 
 
+@trace_function()
 def create_roles(
     db: Session, target_roles: List[schemas.RSTUFTargetRoleCreate]
 ) -> List[models.RSTUFTargetRoles]:
@@ -25,6 +28,7 @@ def create_roles(
     return db_delegated_roles_objects
 
 
+@trace_function()
 def create_file(
     db: Session,
     target_file: schemas.RSTUFTargetFileCreate,
@@ -43,6 +47,7 @@ def create_file(
     return target_file
 
 
+@trace_function()
 def read_roles_with_unpublished_files(db: Session) -> List[Tuple[str]]:
     """
     Read Target Roles containing unpublished Target Files.
@@ -61,6 +66,7 @@ def read_roles_with_unpublished_files(db: Session) -> List[Tuple[str]]:
     )
 
 
+@trace_function()
 def read_file_by_path(
     db: Session, path: str
 ) -> Optional[models.RSTUFTargetFiles]:
@@ -74,6 +80,7 @@ def read_file_by_path(
     )
 
 
+@trace_function()
 def read_role_by_rolename(
     db: Session, rolename: str
 ) -> Optional[models.RSTUFTargetRoles]:
@@ -90,6 +97,7 @@ def read_role_by_rolename(
     )
 
 
+@trace_function()
 def read_role_deactivated_by_rolename(
     db: Session, rolename: str
 ) -> Optional[models.RSTUFTargetRoles]:
@@ -106,6 +114,7 @@ def read_role_deactivated_by_rolename(
     )
 
 
+@trace_function()
 def read_all_roles(db: Session) -> List[models.RSTUFTargetRoles]:
     """
     Read a all Target bin roles.
@@ -117,6 +126,7 @@ def read_all_roles(db: Session) -> List[models.RSTUFTargetRoles]:
     )
 
 
+@trace_function()
 def read_all_roles_rolenames(db: Session) -> List[Optional[str]]:
     """
     Read a all Target bin roles.
@@ -132,6 +142,7 @@ def read_all_roles_rolenames(db: Session) -> List[Optional[str]]:
         return [rolename[0] for rolename in result]
 
 
+@trace_function()
 def read_roles_joint_files(
     db: Session, rolenames: List[str]
 ) -> List[models.RSTUFTargetRoles]:
@@ -152,6 +163,7 @@ def read_roles_joint_files(
     )
 
 
+@trace_function()
 def read_role_joint_files(
     db: Session, rolename: str
 ) -> models.RSTUFTargetRoles:
@@ -172,6 +184,7 @@ def read_role_joint_files(
     )
 
 
+@trace_function()
 def read_roles_rolenames_expired(
     db: Session, expire_timedelta: timedelta
 ) -> List[Optional[str]]:
@@ -195,6 +208,7 @@ def read_roles_rolenames_expired(
         return [rolename[0] for rolename in result]
 
 
+@trace_function()
 def update_file_path_and_info(
     db: Session,
     target: models.RSTUFTargetFiles,
@@ -216,6 +230,7 @@ def update_file_path_and_info(
     return target
 
 
+@trace_function()
 def update_files_to_published(db: Session, paths: List[str]) -> None:
     """
     Update Target Files `published` attribute to `True`.
@@ -233,6 +248,7 @@ def update_files_to_published(db: Session, paths: List[str]) -> None:
     db.commit()
 
 
+@trace_function()
 def update_roles_version(db: Session, bins_ids: List[int]) -> None:
     """
     Update Target roles version +1.
@@ -249,6 +265,7 @@ def update_roles_version(db: Session, bins_ids: List[int]) -> None:
     db.commit()
 
 
+@trace_function()
 def update_roles_expire_version_by_rolenames(
     db: Session, database_meta: Dict[str, Tuple[datetime, int]]
 ) -> None:
@@ -273,6 +290,7 @@ def update_roles_expire_version_by_rolenames(
     db.commit()
 
 
+@trace_function()
 def update_file_action_to_remove(
     db: Session, target: models.RSTUFTargetFiles
 ) -> models.RSTUFTargetFiles:
@@ -289,6 +307,7 @@ def update_file_action_to_remove(
     return target
 
 
+@trace_function()
 def update_role_to_deactivated(
     db: Session, role: models.RSTUFTargetRoles
 ) -> models.RSTUFTargetRoles:

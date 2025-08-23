@@ -10,6 +10,7 @@ from typing import Any, List, Optional
 
 from dynaconf import Dynaconf
 from tuf.api.metadata import Metadata, T
+from repository_service_tuf_worker.otel_tracer import trace_function
 
 
 @dataclass
@@ -31,6 +32,7 @@ class IStorage(ABC):
         raise NotImplementedError  # pragma: no cover
 
     @classmethod
+    @trace_function()
     def from_dynaconf(cls, settings: Dynaconf) -> None:
         """
         Run actions to verify and configure using the dynaconf settings.
@@ -66,6 +68,7 @@ class IStorage(ABC):
         raise NotImplementedError  # pragma: no cover
 
 
+@trace_function()
 def _setup_service_dynaconf(cls: Any, backend: Any, settings: Dynaconf):
     """
     Setup a Interface Service (IService) from settings Dynaconf (environment
