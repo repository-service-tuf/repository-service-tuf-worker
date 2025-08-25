@@ -6,15 +6,15 @@ ifeq ($(DC),)
 DC := docker-compose.yml
 endif
 
+API_VERSION ?= dev
+
 build-dev:  ## Build the dev image
 	docker build -t repository-service-tuf-worker:dev .
-
-run-dev: export API_VERSION = dev
 run-dev:  ## Run the development environment
 	$(MAKE) build-dev
-	docker pull ghcr.io/repository-service-tuf/repository-service-tuf-api:dev
+	docker pull ghcr.io/repository-service-tuf/repository-service-tuf-api:$(API_VERSION)
 
-	docker compose -f $(DC) up --remove-orphans
+	export API_VERSION=$(API_VERSION) && docker compose -f $(DC) up --remove-orphans
 
 
 
