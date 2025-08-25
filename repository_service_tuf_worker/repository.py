@@ -566,7 +566,6 @@ class MetadataRepository:
             snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
                 version=targets.signed.version
             )
-            logging.debug("Bumped version of 'Snapshot' role")
             snapshot_meta_updated = True
 
         if only_snapshot:
@@ -2217,10 +2216,10 @@ class MetadataRepository:
                     payload["delegations"]
                 )
                 targets = self._storage_load_targets()
-                snapshot = self._storage_load_snapshot()
                 success, failed = self._add_metadata_delegation(
                     delegations, targets, persist_targets=True
                 )
+                snapshot = self._storage_load_snapshot()
                 # NOTE: this portion of logic below cannot be part of the
                 # helper function `_add_metadata_delegation` because while
                 # running `_bootstrap_online_roles` targets still not exist
