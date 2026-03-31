@@ -5634,3 +5634,149 @@ class TestMetadataRepository:
             if call.args[1] == "snapshot"
         ]
         assert len(snapshot_persist_calls) == 1
+
+    def test__add_metadata_delegation_rejects_overlapping_paths(
+        self, test_repo, monkeypatch
+    ):
+        existing_role = DelegatedRole(
+            name="project-a",
+            keyids=["online_keyid"],
+            threshold=1,
+            terminating=True,
+            paths=["project-a/*"],
+            unrecognized_fields={"x-rstuf-expire-policy": 5},
+        )
+        targets = Metadata(Targets())
+        targets.signed.delegations = Delegations(
+            keys={}, roles={"project-a": existing_role}
+        )
+
+        new_role = DelegatedRole(
+            name="project-b",
+            keyids=[],
+            threshold=1,
+            terminating=True,
+            paths=["project-a/*"],
+            unrecognized_fields={"x-rstuf-expire-policy": 5},
+        )
+        new_delegations = Delegations(keys={}, roles={"project-b": new_role})
+
+        test_repo._db = pretend.stub()
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_deactivated_by_rolename",
+            pretend.call_recorder(lambda *a: None),
+        )
+
+        success, failed = test_repo._add_metadata_delegation(
+            new_delegations, targets, persist_targets=False
+        )
+
+        assert success == {}
+        assert len(failed) == 1
+        assert failed[0]["role"] == "project-b"
+        assert "overlap" in failed[0]["reason"]
+
+    def test__add_metadata_delegation_accepts_non_overlapping_paths(
+        self, test_repo, monkeypatch
+    ):
+        existing_role = DelegatedRole(
+            name="project-a",
+            keyids=["online_keyid"],
+            threshold=1,
+            terminating=True,
+            paths=["project-a/*"],
+            unrecognized_fields={"x-rstuf-expire-policy": 5},
+        )
+        targets = Metadata(Targets())
+        targets.signed.delegations = Delegations(
+            keys={}, roles={"project-a": existing_role}
+        )
+
+        new_role = DelegatedRole(
+            name="project-b",
+            keyids=[],
+            threshold=1,
+            terminating=True,
+            paths=["project-b/*"],
+            unrecognized_fields={"x-rstuf-expire-policy": 5},
+        )
+        new_delegations = Delegations(keys={}, roles={"project-b": new_role})
+
+        test_repo._db = pretend.stub()
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_deactivated_by_rolename",
+            pretend.call_recorder(lambda *a: None),
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._add_delegated_role_keys = pretend.call_recorder(
+            lambda *a: None
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "create_roles",
+            pretend.call_recorder(lambda *a: None),
+        )
+
+        success, failed = test_repo._add_metadata_delegation(
+            new_delegations, targets, persist_targets=False
+        )
+
+        assert "project-b" in success
+        assert failed == []
+
+    def test__add_metadata_delegation_rejects_intra_batch_overlapping_paths(
+        self, test_repo, monkeypatch
+    ):
+        targets = Metadata(Targets())
+        targets.signed.delegations = Delegations(keys={}, roles={})
+
+        role_a = DelegatedRole(
+            name="project-a",
+            keyids=[],
+            threshold=1,
+            terminating=True,
+            paths=["project-a/*"],
+            unrecognized_fields={"x-rstuf-expire-policy": 5},
+        )
+        role_b = DelegatedRole(
+            name="project-b",
+            keyids=[],
+            threshold=1,
+            terminating=True,
+            paths=["project-a/*"],
+            unrecognized_fields={"x-rstuf-expire-policy": 5},
+        )
+        new_delegations = Delegations(
+            keys={}, roles={"project-a": role_a, "project-b": role_b}
+        )
+
+        test_repo._db = pretend.stub()
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_deactivated_by_rolename",
+            pretend.call_recorder(lambda *a: None),
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._add_delegated_role_keys = pretend.call_recorder(
+            lambda *a: None
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "create_roles",
+            pretend.call_recorder(lambda *a: None),
+        )
+
+        success, failed = test_repo._add_metadata_delegation(
+            new_delegations, targets, persist_targets=False
+        )
+
+        assert "project-a" in success
+        assert len(failed) == 1
+        assert failed[0]["role"] == "project-b"
+        assert "overlap" in failed[0]["reason"]
