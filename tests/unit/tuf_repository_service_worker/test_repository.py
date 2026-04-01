@@ -99,6 +99,33 @@ class TestMetadataRepository:
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
 
+    def test_online_key_property_does_not_mutate_settings_dict(
+        self, test_repo, monkeypatch
+    ):
+        fake_key_dict = {"keyval": "foo", "keyid": "key_id"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_key_dict)
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        key = pretend.stub(keyid="key_id")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
+
+        test_repo._online_key
+        test_repo._online_key
+
+        assert "keyid" in fake_key_dict
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call("key_id", {"keyval": "foo"}),
+            pretend.call("key_id", {"keyval": "foo"}),
+        ]
+
     def test_online_key_property_from_storage(self, test_repo, monkeypatch):
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda a: None)
