@@ -1834,7 +1834,9 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo.publish_artifacts()
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e.value)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(
+            e.value
+        )
         assert test_repo._redis.lock.calls == [
             pretend.call("LOCK_TARGETS", timeout=500)
         ]
@@ -2881,7 +2883,9 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo.bump_online_roles()
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e.value)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(
+            e.value
+        )
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -3477,7 +3481,9 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo._root_metadata_update(fake_new_root_md)
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e.value)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(
+            e.value
+        )
         assert test_repo._storage_load_root.calls == [pretend.call()]
         assert test_repo._verify_new_root_signing.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
@@ -3973,7 +3979,9 @@ class TestMetadataRepository:
             f"The task to bump all online roles exceeded the timeout of "
             f"{test_repo._timeout} seconds." in caplog.text
         )
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e.value)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(
+            e.value
+        )
         assert test_repo._redis.lock.calls == [
             pretend.call("LOCK_TARGETS", timeout=500)
         ]
