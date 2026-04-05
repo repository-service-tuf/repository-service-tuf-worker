@@ -14,6 +14,8 @@ from celery.exceptions import ChordError
 from celery.result import states
 from securesystemslib.exceptions import StorageError
 from tuf.api.metadata import (
+    DelegatedRole,
+    Delegations,
     Metadata,
     MetaFile,
     Root,
@@ -118,18 +120,14 @@ class TestMetadataRepository:
                 version=2,
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_root
-        )
+        test_repo._storage_load_root = pretend.call_recorder(lambda: fake_root)
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
         result = test_repo._online_key
         assert result == key
         assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Root.type)
-        ]
+        assert test_repo._storage_load_root.calls == [pretend.call()]
         expected_dict["keyid"] = key.keyid
         assert key.to_dict.calls == [pretend.call()]
         assert test_repo.write_repository_settings.calls == [
@@ -193,14 +191,12 @@ class TestMetadataRepository:
     def test_uses_succinct_roles(
         self, test_repo, mocked_targets, expected_result
     ):
-        test_repo._storage_backend = pretend.stub(
-            get=pretend.call_recorder(lambda *a: mocked_targets)
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: mocked_targets
         )
 
         assert test_repo.uses_succinct_roles == expected_result
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type)
-        ]
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
 
     def test_refresh_settings_with_none_arg(self, test_repo):
         test_repo.refresh_settings()
@@ -583,8 +579,8 @@ class TestMetadataRepository:
                 meta={},
             )
         )
-        test_repo._storage_backend = pretend.stub(
-            get=pretend.call_recorder(lambda *a: mocked_snapshot)
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: mocked_snapshot
         )
 
         def fake__bump_and_persist(md, role, **kw):
@@ -602,9 +598,7 @@ class TestMetadataRepository:
         result = test_repo.update_snapshot(snapshot_meta, {"database_meta"})
 
         assert result.to_dict() == expected_result.to_dict()
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Snapshot.type)
-        ]
+        assert test_repo._storage_load_snapshot.calls == [pretend.call()]
         if mocked_snapshot.signed.version == 5:
             assert test_repo._bump_and_persist.calls == []
             assert (
@@ -718,9 +712,7 @@ class TestMetadataRepository:
                 roles={Targets.type: pretend.stub(keyids=["old_keyid"])}
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda a: fake_root
-        )
+        test_repo._storage_load_root = pretend.call_recorder(lambda: fake_root)
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(succinct_roles=True),
@@ -731,9 +723,7 @@ class TestMetadataRepository:
 
         result = test_repo._update_targets_delegations_key(fake_targets)
         assert result is None
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Root.type)
-        ]
+        assert test_repo._storage_load_root.calls == [pretend.call()]
         assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
         assert fake_key_obj.from_dict.calls == [
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
@@ -765,15 +755,11 @@ class TestMetadataRepository:
                 roles={Targets.type: pretend.stub(keyids=["online_key"])}
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda a: fake_root
-        )
+        test_repo._storage_load_root = pretend.call_recorder(lambda: fake_root)
 
         result = test_repo._update_targets_delegations_key("targets")
         assert result is None
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Root.type)
-        ]
+        assert test_repo._storage_load_root.calls == [pretend.call()]
         assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
         assert fake_key_obj.from_dict.calls == [
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
@@ -831,8 +817,8 @@ class TestMetadataRepository:
                 ),
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_targets
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: fake_targets
         )
         result = test_repo._get_role_for_artifact_path(
             "v0.0.1/test_path.tar.gz"
@@ -843,9 +829,7 @@ class TestMetadataRepository:
         assert delegations.get_roles_for_target.calls == [
             pretend.call("v0.0.1/test_path.tar.gz")
         ]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type)
-        ]
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
 
     def test__get_role_for_artifact_path_no_role_for_target(self, test_repo):
         fake_targets = pretend.stub(
@@ -857,8 +841,8 @@ class TestMetadataRepository:
                 ),
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_targets
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: fake_targets
         )
         result = test_repo._get_role_for_artifact_path(
             "v0.0.1/test_path.tar.gz"
@@ -869,9 +853,7 @@ class TestMetadataRepository:
         assert delegations.get_roles_for_target.calls == [
             pretend.call("v0.0.1/test_path.tar.gz")
         ]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type)
-        ]
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
 
     def test__update_task(self, test_repo, mocked_datetime):
         test_repo._db = pretend.stub(
@@ -1852,7 +1834,9 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo.publish_artifacts()
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(
+            e.value
+        )
         assert test_repo._redis.lock.calls == [
             pretend.call("LOCK_TARGETS", timeout=500)
         ]
@@ -2703,8 +2687,8 @@ class TestMetadataRepository:
                 version=87,
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_snapshot
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: fake_snapshot
         )
         test_repo._update_snapshot = pretend.call_recorder(
             lambda *a, **kw: "fake_snapshot"
@@ -2720,9 +2704,7 @@ class TestMetadataRepository:
         )
 
         test_repo.bump_snapshot()
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call("snapshot")
-        ]
+        assert test_repo._storage_load_snapshot.calls == [pretend.call()]
         assert test_repo._update_snapshot.calls == [
             pretend.call(only_snapshot=True)
         ]
@@ -2739,14 +2721,12 @@ class TestMetadataRepository:
                 version=87,
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_snapshot
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: fake_snapshot
         )
 
         test_repo.bump_snapshot()
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call("snapshot")
-        ]
+        assert test_repo._storage_load_snapshot.calls == [pretend.call()]
 
     def test_bump_snapshot_check_force_is_acknowledged(
         self, test_repo, caplog
@@ -2771,8 +2751,8 @@ class TestMetadataRepository:
                 version=87,
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_snapshot
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: fake_snapshot
         )
         test_repo._update_snapshot = pretend.call_recorder(
             lambda *a, **kw: "fake_snapshot"
@@ -2788,9 +2768,7 @@ class TestMetadataRepository:
         )
 
         test_repo.bump_snapshot(force=True)
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Snapshot.type)
-        ]
+        assert test_repo._storage_load_snapshot.calls == [pretend.call()]
         assert test_repo._update_snapshot.calls == [
             pretend.call(only_snapshot=True)
         ]
@@ -2905,7 +2883,9 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo.bump_online_roles()
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(
+            e.value
+        )
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -3014,8 +2994,8 @@ class TestMetadataRepository:
         self, test_repo
     ):
         fake_targets = Metadata(Targets())
-        test_repo._storage_backend = pretend.stub(
-            get=pretend.call_recorder(lambda a: fake_targets)
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: fake_targets
         )
         test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
         test_repo._update_snapshot = pretend.call_recorder(
@@ -3026,9 +3006,7 @@ class TestMetadataRepository:
 
         result = test_repo._run_force_online_metadata_update(payload)
         assert result == [Snapshot.type, Timestamp.type, Targets.type, "bins"]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type)
-        ]
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(fake_targets, Targets.type)
         ]
@@ -3108,8 +3086,8 @@ class TestMetadataRepository:
 
     def test__run_force_online_metadata_update_targets(self, test_repo):
         fake_targets = Metadata(Targets())
-        test_repo._storage_backend = pretend.stub(
-            get=pretend.call_recorder(lambda a: fake_targets)
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: fake_targets
         )
         test_repo._bump_and_persist = pretend.call_recorder(lambda *а: None)
         test_repo._update_snapshot = pretend.call_recorder(
@@ -3119,9 +3097,7 @@ class TestMetadataRepository:
 
         result = test_repo._run_force_online_metadata_update([Targets.type])
         assert result == [Snapshot.type, Timestamp.type, Targets.type]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Targets.type)
-        ]
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
         assert test_repo._bump_and_persist.calls == [
             pretend.call(fake_targets, Targets.type)
         ]
@@ -3139,16 +3115,14 @@ class TestMetadataRepository:
 
     def test__run_force_online_metadata_update_timestamp(self, test_repo):
         fake_snapshot = Metadata(Snapshot())
-        test_repo._storage_backend = pretend.stub(
-            get=pretend.call_recorder(lambda a: fake_snapshot)
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: fake_snapshot
         )
         test_repo._update_timestamp = pretend.call_recorder(lambda a: None)
 
         result = test_repo._run_force_online_metadata_update([Timestamp.type])
         assert result == [Timestamp.type]
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(Snapshot.type)
-        ]
+        assert test_repo._storage_load_snapshot.calls == [pretend.call()]
         assert test_repo._update_timestamp.calls == [
             pretend.call(fake_snapshot.signed.version)
         ]
@@ -3269,8 +3243,8 @@ class TestMetadataRepository:
                 version=1,
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_old_root_md
+        test_repo._storage_load_root = pretend.call_recorder(
+            lambda: fake_old_root_md
         )
         test_repo._verify_new_root_signing = pretend.call_recorder(
             lambda *a: None
@@ -3289,9 +3263,7 @@ class TestMetadataRepository:
                 "role": "root",
             },
         }
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(repository.Root.type)
-        ]
+        assert test_repo._storage_load_root.calls == [pretend.call()]
         assert test_repo._verify_new_root_signing.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
         ]
@@ -3314,8 +3286,8 @@ class TestMetadataRepository:
                 version=1,
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_old_root_md
+        test_repo._storage_load_root = pretend.call_recorder(
+            lambda: fake_old_root_md
         )
         test_repo._verify_new_root_signing = pretend.raiser(
             repository.UnsignedMetadataError()
@@ -3339,9 +3311,7 @@ class TestMetadataRepository:
                 "update": "Root v2 is pending signatures",
             },
         }
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(repository.Root.type)
-        ]
+        assert test_repo._storage_load_root.calls == [pretend.call()]
         assert test_repo.write_repository_settings.calls == [
             pretend.call("ROOT_SIGNING", "fake dict")
         ]
@@ -3361,8 +3331,8 @@ class TestMetadataRepository:
                 version=1,
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_old_root_md
+        test_repo._storage_load_root = pretend.call_recorder(
+            lambda: fake_old_root_md
         )
         test_repo._verify_new_root_signing = pretend.raiser(
             repository.BadVersionNumberError("Version v3 instead v2")
@@ -3378,9 +3348,7 @@ class TestMetadataRepository:
             "error": "Failed to verify the trust: Version v3 instead v2",
             "details": None,
         }
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(repository.Root.type)
-        ]
+        assert test_repo._storage_load_root.calls == [pretend.call()]
 
     def test__root_metadata_update_online_key(
         self, test_repo, mocked_datetime, monkeypatch
@@ -3417,8 +3385,8 @@ class TestMetadataRepository:
                 version=1,
             )
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_old_root_md
+        test_repo._storage_load_root = pretend.call_recorder(
+            lambda: fake_old_root_md
         )
         test_repo._verify_new_root_signing = pretend.call_recorder(
             lambda *a: None
@@ -3451,9 +3419,7 @@ class TestMetadataRepository:
                 "role": "root",
             },
         }
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(repository.Root.type)
-        ]
+        assert test_repo._storage_load_root.calls == [pretend.call()]
         assert test_repo._verify_new_root_signing.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
         ]
@@ -3498,8 +3464,8 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        test_repo._storage_backend.get = pretend.call_recorder(
-            lambda *a: fake_old_root_md
+        test_repo._storage_load_root = pretend.call_recorder(
+            lambda: fake_old_root_md
         )
         test_repo._verify_new_root_signing = pretend.call_recorder(
             lambda *a: None
@@ -3515,10 +3481,10 @@ class TestMetadataRepository:
         with pytest.raises(repository.redis.exceptions.LockError) as e:
             test_repo._root_metadata_update(fake_new_root_md)
 
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e)
-        assert test_repo._storage_backend.get.calls == [
-            pretend.call(repository.Root.type)
-        ]
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(
+            e.value
+        )
+        assert test_repo._storage_load_root.calls == [pretend.call()]
         assert test_repo._verify_new_root_signing.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
         ]
@@ -3750,6 +3716,15 @@ class TestMetadataRepository:
             lambda *a: None
         )
 
+        def mock_bump_and_persist(role, role_name, **kwargs):
+            role.signed.version += 1
+            return None
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            mock_bump_and_persist
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
+
         result = test_repo.metadata_delegation(payload, None)
 
         assert test_repo._storage_load_snapshot.calls == [pretend.call()]
@@ -3823,7 +3798,17 @@ class TestMetadataRepository:
         test_repo.write_repository_settings = pretend.call_recorder(
             lambda *a: None
         )
+
         test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        def mock_bump_and_persist(role, role_name, **kwargs):
+            role.signed.version += 1
+            return None
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            mock_bump_and_persist
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
 
         result = test_repo.metadata_delegation(payload, None)
 
@@ -3857,23 +3842,78 @@ class TestMetadataRepository:
             },
         }
 
-    def test_metadata_delegation_delete(self, test_repo, mocked_datetime):
+    def test_metadata_delegation_delete(
+        self, test_repo, mocked_datetime, monkeypatch
+    ):
         payload = {
             "action": "delete",
             "delegations": {
-                "keys": {},
                 "roles": [
                     {
-                        "keyids": [],
                         "name": "delegation-1",
-                        "paths": ["*"],
-                        "terminating": True,
-                        "threshold": 2,
-                        "x-rstuf-expire-policy": 365,
                     }
                 ],
             },
         }
+
+        mock_targets = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={},
+                    roles={
+                        "delegation-1": DelegatedRole.from_dict(
+                            {
+                                "keyids": [],
+                                "name": "delegation-1",
+                                "paths": ["*"],
+                                "terminating": True,
+                                "threshold": 1,
+                            }
+                        )
+                    },
+                )
+            )
+        )
+
+        mock_snapshot = Metadata(
+            Snapshot(meta={"delegation-1.json": MetaFile(version=1)})
+        )
+
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(
+                lambda role: (
+                    deepcopy(mock_targets)
+                    if role == Targets.type
+                    else deepcopy(mock_snapshot)
+                )
+            )
+        )
+
+        test_repo._remove_delegated_role_keys = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_snapshot = pretend.call_recorder(lambda *a, **kw: 1)
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_by_rolename",
+            pretend.call_recorder(lambda *a: pretend.stub()),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_role_to_deactivated",
+            pretend.call_recorder(lambda *a: None),
+        )
 
         @contextmanager
         def mocked_lock(lock, timeout):
@@ -3882,18 +3922,18 @@ class TestMetadataRepository:
         test_repo._redis = pretend.stub(
             lock=pretend.call_recorder(mocked_lock)
         )
-        test_repo._delete_metadata_delegation = pretend.call_recorder(
-            lambda delegations: ({"delegation-1": "deleted"}, [])
-        )
 
         result = test_repo.metadata_delegation(payload)
 
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=test_repo._timeout)
         ]
-        assert test_repo._delete_metadata_delegation.calls == [
-            pretend.call(payload["delegations"])
+        snapshot_persist_calls = [
+            call
+            for call in test_repo._persist.calls
+            if call.args[1] == Snapshot.type
         ]
+        assert len(snapshot_persist_calls) == 1
         assert result == {
             "task": repository.TaskName.METADATA_DELEGATION,
             "status": True,
@@ -3939,7 +3979,9 @@ class TestMetadataRepository:
             f"The task to bump all online roles exceeded the timeout of "
             f"{test_repo._timeout} seconds." in caplog.text
         )
-        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(e)
+        assert "RSTUF: Task exceed `LOCK_TIMEOUT` (500 seconds)" in str(
+            e.value
+        )
         assert test_repo._redis.lock.calls == [
             pretend.call("LOCK_TARGETS", timeout=500)
         ]
@@ -5537,3 +5579,66 @@ class TestMetadataRepository:
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("TEST-ROLE_SIGNING")
         ]
+
+    def test_metadata_delegation_add_persists_snapshot_correctly(
+        self, test_repo
+    ):
+        payload = {
+            "action": "add",
+            "delegations": {
+                "keys": {},
+                "roles": [
+                    {
+                        "keyids": ["online_keyid"],
+                        "name": "delegation-1",
+                        "paths": ["*"],
+                        "terminating": True,
+                        "threshold": 1,
+                        "x-rstuf-expire-policy": 365,
+                    }
+                ],
+            },
+        }
+
+        mock_snapshot = Metadata(Snapshot())
+        mock_targets = Metadata(Targets())
+
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: deepcopy(mock_snapshot)
+        )
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: deepcopy(mock_targets)
+        )
+
+        mocked_delegated_role = repository.DelegatedRole.from_dict(
+            copy(payload["delegations"]["roles"][0])
+        )
+        mocked_delegated_role.signed = pretend.stub(version=1)
+        test_repo._add_metadata_delegation = pretend.call_recorder(
+            lambda *a, **kw: ({"delegation-1": mocked_delegated_role}, [])
+        )
+
+        test_repo._validate_threshold = pretend.call_recorder(lambda *a: True)
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        def mock_bump_and_persist(role, role_name, **kwargs):
+            role.signed.version += 1
+            return None
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            mock_bump_and_persist
+        )
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        result = test_repo.metadata_delegation(payload, None)
+        assert result["status"] is True
+
+        snapshot_persist_calls = [
+            call
+            for call in test_repo._bump_and_persist.calls
+            if call.args[1] == "snapshot"
+        ]
+        assert len(snapshot_persist_calls) == 1
