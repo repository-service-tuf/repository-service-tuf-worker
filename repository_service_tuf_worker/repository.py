@@ -60,7 +60,10 @@ from repository_service_tuf_worker.models import (
     targets_models,
     targets_schema,
 )
-from repository_service_tuf_worker.signer import SignerStore
+from repository_service_tuf_worker.signer import (
+    RSTUF_ONLINE_KEY_URI_FIELD,
+    SignerStore,
+)
 
 KEY_FOR_TYPE_AND_SCHEME.update(
     {
@@ -215,18 +218,48 @@ class MetadataRepository:
         return self._storage_backend.get(Root.type)
 
     def get_delegation_keyids(self, rolename: str) -> List[str]:
+        targets: Metadata[Targets] = self._storage_load_targets()
         if self.uses_succinct_roles:
             logging.debug("delegations using succinct delegations")
-            # we know all roles uses the online key
-            delegation_keyids = [self._online_key.keyid]
+            delegation_keyids = list(
+                targets.signed.delegations.succinct_roles.keyids
+            )
         else:
             logging.debug("delegations using custom delegations")
-            targets: Metadata[Targets] = self._storage_load_targets()
             delegation_keyids = targets.signed.delegations.roles[
                 rolename
             ].keyids
 
         return delegation_keyids
+
+    def get_signer_for_delegation(
+        self,
+        targets: Metadata[Targets],
+        delegation_keyids: List[str],
+    ) -> Optional[Signer]:
+        """Resolve the signer used for automated (online) delegation signing.
+
+        Prefer a role key that carries ``x-rstuf-online-key-uri``; otherwise
+        use the repository global online key if it is listed for the role.
+        """
+        keys_map = targets.signed.delegations.keys
+        for keyid in delegation_keyids:
+            key = keys_map.get(keyid)
+            if key is None:
+                continue
+            if key.unrecognized_fields.get(RSTUF_ONLINE_KEY_URI_FIELD):
+                return self._signer_store.get(key)
+        for keyid in delegation_keyids:
+            if keyid == self._online_key.keyid:
+                return self._signer_store.get(self._online_key)
+        return None
+
+    def delegation_uses_automated_signing(
+        self,
+        targets: Metadata[Targets],
+        delegation_keyids: List[str],
+    ) -> bool:
+        return self.get_signer_for_delegation(targets, delegation_keyids) is not None
 
     def refresh_settings(self, worker_settings: Optional[Dynaconf] = None):
         """Refreshes the MetadataRepository settings."""
@@ -300,10 +333,8 @@ class MetadataRepository:
 
     def _sign(self, role: Metadata, signer: Optional[Signer] = None) -> None:
         """
-        Re-signs metadata with role-specific key from global key store.
-
-        The metadata role type is used as default key id. This is only allowed
-        for top-level roles.
+        Re-signs metadata using the given signer, or the repository global
+        online key signer when none is passed (top-level roles).
         """
         role.sign(signer or self._signer_store.get(self._online_key))
 
@@ -512,10 +543,10 @@ class MetadataRepository:
                 targets_crud.update_files_to_published(
                     self._db, [file.path for file in db_role.target_files]
                 )
-                delegation_keyids = List[str]
+                delegation_keyids: List[str]
                 if targets.signed.delegations.succinct_roles:
                     logging.debug("delegations using succinct delegations")
-                    delegation_keyids = (
+                    delegation_keyids = list(
                         targets.signed.delegations.succinct_roles.keyids
                     )
                 else:
@@ -524,14 +555,18 @@ class MetadataRepository:
                         delegation_name
                     ].keyids
 
-                if (
-                    len(delegation_keyids) == 1
-                    and self._online_key.keyid in delegation_keyids
-                ):
+                delegation_signer = self.get_signer_for_delegation(
+                    targets, delegation_keyids
+                )
+
+                if len(delegation_keyids) == 1 and delegation_signer is not None:
                     logging.debug(f"role {rolename} full online keys")
                     logging.debug("update expiry, bump version and persist")
                     self._bump_and_persist(
-                        delegation, delegation_name, persist=False
+                        delegation,
+                        delegation_name,
+                        persist=False,
+                        signer=delegation_signer,
                     )
                     self._persist(delegation, rolename)
                     snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
@@ -539,15 +574,12 @@ class MetadataRepository:
                     )
                     snapshot_meta_updated = True
 
-                elif (
-                    len(delegation_keyids) > 1
-                    and self._online_key.keyid in delegation_keyids
-                ):
+                elif len(delegation_keyids) > 1 and delegation_signer is not None:
                     logging.debug(f"role {rolename} online/offline keys")
                     self._bump_expiry(delegation, rolename)
                     if source == "storage":
                         self._bump_version(delegation)
-                    self._sign(delegation)
+                    self._sign(delegation, delegation_signer)
                     self.write_repository_settings(
                         f"{rolename.upper()}_SIGNING", delegation.to_dict()
                     )
@@ -896,9 +928,14 @@ class MetadataRepository:
                     targets.signed.delegations.keys[keyid] = delegation_key
                 else:
                     raise ValueError(f"role {role_name} has inconsistent keys")
-            if keyid == self._online_key.keyid and role_metadata:
-                logging.debug(f"role '{role_name}' using online key, signing")
-                self._sign(role_metadata)
+        if role_metadata:
+            role_keyids = delegations.roles[role_name].keyids
+            role_signer = self.get_signer_for_delegation(targets, role_keyids)
+            if role_signer is not None:
+                logging.debug(
+                    f"role '{role_name}' using automatable online key, signing"
+                )
+                self._sign(role_metadata, role_signer)
 
     def _update_delegated_roles(
         self,
@@ -1166,12 +1203,13 @@ class MetadataRepository:
         from_storage: bool,
     ):
 
+        targets: Metadata[Targets] = self._storage_load_targets()
         delegation_keyids = self.get_delegation_keyids(rolename)
+        delegation_signer = self.get_signer_for_delegation(
+            targets, delegation_keyids
+        )
 
-        if (
-            len(delegation_keyids) == 1
-            and self._online_key.keyid in delegation_keyids
-        ):
+        if len(delegation_keyids) == 1 and delegation_signer is not None:
             logging.debug(f"role {rolename} full online keys")
             logging.debug("update expiry, bump version and persist")
             self._bump_and_persist(
@@ -1179,16 +1217,14 @@ class MetadataRepository:
                 BINS if self.uses_succinct_roles else rolename,
                 persist=False,
                 expire=self._settings.get_fresh(f"{BINS.upper()}_EXPIRATION"),
+                signer=delegation_signer,
             )
             self._persist(delegation, rolename)
 
-        elif (
-            len(delegation_keyids) > 1
-            and self._online_key.keyid in delegation_keyids
-        ):
+        elif len(delegation_keyids) > 1 and delegation_signer is not None:
             logging.debug(f"role {rolename} online/offline keys")
             self._bump_expiry(delegation, rolename)
-            self._sign(delegation)
+            self._sign(delegation, delegation_signer)
             if from_storage:
                 self._bump_version(delegation)
             self.write_repository_settings(
