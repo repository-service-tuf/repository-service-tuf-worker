@@ -152,8 +152,7 @@ class MetadataRepository:
     def _online_key(self) -> Key:
         key_dict = self._settings.get_fresh("ONLINE_KEY")
         if key_dict is not None:
-            kd = copy.copy(key_dict)
-            return Key.from_dict(kd.pop("keyid"), kd)
+            return Key.from_dict(key_dict.pop("keyid"), key_dict)
         else:
             root: Metadata[Root] = self._storage_load_root()
             # All roles except root share the same one key and it doesn't
