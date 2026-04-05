@@ -27,6 +27,7 @@ from tuf.api.metadata import (
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
 from repository_service_tuf_worker.models.targets import crud
+from repository_service_tuf_worker.signer import RSTUF_ONLINE_KEY_URI_FIELD
 
 REPOSITORY_PATH = "repository_service_tuf_worker.repository"
 
@@ -5166,32 +5167,19 @@ class TestMetadataRepository:
         self, test_repo, monkeypatch
     ):
         monkeypatch.setattr(test_repo, "_uses_succinct_roles", True)
-        fake_key_dict = {
-            "keyid": "fake-online-keyid",
-            "keytype": "ed25519",
-            "scheme": "ed25519",
-            "keyval": {"public": "abcd1234"},
-        }
-
-        def fake_get_fresh(key: str):
-            if key == "ONLINE_KEY":
-                return fake_key_dict
-            return None
-
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: fake_get_fresh(*a)),
+        fake_succinct = pretend.stub(keyids=["succinct-key-a", "succinct-key-b"])
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(succinct_roles=fake_succinct)
+            )
         )
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(fake_get_fresh),
-        )
-        monkeypatch.setattr(
-            repository,
-            "get_repository_settings",
-            lambda *a, **kw: fake_settings,
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: fake_targets
         )
 
         keyids = test_repo.get_delegation_keyids("bins-0")
-        assert keyids == ["fake-online-keyid"]
+        assert keyids == ["succinct-key-a", "succinct-key-b"]
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
 
     def test_get_delegation_keyids_custom_delegations(
         self, test_repo, monkeypatch
@@ -5212,6 +5200,78 @@ class TestMetadataRepository:
         assert test_repo._storage_backend.get.calls == [
             pretend.call(repository.Targets.type)
         ]
+
+    def test_get_signer_for_delegation_prefers_role_key_uri(
+        self, test_repo, monkeypatch
+    ):
+        uri_key = pretend.stub(
+            keyid="kms-keyid",
+            unrecognized_fields={RSTUF_ONLINE_KEY_URI_FIELD: "awskms:alias/foo"},
+        )
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    keys={"kms-keyid": uri_key},
+                )
+            )
+        )
+        fake_signer = pretend.stub()
+        test_repo._signer_store = pretend.stub(
+            get=pretend.call_recorder(lambda k: fake_signer)
+        )
+
+        result = test_repo.get_signer_for_delegation(
+            fake_targets, ["kms-keyid", "offline-keyid"]
+        )
+
+        assert result is fake_signer
+        assert test_repo._signer_store.get.calls == [pretend.call(uri_key)]
+
+    def test_get_signer_for_delegation_falls_back_to_global_online(
+        self, test_repo, monkeypatch
+    ):
+        fake_key_dict = {
+            "keyid": "online_keyid",
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {"public": "abcd1234"},
+        }
+
+        def fake_get_fresh(key: str):
+            if key == "ONLINE_KEY":
+                return copy(fake_key_dict)
+            return None
+
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: pretend.stub(
+                get_fresh=pretend.call_recorder(fake_get_fresh),
+            ),
+        )
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    keys={
+                        "online_keyid": pretend.stub(
+                            keyid="online_keyid",
+                            unrecognized_fields={},
+                        )
+                    },
+                )
+            )
+        )
+        fake_signer = pretend.stub()
+        test_repo._signer_store = pretend.stub(
+            get=pretend.call_recorder(lambda k: fake_signer)
+        )
+
+        result = test_repo.get_signer_for_delegation(
+            fake_targets, ["online_keyid", "offline-keyid"]
+        )
+
+        assert result is fake_signer
+        assert len(test_repo._signer_store.get.calls) == 1
 
     @pytest.mark.parametrize(
         "delegation_keyids, from_storage, expected_calls",
@@ -5321,7 +5381,7 @@ class TestMetadataRepository:
 
         def fake_get_fresh(key: str):
             if key == "ONLINE_KEY":
-                return fake_key_dict
+                return copy(fake_key_dict)
             return None
 
         fake_settings = pretend.stub(
@@ -5337,6 +5397,19 @@ class TestMetadataRepository:
         )
 
         monkeypatch.setattr(test_repo, "_uses_succinct_roles", False)
+
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(keys=pretend.stub(get=lambda _k: None))
+            )
+        )
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: fake_targets
+        )
+        fake_delegation_signer = pretend.stub()
+        test_repo._signer_store = pretend.stub(
+            get=pretend.call_recorder(lambda _k: fake_delegation_signer)
+        )
 
         test_repo.bump_persist_role(delegation, rolename, from_storage)
 
@@ -5360,7 +5433,13 @@ class TestMetadataRepository:
 
         if expected_calls["bump_and_persist"] > 0:
             assert test_repo._bump_and_persist.calls == [
-                pretend.call(delegation, rolename, persist=False, expire=None)
+                pretend.call(
+                    delegation,
+                    rolename,
+                    persist=False,
+                    expire=None,
+                    signer=fake_delegation_signer,
+                )
             ]
         if expected_calls["persist"] > 0:
             assert test_repo._persist.calls == [

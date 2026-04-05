@@ -11,7 +11,7 @@ dynaconf = {extras = ["ini"], version = "*"}
 supervisor = "*"
 securesystemslib = "*"
 sqlalchemy = "*"
-psycopg2 = "*"
+psycopg2-binary = "*"
 alembic = "*"
 pydantic = "*"
 celery = "*"
