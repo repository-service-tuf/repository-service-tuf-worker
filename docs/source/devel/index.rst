@@ -5,6 +5,8 @@ Development
 
 .. include:: design.rst
 
+.. include:: kms-signing.rst
+
 
 
 Component level
