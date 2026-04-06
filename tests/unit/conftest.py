@@ -3,24 +3,11 @@
 #
 # SPDX-License-Identifier: MIT
 import datetime
-import os
 from datetime import timezone
 from types import ModuleType
 
 import pretend
 import pytest
-
-# tox sets these; bare `pytest` from a dev shell often does not — set before
-# importing the worker (MetadataRepository.__init__ calls refresh_settings).
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-_TEST_DATA = os.path.join(_REPO_ROOT, "data-test")
-os.environ.setdefault("DATA_DIR", _TEST_DATA)
-os.environ.setdefault("RSTUF_WORKER_ID", "test")
-os.environ.setdefault("RSTUF_BROKER_SERVER", "fakeserver")
-os.environ.setdefault("RSTUF_REDIS_SERVER", "redis://fake-redis")
-os.environ.setdefault("RSTUF_DB_SERVER", "postgresql://fake-sql")
-os.environ.setdefault("RSTUF_STORAGE_BACKEND", "LocalStorage")
-os.environ.setdefault("RSTUF_LOCAL_STORAGE_BACKEND_PATH", os.path.join(_TEST_DATA, "s"))
 
 from repository_service_tuf_worker.repository import MetadataRepository
 
