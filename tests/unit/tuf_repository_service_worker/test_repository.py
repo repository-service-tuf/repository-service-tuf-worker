@@ -2657,8 +2657,6 @@ class TestMetadataRepository:
         def fake_get_fresh(setting: str):
             if setting == "TARGETS_ONLINE_KEY":
                 return None
-            elif setting == "DELEGATED_ROLES_NAMES":
-                return ["bin-a"]
 
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
@@ -2668,8 +2666,13 @@ class TestMetadataRepository:
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        test_repo._storage_backend.get = pretend.raiser(
-            StorageError("Overwrite it")
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_roles_rolenames_expired",
+            pretend.call_recorder(lambda *a: ["bin-0"]),
+        )
+        test_repo._update_snapshot = pretend.raiser(
+            StorageError("storage err")
         )
 
         with pytest.raises(StorageError):
@@ -2678,6 +2681,70 @@ class TestMetadataRepository:
         assert fake_settings.get_fresh.calls == [
             pretend.call("TARGETS_ONLINE_KEY"),
         ]
+
+    def test__run_online_roles_bump_bumps_empty_delegated_roles(
+        self, test_repo, monkeypatch
+    ):
+        def fake_get_fresh(setting: str):
+            if setting == "TARGETS_ONLINE_KEY":
+                return None
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_roles_rolenames_expired",
+            pretend.call_recorder(lambda *a: ["bin-0", "bin-1"]),
+        )
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda *a, **kw: "fake_snapshot"
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+
+        test_repo._run_online_roles_bump(force=False)
+
+        assert test_repo._update_snapshot.calls == [
+            pretend.call(target_roles=["bin-0", "bin-1"])
+        ]
+        assert test_repo._update_timestamp.calls == [
+            pretend.call("fake_snapshot", skip=True)
+        ]
+
+    def test__run_online_roles_bump_skips_when_no_expired_roles(
+        self, test_repo, monkeypatch, caplog
+    ):
+        def fake_get_fresh(setting: str):
+            if setting == "TARGETS_ONLINE_KEY":
+                return None
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_roles_rolenames_expired",
+            pretend.call_recorder(lambda *a: []),
+        )
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+
+        test_repo._run_online_roles_bump(force=False)
+
+        assert test_repo._update_snapshot.calls == []
 
     def test_bump_snapshot(self, test_repo, mocked_datetime):
         fake_snapshot = pretend.stub(

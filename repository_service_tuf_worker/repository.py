@@ -1793,41 +1793,11 @@ class MetadataRepository:
             logging.info("Targets and delegated Targets roles version bumped")
         else:
             # Updating only those delegated roles that have expired.
-            targets: Metadata[Targets] = self._storage_load_targets()
-            delegated_roles: List[str] = []
-            if targets.signed.delegations.succinct_roles:
-                s_roles = targets.signed.delegations.succinct_roles.get_roles()
-                delegated_roles = [r for r in s_roles]
-            else:
-                delegated_roles = list(targets.signed.delegations.roles.keys())
-
-            for role in delegated_roles:
-                if targets_crud.read_role_deactivated_by_rolename(
-                    self._db, role
-                ):
-                    delegated_roles.remove(role)
-                    logging.debug(f"Role '{role}' is deactivated, skipping")
-                    continue
-
-                try:
-                    role_md: Metadata[Targets] = self._storage_backend.get(
-                        role
-                    )
-                except StorageError as err:
-                    if delegation_signing := self._settings.get_fresh(
-                        f"{role.upper()}_SIGNING"
-                    ):
-                        role_md = Metadata[Targets].from_dict(
-                            delegation_signing
-                        )
-                    else:
-                        raise err
-
-                if (role_md.signed.expires - today) < self._expire_timedelta:
-                    continue
-                else:
-                    delegated_roles.remove(role)
-
+            delegated_roles: List[str] = (
+                targets_crud.read_roles_rolenames_expired(
+                    self._db, self._expire_timedelta
+                )
+            )
             if len(delegated_roles) > 0:
                 self._update_timestamp(
                     self._update_snapshot(target_roles=delegated_roles),
