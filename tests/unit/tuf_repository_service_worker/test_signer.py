@@ -154,6 +154,89 @@ class TestSigner:
         call_uri = mock_from_uri.call_args[0][0]
         assert call_uri == "awskms:alias/my-delegation-key"
 
+    @patch("securesystemslib.signer.AWSSigner.from_priv_key_uri")
+    def test_signer_store_passes_aws_session_token_through_isolated_env(
+        self, mock_from_uri
+    ):
+        """Ambient ``AWS_SESSION_TOKEN`` reaches ``os.environ`` inside ``get()``."""
+        env_seen: dict[str, str | None] = {}
+
+        def capture(uri, public_key, secrets_handler=None):
+            env_seen["AWS_SESSION_TOKEN"] = os.environ.get("AWS_SESSION_TOKEN")
+            env_seen["AWS_ACCESS_KEY_ID"] = os.environ.get("AWS_ACCESS_KEY_ID")
+            return AWSSigner.__new__(AWSSigner)
+
+        mock_from_uri.side_effect = capture
+
+        priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pub_pem = (
+            priv.public_key()
+            .public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            .decode()
+        )
+        key = SSlibKey(
+            "aws-session-token-test-keyid",
+            "rsa",
+            "rsassa-pss-sha256",
+            {"public": pub_pem},
+        )
+        key.unrecognized_fields[RSTUF_ONLINE_KEY_URI_FIELD] = "aws-kms:alias/x"
+
+        settings = Dynaconf(
+            AWS_ACCESS_KEY_ID="AKIA_TEST",
+            AWS_SECRET_ACCESS_KEY="secret_key",
+            AWS_SESSION_TOKEN="sts-session-token-value",
+            AWS_DEFAULT_REGION="us-east-1",
+        )
+        store = SignerStore(settings)
+        store.get(key)
+
+        assert env_seen["AWS_SESSION_TOKEN"] == "sts-session-token-value"
+        assert env_seen["AWS_ACCESS_KEY_ID"] == "AKIA_TEST"
+
+    @patch("securesystemslib.signer.AWSSigner.from_priv_key_uri")
+    def test_signer_store_omits_aws_session_token_when_not_configured(
+        self, mock_from_uri
+    ):
+        """If settings omit ``AWS_SESSION_TOKEN``, isolated env has no token."""
+        env_seen: dict[str, str | None] = {}
+
+        def capture(uri, public_key, secrets_handler=None):
+            env_seen["AWS_SESSION_TOKEN"] = os.environ.get("AWS_SESSION_TOKEN")
+            return AWSSigner.__new__(AWSSigner)
+
+        mock_from_uri.side_effect = capture
+
+        priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pub_pem = (
+            priv.public_key()
+            .public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            .decode()
+        )
+        key = SSlibKey(
+            "aws-no-session-test-keyid",
+            "rsa",
+            "rsassa-pss-sha256",
+            {"public": pub_pem},
+        )
+        key.unrecognized_fields[RSTUF_ONLINE_KEY_URI_FIELD] = "aws-kms:alias/y"
+
+        settings = Dynaconf(
+            AWS_ACCESS_KEY_ID="AKIA_ONLY",
+            AWS_SECRET_ACCESS_KEY="secret_only",
+            AWS_DEFAULT_REGION="us-east-1",
+        )
+        store = SignerStore(settings)
+        store.get(key)
+
+        assert env_seen["AWS_SESSION_TOKEN"] is None
+
     @pytest.mark.skipif(
         not os.environ.get("RSTUF_AWS_ENDPOINT_URL"), reason="No AWS endpoint"
     )
