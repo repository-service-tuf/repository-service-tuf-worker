@@ -51,6 +51,24 @@ class TestApp:
             pretend.call(),
         ]
 
+    def test_repository_service_tuf_worker_soft_time_limit(self, app, caplog):
+        caplog.set_level(app.logging.ERROR)
+
+        app.repository = pretend.stub(
+            test_action=pretend.raiser(app.SoftTimeLimitExceeded()),
+        )
+
+        with pytest.raises(app.SoftTimeLimitExceeded):
+            app.repository_service_tuf_worker(
+                "test_action",
+                payload={"k": "v"},
+            )
+
+        assert [
+            "Task None exceeded the soft time limit (300s). "
+            "The task will be terminated."
+        ] == [rec.message for rec in caplog.records]
+
     def test__publish_signals(self, app):
         app.redis_backend = pretend.stub(
             set=pretend.call_recorder(lambda *a: None)
