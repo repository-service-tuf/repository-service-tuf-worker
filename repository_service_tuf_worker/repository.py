@@ -45,6 +45,7 @@ from tuf.api.metadata import (  # noqa
     TargetFile,
     Targets,
     Timestamp,
+    VerificationResult,
 )
 from tuf.api.serialization.json import CanonicalJSONSerializer, JSONSerializer
 
@@ -2054,8 +2055,14 @@ class MetadataRepository:
             self._verify_new_root_signing(current_root, new_root)
 
         except UnsignedMetadataError:
-            # TODO: Add missing sanity check - new root must have at least 1
-            # and only valid signature - use `get_verification_status` (#367)
+            # Ensure new root has at least one valid signature
+            result = self._validate_threshold(new_root)
+            if len(result.signed) == 0:
+                raise RepositoryError(
+                    f"New Root v{new_root.signed.version} has no valid "
+                    "signatures"
+                )
+
             self.write_repository_settings("ROOT_SIGNING", new_root.to_dict())
             return self._task_result(
                 task=TaskName.METADATA_UPDATE,
@@ -2335,7 +2342,7 @@ class MetadataRepository:
         metadata: Metadata,
         delegator: Optional[Metadata] = None,
         delegated_role: Optional[str] = Root.type,
-    ) -> bool:
+    ) -> VerificationResult:
         """
         Validate signature threshold using appropriate delegator(s).
         If no delegator is passed, the metadata itself is used as delegator.
@@ -2343,14 +2350,25 @@ class MetadataRepository:
         if delegator is None:
             delegator = metadata
 
-        try:
-            delegator.verify_delegate(delegated_role, metadata)
+        if delegator.signed.type == Root.type:
+            result = delegator.signed.get_verification_result(
+                delegated_role, metadata.signed_bytes, metadata.signatures
+            )
+        elif delegator.signed.type == Targets.type:
+            result = delegator.signed.get_verification_result(
+                delegated_role, metadata.signed_bytes, metadata.signatures
+            )
+        else:
+            raise TypeError("Call is valid only on delegator metadata")
 
-        except UnsignedMetadataError as e:
-            logging.info(e)
-            return False
+        if not result:
+            logging.info(
+                f"Validation failed for {delegated_role}. "
+                f"Required {result.threshold} signatures, "
+                f"but only {len(result.signed)} valid signatures found."
+            )
 
-        return True
+        return result
 
     def sign_metadata(
         self,
