@@ -220,11 +220,22 @@ class MetadataRepository:
             # we know all roles uses the online key
             delegation_keyids = [self._online_key.keyid]
         else:
-            logging.debug("delegations using custom delegations")
-            targets: Metadata[Targets] = self._storage_load_targets()
-            delegation_keyids = targets.signed.delegations.roles[
-                rolename
-            ].keyids
+            logging.debug(f"delegations using custom delegations {rolename}")
+            if "-bins-" in rolename:
+                parent_rolename = rolename.split("-bins-")[0]
+                parent_metadata: Metadata[Targets] = self._storage_backend.get(
+                    parent_rolename
+                )
+                # The keys are defined in the parent's succinct_roles
+                delegation_keyids = (
+                    parent_metadata.signed.delegations.succinct_roles.keyids
+                )
+            else:
+                # Original logic for top-level custom roles
+                targets: Metadata[Targets] = self._storage_load_targets()
+                delegation_keyids = targets.signed.delegations.roles[
+                    rolename
+                ].keyids
 
         return delegation_keyids
 
@@ -350,6 +361,9 @@ class MetadataRepository:
             days=int(
                 expire
                 or self._settings.get_fresh(f"{role_name.upper()}_EXPIRATION")
+                or self._settings.get_fresh(
+                    f"{role_name.split("-bins-")[0].upper()}_EXPIRATION"
+                )
             )
         )
 
@@ -520,9 +534,21 @@ class MetadataRepository:
                     )
                 else:
                     logging.debug("delegations using custom delegations")
-                    delegation_keyids = targets.signed.delegations.roles[
-                        delegation_name
-                    ].keyids
+                    if "-bins-" in rolename:
+                        parent_rolename = rolename.split("-bins-")[0]
+                        p_metadata = self._storage_backend.get(parent_rolename)
+                        # The keys are defined in the parent's succinct_roles
+                        delegation_keyids = (
+                            p_metadata.signed.delegations.succinct_roles.keyids
+                        )
+                    else:
+                        # Original logic for top-level custom roles
+                        targets: Metadata[Targets] = self._storage_backend.get(
+                            Targets.type
+                        )
+                        delegation_keyids = targets.signed.delegations.roles[
+                            rolename
+                        ].keyids
 
                 if (
                     len(delegation_keyids) == 1
@@ -621,9 +647,19 @@ class MetadataRepository:
         # the most specific one we need to use _preorder_depth_first_walk
         # of the ngclient Updater class in python-tuf.
         try:
-            role_name, _ = next(
+            role_name, role_terminating = next(
                 delegations.get_roles_for_target(artifact_path)
             )
+
+            if not delegations.succinct_roles and not role_terminating:
+                role_metadata: Metadata[Targets] = self._storage_backend.get(
+                    role_name
+                )
+                role_delegations = role_metadata.signed.delegations
+
+                role_name, _ = next(
+                    role_delegations.get_roles_for_target(artifact_path)
+                )
         except StopIteration:
             return None
 
@@ -932,12 +968,80 @@ class MetadataRepository:
                 f"{role_name.upper()}_EXPIRATION", expires
             )
 
+    def _setup_nested_hashbin_delegations(
+        self,
+        delegator_metadata: Metadata[Targets],
+        delegator_name: str,
+        expiration: int,
+        num_bins: int,
+    ):
+        bit_length = int(log(num_bins, 2))
+        name_prefix = f"{delegator_name}-bins"
+        online_key_id = self._online_key.keyid
+        success = {}
+
+        succinct_roles = SuccinctRoles(
+            keyids=[online_key_id],
+            threshold=1,
+            bit_length=bit_length,
+            name_prefix=name_prefix,
+        )
+
+        delegator_metadata.signed.delegations = Delegations(
+            keys={online_key_id: self._online_key},
+            succinct_roles=succinct_roles,
+        )
+
+        db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
+        online_key = copy.deepcopy(self._online_key)
+        expire_bins: int = expiration
+        signer = self._signer_store.get(online_key)
+
+        def process_delegated_bin_roles(bin_rolename: str):
+            bin_metadata = Metadata(Targets(version=1))
+            self._bump_expiry(bin_metadata, name_prefix, expire=expire_bins)
+            self._sign(bin_metadata, signer)
+
+            db_target_roles.append(
+                targets_schema.RSTUFTargetRoleCreate(
+                    rolename=bin_rolename,
+                    version=1,
+                    expires=bin_metadata.signed.expires,
+                )
+            )
+            self._persist(bin_metadata, bin_rolename)
+            return bin_rolename, bin_metadata
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            start_time = time.time()
+            futures = [
+                executor.submit(process_delegated_bin_roles, bin_rolename)
+                for bin_rolename in succinct_roles.get_roles()
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                rolename, metadata = future.result()
+                success[rolename] = metadata
+
+        targets_crud.create_roles(self._db, db_target_roles)
+        total_time = time.time() - start_time
+        logging.debug(
+            f"Added {len(db_target_roles)} nested hash bins \
+                      for role '{delegator_name} \
+                      in {total_time} seconds'"
+        )
+
+        logging.debug(f"{success}")
+
+        return success
+
     def _add_metadata_delegation(
         self,
         delegations: Delegations,
         targets: Optional[Metadata[Targets]] = None,
         persist_targets: Optional[bool] = True,
-    ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
+    ) -> Tuple[
+        Dict[str, Metadata[Targets]], List[str], Dict[str, Metadata[Targets]]
+    ]:
         """Create a custom delegation role"""
 
         if targets is None:
@@ -951,6 +1055,7 @@ class MetadataRepository:
         success = {}
         failed = []
         db_roles = []
+        nb_success = {}
 
         logging.debug("adding roles to Targets delegations")
         for role in delegations.roles:
@@ -986,30 +1091,79 @@ class MetadataRepository:
                 f"{role.upper()}_EXPIRATION", expires
             )
 
-            # add keys to the delegated target role
-            # if no key is assigned, use the online key
-            if (
-                len(delegations.roles[role].keyids) == 0
-                and delegations.roles[role].threshold > 1
-            ):
-                failed.append(
-                    {
-                        "role": role,
-                        "reason": "If no keys assigned threshold must be 1",
-                    }
-                )
-
-            self._add_delegated_role_keys(
-                targets, delegations, role, role_metadata
+            num_bins = delegations.roles[role].unrecognized_fields.get(
+                "x-rstuf-num-bins"
             )
 
-            if role not in targets.signed.delegations.roles:
-                logging.info(f"Role '{role}' added to Targets delegations")
-                targets.signed.delegations.roles[role] = delegations.roles[
-                    role
-                ]
+            logging.debug(f"Num bins: {num_bins}")
 
-            success[role] = role_metadata
+            status_lock_targets = False
+
+            try:
+                with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+                    # NOTE: Currently only if the custom role uses
+                    # global online key,
+                    # we can add further hash-bin delegations
+                    if num_bins and (
+                        len(delegations.roles[role].keyids) == 0
+                        or (
+                            delegations.roles[role].keyids[0]
+                            == self._online_key.keyid
+                        )
+                    ):
+                        logging.debug(
+                            f"Role '{role}' has nested \
+                                      hash-bin delegations"
+                        )
+                        delegations.roles[role].terminating = False
+                        nb_success = self._setup_nested_hashbin_delegations(
+                            role_metadata, role, expires, num_bins
+                        )
+                        if len(delegations.roles[role].keyids) == 0:
+                            delegations.roles[role].keyids.append(
+                                self._online_key.keyid
+                            )
+                        self._sign(role_metadata)
+                    else:
+                        # add keys to the delegated target role
+                        # if no key is assigned, use the online key
+                        if (
+                            len(delegations.roles[role].keyids) == 0
+                            and delegations.roles[role].threshold > 1
+                        ):
+                            failed.append(
+                                {
+                                    "role": role,
+                                    "reason": "If no keys assigned "
+                                    "threshold must be 1",
+                                }
+                            )
+
+                        self._add_delegated_role_keys(
+                            targets, delegations, role, role_metadata
+                        )
+
+                    if role not in targets.signed.delegations.roles:
+                        logging.info(
+                            f"Role '{role}' added \
+                                     to Targets delegations"
+                        )
+                        targets.signed.delegations.roles[role] = (
+                            delegations.roles[role]
+                        )
+
+                    success[role] = role_metadata
+
+                status_lock_targets = True
+            except redis.exceptions.LockNotOwnedError:
+                if status_lock_targets is False:
+                    logging.error(
+                        "The task to add delegations exceeded the timeout"
+                    )
+                    raise redis.exceptions.LockError(
+                        "RSTUF: Task exceed `LOCK_TIMEOUT` "
+                        f"({self._timeout} seconds)"
+                    )
 
             logging.debug(f"creating role db '{role}' schema")
             db_roles = targets_schema.RSTUFTargetRoleCreate(
@@ -1025,7 +1179,7 @@ class MetadataRepository:
                 self._update_snapshot(only_target=True), skip=True
             )
 
-        return (success, failed)
+        return (success, failed, nb_success)
 
     def _delete_metadata_delegation(
         self,
@@ -1057,6 +1211,32 @@ class MetadataRepository:
                 )
                 continue
             delegated_role = targets.signed.delegations.roles[rolename]
+
+            if not delegated_role.terminating:
+                logging.debug(
+                    f"Role '{rolename}' is \
+                    non-terminating parent. Deleting children."
+                )
+                try:
+                    parent_metadata = self._storage_backend.get(rolename)
+                    p_delegations = parent_metadata.signed.delegations
+                    nested_roles = p_delegations.succinct_roles.get_roles()
+                    for nested_rolename in nested_roles:
+                        snapshot.signed.meta.pop(
+                            f"{nested_rolename}.json", None
+                        )
+                        db_nested_role = targets_crud.read_role_by_rolename(
+                            self._db, nested_rolename
+                        )
+                        targets_crud.update_role_to_deactivated(
+                            self._db, db_nested_role
+                        )
+                except StorageError:
+                    logging.warning(
+                        f"Could not load metadata for \
+                          parent role {rolename} \
+                          to find children."
+                    )
             self._remove_delegated_role_keys(targets, delegated_role)
 
             logging.debug(f"removing role '{rolename}'")
@@ -1279,7 +1459,7 @@ class MetadataRepository:
 
         if delegations:
             logging.info("Bootstrap using custom delegations")
-            success, _ = self._add_metadata_delegation(
+            success, _, nested_bins_success = self._add_metadata_delegation(
                 delegations, targets, persist_targets=False
             )
 
@@ -1300,6 +1480,12 @@ class MetadataRepository:
                     self.write_repository_settings(
                         f"{role.upper()}_SIGNING",
                         success[role].to_dict(),
+                    )
+
+            if nested_bins_success:
+                for hash_bin_role in nested_bins_success:
+                    snapshot.signed.meta[f"{hash_bin_role}.json"] = MetaFile(
+                        nested_bins_success[hash_bin_role].signed.version
                     )
 
         else:
@@ -1800,6 +1986,16 @@ class MetadataRepository:
                 delegated_roles = [r for r in s_roles]
             else:
                 delegated_roles = list(targets.signed.delegations.roles.keys())
+                nested_s_roles = []
+                for role in delegated_roles:
+                    if not targets.signed.delegations.roles[role].terminating:
+                        role_metadata = self._storage_backend.get(role)
+                        role_delegations = role_metadata.signed.delegations
+                        nested_s_roles.extend(
+                            role_delegations.succinct_roles.get_roles()
+                        )
+
+                delegated_roles.extend(nested_s_roles)
 
             for role in delegated_roles:
                 if targets_crud.read_role_deactivated_by_rolename(
@@ -2216,7 +2412,7 @@ class MetadataRepository:
                     payload["delegations"]
                 )
                 targets = self._storage_load_targets()
-                success, failed = self._add_metadata_delegation(
+                success, failed, nb_success = self._add_metadata_delegation(
                     delegations, targets, persist_targets=True
                 )
                 snapshot = self._storage_load_snapshot()
@@ -2238,6 +2434,13 @@ class MetadataRepository:
                             f"{role.upper()}_SIGNING",
                             success[role].to_dict(),
                         )
+
+                if nb_success:
+                    for hash_bin_role in nb_success:
+                        snapshot.signed.meta[f"{hash_bin_role}.json"] = (
+                            MetaFile(nb_success[hash_bin_role].signed.version)
+                        )
+                        self._persist(nb_success[hash_bin_role], hash_bin_role)
 
                 self._bump_and_persist(snapshot, Snapshot.type)
                 self._update_timestamp(snapshot.signed.version)

@@ -808,12 +808,19 @@ class TestMetadataRepository:
         assert result == expected
 
     def test__get_role_for_artifact_path(self, test_repo):
+        fake_succinct_role_description = {
+            "bit_length": 4,
+            "keyids": ["online-key-id"],
+            "name_prefix": "bins",
+            "threshold": 1,
+        }
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
                     get_roles_for_target=pretend.call_recorder(
-                        lambda a: iter([("bins-e", False)])
-                    )
+                        lambda a: iter([("bins-e", True)])
+                    ),
+                    succinct_roles=fake_succinct_role_description,
                 ),
             )
         )
@@ -3708,7 +3715,7 @@ class TestMetadataRepository:
         )
         mocked_delegatedrole.signed = pretend.stub(version=1)
         test_repo._add_metadata_delegation = pretend.call_recorder(
-            lambda *a, **kw: ({"delegation-1": mocked_delegatedrole}, [])
+            lambda *a, **kw: ({"delegation-1": mocked_delegatedrole}, [], {})
         )
         test_repo._validate_threshold = pretend.call_recorder(lambda *a: True)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
@@ -3792,7 +3799,7 @@ class TestMetadataRepository:
         )
         mocked_delegatedrole.signed = pretend.stub(version=1)
         test_repo._add_metadata_delegation = pretend.call_recorder(
-            lambda *a, **kw: ({"delegation-1": mocked_delegatedrole}, [])
+            lambda *a, **kw: ({"delegation-1": mocked_delegatedrole}, [], {})
         )
         test_repo._validate_threshold = pretend.call_recorder(lambda *a: False)
         test_repo.write_repository_settings = pretend.call_recorder(
@@ -5615,7 +5622,7 @@ class TestMetadataRepository:
         )
         mocked_delegated_role.signed = pretend.stub(version=1)
         test_repo._add_metadata_delegation = pretend.call_recorder(
-            lambda *a, **kw: ({"delegation-1": mocked_delegated_role}, [])
+            lambda *a, **kw: ({"delegation-1": mocked_delegated_role}, [], {})
         )
 
         test_repo._validate_threshold = pretend.call_recorder(lambda *a: True)
@@ -5642,3 +5649,461 @@ class TestMetadataRepository:
             if call.args[1] == "snapshot"
         ]
         assert len(snapshot_persist_calls) == 1
+
+    def test__get_role_for_artifact_path_nested_delegation(self, test_repo):
+
+        parent_role_name = "parent-role"
+        nested_bin_name = f"{parent_role_name}-bins-a"
+        artifact_path = "some/path/file.tar.gz"
+
+        targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    succinct_roles=None,
+                    get_roles_for_target=pretend.call_recorder(
+                        lambda path: iter([(parent_role_name, False)])
+                    ),
+                )
+            )
+        )
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: targets
+        )
+
+        role_metadata = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    get_roles_for_target=pretend.call_recorder(
+                        lambda path: iter([(nested_bin_name, True)])
+                    )
+                )
+            )
+        )
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda role: role_metadata)
+        )
+
+        result = test_repo._get_role_for_artifact_path(artifact_path)
+
+        assert result == nested_bin_name
+        assert test_repo._storage_load_targets.calls == [pretend.call()]
+        assert targets.signed.delegations.get_roles_for_target.calls == [
+            pretend.call(artifact_path)
+        ]
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(parent_role_name)
+        ]
+        assert role_metadata.signed.delegations.get_roles_for_target.calls == [
+            pretend.call(artifact_path)
+        ]
+
+    def test_get_delegation_keyids_nested_hash_bins(
+        self, test_repo, monkeypatch
+    ):
+        # Test getting keyids for a nested hash bin role (e.g., parent-bins-a)
+        monkeypatch.setattr(test_repo, "_uses_succinct_roles", False)
+        parent_rolename = "parent-role"
+        nested_rolename = f"{parent_rolename}-bins-a"
+        expected_keyids = ["parent_online_key"]
+
+        # Mock the parent role's metadata
+        parent_metadata = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    succinct_roles=pretend.stub(keyids=expected_keyids)
+                )
+            )
+        )
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(lambda role: parent_metadata)
+        )
+
+        # Run the test
+        result = test_repo.get_delegation_keyids(nested_rolename)
+
+        # Assertions
+        assert result == expected_keyids
+        assert test_repo._storage_backend.get.calls == [
+            pretend.call(parent_rolename)
+        ]
+
+    def test__setup_nested_hashbin_delegations(self, test_repo, monkeypatch):
+        # Test the setup of nested hash bin delegations under a custom role
+        parent_role_name = "custom-parent"
+        expiration = 90
+        num_bins = 4
+        expected_nested_names = [
+            f"{parent_role_name}-bins-{i:x}" for i in range(num_bins)
+        ]
+
+        # Mock parent metadata
+        parent_metadata = Metadata(Targets())
+
+        fake_key_dict = {
+            "keyid": "online_key_id",
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {"public": "abcd1234"},
+        }
+
+        # Return a fresh copy each time: _online_key getter pops "keyid"
+        def fake_get_fresh(setting: str):
+            if setting == "ONLINE_KEY":
+                return copy(fake_key_dict)
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        signer = pretend.stub()
+        test_repo._signer_store = pretend.stub(
+            get=pretend.call_recorder(lambda key: signer)
+        )
+
+        # Mock persistence and database operations
+        test_repo._persist = pretend.call_recorder(lambda metadata, name: None)
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo._sign = pretend.call_recorder(lambda *a, **kw: None)
+
+        # Mock targets_crud
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "create_roles",
+            pretend.call_recorder(lambda db, roles: None),
+        )
+
+        # Run the method
+        result = test_repo._setup_nested_hashbin_delegations(
+            parent_metadata, parent_role_name, expiration, num_bins
+        )
+
+        # Assertions
+        assert len(result) == num_bins
+        assert all(name in result for name in expected_nested_names)
+        assert parent_metadata.signed.delegations is not None
+        assert parent_metadata.signed.delegations.succinct_roles is not None
+
+        # Check persistence calls
+        persist_calls = [call.args[1] for call in test_repo._persist.calls]
+        for nested_name in expected_nested_names:
+            assert nested_name in persist_calls
+
+    def test__add_metadata_delegation_with_nested_bins(
+        self, test_repo, monkeypatch
+    ):
+        role_name = "parent-role"
+        delegations = Delegations.from_dict(
+            {
+                "keys": {},
+                "roles": [
+                    {
+                        "keyids": [],
+                        "name": role_name,
+                        "paths": ["*"],
+                        "terminating": False,
+                        "threshold": 1,
+                        "x-rstuf-expire-policy": 180,
+                        "x-rstuf-num-bins": 2,
+                    }
+                ],
+            }
+        )
+
+        fake_key_dict = {
+            "keyid": "online_key_id",
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {"public": "abcd1234"},
+        }
+
+        # Return a fresh copy each time: _online_key getter pops "keyid"
+        def fake_get_fresh(setting: str):
+            if setting == "ONLINE_KEY":
+                return copy(fake_key_dict)
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        targets = Metadata(Targets(delegations=Delegations(keys={}, roles={})))
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._setup_nested_hashbin_delegations = pretend.call_recorder(
+            lambda *a: {"nested-bin-1": "md1", "nested-bin-2": "md2"}
+        )
+        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        monkeypatch.setattr(
+            crud,
+            "read_role_deactivated_by_rolename",
+            pretend.call_recorder(lambda *a: None),
+        )
+        monkeypatch.setattr(
+            crud, "create_roles", pretend.call_recorder(lambda *a: None)
+        )
+
+        @contextmanager
+        def mocked_lock(*args, **kwargs):
+            yield
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock)
+        )
+
+        # Run the test
+        success, failed, nested_bins = test_repo._add_metadata_delegation(
+            delegations, targets, persist_targets=False
+        )
+
+        # Assertions
+        assert len(failed) == 0
+        assert role_name in success
+        assert len(nested_bins) == 2
+        assert delegations.roles[role_name].terminating is False
+        assert test_repo._setup_nested_hashbin_delegations.calls == [
+            pretend.call(success[role_name], role_name, 180, 2)
+        ]
+        assert test_repo._sign.calls, "Parent role should be signed"
+
+    def test_metadata_delegation_delete_with_nested_hash_bins(
+        self, test_repo, mocked_datetime, monkeypatch
+    ):
+        # Test deleting a custom role that has nested hash bins.
+        parent_role_name = "parent-delegation"
+        nested_bin_names = [f"{parent_role_name}-bins-{i:x}" for i in range(2)]
+        payload = {
+            "action": "delete",
+            "delegations": {"roles": [{"name": parent_role_name}]},
+        }
+
+        # Avoid real Redis write
+        monkeypatch.setattr(
+            repository.redis_loader,
+            "write",
+            pretend.call_recorder(lambda *a, **kw: None),
+        )
+
+        # Mocks
+        parent_metadata = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={},
+                    succinct_roles=pretend.stub(
+                        get_roles=lambda: nested_bin_names
+                    ),
+                )
+            )
+        )
+        mock_targets = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={},
+                    roles={
+                        parent_role_name: DelegatedRole.from_dict(
+                            {
+                                "keyids": ["online_key"],
+                                "name": parent_role_name,
+                                "paths": ["*"],
+                                "terminating": False,
+                                "threshold": 1,
+                            }
+                        )
+                    },
+                )
+            )
+        )
+        mock_snapshot = Metadata(
+            Snapshot(
+                meta={
+                    f"{parent_role_name}.json": MetaFile(version=1),
+                    f"{nested_bin_names[0]}.json": MetaFile(version=1),
+                    f"{nested_bin_names[1]}.json": MetaFile(version=1),
+                }
+            )
+        )
+
+        def mock_storage_get(role):
+            if role == Targets.type:
+                return deepcopy(mock_targets)
+            elif role == Snapshot.type:
+                return deepcopy(mock_snapshot)
+            elif role == parent_role_name:
+                return deepcopy(parent_metadata)
+            return None
+
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(mock_storage_get)
+        )
+
+        test_repo._remove_delegated_role_keys = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo._bump_and_persist = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_snapshot = pretend.call_recorder(lambda *a, **kw: 1)
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_by_rolename",
+            pretend.call_recorder(
+                lambda db, rolename: pretend.stub(name=rolename)
+            ),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_role_to_deactivated",
+            pretend.call_recorder(lambda *a: None),
+        )
+
+        @contextmanager
+        def mocked_lock(*args, **kwargs):
+            yield
+
+        test_repo._redis = pretend.stub(
+            lock=pretend.call_recorder(mocked_lock)
+        )
+
+        # Run the test
+        result = test_repo.metadata_delegation(payload)
+
+        # Assertions
+        assert result["status"] is True
+        assert result["details"]["delegated_roles"] == [parent_role_name]
+
+        snapshot_persist_call = next(
+            call
+            for call in test_repo._persist.calls
+            if call.args[1] == Snapshot.type
+        )
+        updated_snapshot_meta = snapshot_persist_call.args[0].signed.meta
+        assert f"{parent_role_name}.json" not in updated_snapshot_meta
+        for bin_name in nested_bin_names:
+            assert f"{bin_name}.json" not in updated_snapshot_meta
+
+        deactivated_roles = [
+            c.args[1].name
+            for c in repository.targets_crud.update_role_to_deactivated.calls
+        ]
+        assert parent_role_name in deactivated_roles
+        for bin_name in nested_bin_names:
+            assert bin_name in deactivated_roles
+
+    def test__run_online_roles_bump_with_nested_hash_bins(
+        self, test_repo, monkeypatch
+    ):
+        def fake_get_fresh(setting: str):
+            if setting == "TARGETS_ONLINE_KEY":
+                return None
+            elif setting == "DELEGATED_ROLES_NAMES":
+                return ["bin-a"]
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+
+        # Mock targets with custom delegations (non-terminating)
+        parent_role_name = "parent-role"
+        nested_bin_names = [f"{parent_role_name}-bins-{i:x}" for i in range(2)]
+
+        mock_targets = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={},
+                    roles={
+                        parent_role_name: DelegatedRole.from_dict(
+                            {
+                                "keyids": ["online_key"],
+                                "name": parent_role_name,
+                                "paths": ["*"],
+                                "terminating": False,
+                                "threshold": 1,
+                                "x-rstuf-expire-policy": 4,
+                                "x-rstuf-num-bins": 2,
+                            }
+                        )
+                    },
+                )
+            )
+        )
+
+        # Mock parent role metadata with succinct roles
+        parent_metadata = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={},
+                    succinct_roles=pretend.stub(
+                        get_roles=lambda: nested_bin_names
+                    ),
+                )
+            )
+        )
+
+        def mock_storage_get(role):
+            if role == parent_role_name:
+                return parent_metadata
+            elif role in nested_bin_names:
+                # Return metadata for nested bins that is not expired
+                return Metadata(
+                    Targets(
+                        expires=datetime.datetime.now(timezone.utc)
+                        + datetime.timedelta(days=30)
+                    )
+                )
+            return mock_targets
+
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: mock_targets
+        )
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(mock_storage_get)
+        )
+
+        # Mock other operations
+        test_repo._update_targets_delegations_key = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(lambda *a: None)
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_snapshot = pretend.call_recorder(lambda **kw: 1)
+
+        # Mock database operations
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_role_deactivated_by_rolename",
+            pretend.call_recorder(lambda db, role: None),
+        )
+
+        # Run the method
+        test_repo._run_online_roles_bump(force=False)
+
+        # Assertions - should check both parent and nested roles
+        storage_get_calls = [
+            call.args[0] for call in test_repo._storage_backend.get.calls
+        ]
+        assert parent_role_name in storage_get_calls
+        assert any(n in storage_get_calls for n in nested_bin_names)
