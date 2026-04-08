@@ -35,9 +35,7 @@ Development
 Requirements
 ============
 
-- Python >=3.10
-- pip
-- Pipenv
+- uv
 - Docker
 
 Getting source code
@@ -68,24 +66,14 @@ you stay up-to-date with our repository:
 Installing project requirements
 ===============================
 
-This repository has the ``requirements.txt`` and the ``requirements-dev.txt``
-files to help build your virtual environment.
-
-We also recommend using `Pipenv <https://pipenv.pypa.io/en/latest/>`_ to manage
+We recommend using `uv <https://docs.astral.sh/uv/>`_ to manage
 your virtual environment.
-
-.. code:: shell
-
-  $ pip install pipenv
-  $ pipenv shell
-
 
 Install development requirements
 
-
 .. code:: shell
 
-  $ pipenv install -d
+  $ uv sync
 
 
 .. note::
@@ -173,22 +161,14 @@ Project requirements
 
 .. code:: shell
 
-  $ pipenv install {package}
+  $ uv add {package}
 
 
 Development requirements
 
 .. code:: shell
 
-  $ pipenv install -d {package}
-
-
-Updating requirements files from Pipenv
----------------------------------------
-
-.. code:: shell
-
-  $ make requirements
+  $ uv add --dev {package}
 
 
 Managing Database migrations
