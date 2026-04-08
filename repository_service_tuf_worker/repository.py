@@ -1165,7 +1165,6 @@ class MetadataRepository:
         rolename: str,
         from_storage: bool,
     ):
-
         delegation_keyids = self.get_delegation_keyids(rolename)
 
         if (

@@ -565,7 +565,6 @@ class TestMetadataRepository:
         expired_snapshot,
         expected_result,
     ):
-
         monkeypatch.setattr(
             repository.targets_crud,
             "update_roles_expire_version_by_rolenames",
