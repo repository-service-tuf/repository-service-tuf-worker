@@ -149,7 +149,7 @@ class MetadataRepository:
     def _online_key(self) -> Key:
         key_dict = self._settings.get_fresh("ONLINE_KEY")
         if key_dict is not None:
-            key_dict = key_dict.copy()
+            key_dict = copy.deepcopy(key_dict)
             return Key.from_dict(key_dict.pop("keyid"), key_dict)
         else:
             root: Metadata[Root] = self._storage_load_root()
