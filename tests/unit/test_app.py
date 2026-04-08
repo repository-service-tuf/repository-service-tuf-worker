@@ -57,7 +57,7 @@ class TestApp:
         )
 
         result = app._publish_signals(
-            app.status.RECEIVED, "01234567890abcdef", "done"
+            app.State.RECEIVED, "01234567890abcdef", "done"
         )
 
         assert result is None
@@ -79,7 +79,7 @@ class TestApp:
         app.task_pre_run_notifier(**{"task_id": "001"})
 
         assert app._publish_signals.calls == [
-            pretend.call(app.status.PRE_RUN, "001")
+            pretend.call(app.State.PRE_RUN, "001")
         ]
 
     def test_task_unknown_notifier(self, app):
@@ -87,7 +87,7 @@ class TestApp:
         app.task_unknown_notifier(**{"task_id": "001"})
 
         assert app._publish_signals.calls == [
-            pretend.call(app.status.UNKNOWN, "001")
+            pretend.call(app.State.UNKNOWN, "001")
         ]
 
     def test_task_received_notifier(self, app):
@@ -95,7 +95,7 @@ class TestApp:
         app.task_received_notifier(**{"task_id": "001"})
 
         assert app._publish_signals.calls == [
-            pretend.call(app.status.RECEIVED, "001")
+            pretend.call(app.State.RECEIVED, "001")
         ]
 
     @pytest.mark.parametrize(
