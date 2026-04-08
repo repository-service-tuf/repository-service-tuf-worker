@@ -4,11 +4,22 @@
 # SPDX-License-Identifier: MIT
 
 import os
+from enum import Enum
 
+from celery import states
 from dynaconf import Dynaconf
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
+
+
+class State(Enum):
+    RECEIVED = states.RECEIVED
+    PRE_RUN = "PRE_RUN"
+    RUNNING = "RUNNING"
+    SUCCESS = states.SUCCESS
+    UNKNOWN = "UNKNOWN"
+    FAILURE = states.FAILURE
 
 
 def parse_if_secret(env_var: str) -> str:
