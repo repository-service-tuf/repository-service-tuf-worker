@@ -50,6 +50,7 @@ from tuf.api.serialization.json import CanonicalJSONSerializer, JSONSerializer
 
 from repository_service_tuf_worker import (  # noqa
     Dynaconf,
+    State,
     get_repository_settings,
     get_worker_settings,
 )
@@ -722,7 +723,9 @@ class MetadataRepository:
                 )
 
             if sorted(completed_roles) != sorted(list(roles_to_artifacts)):
-                _update_state("RUNNING", roles_to_artifacts, completed_roles)
+                _update_state(
+                    State.RUNNING, roles_to_artifacts, completed_roles
+                )
                 time.sleep(3)
             else:
                 break
