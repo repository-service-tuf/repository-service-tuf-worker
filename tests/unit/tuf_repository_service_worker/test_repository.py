@@ -13,11 +13,14 @@ import pytest
 from celery.exceptions import ChordError
 from celery.result import states
 from securesystemslib.exceptions import StorageError
+from securesystemslib.signer import CryptoSigner, Signature
 from tuf.api.metadata import (
     DelegatedRole,
     Delegations,
+    Key,
     Metadata,
     MetaFile,
+    Role,
     Root,
     Snapshot,
     Targets,
@@ -29,6 +32,42 @@ from repository_service_tuf_worker.models import targets_schema
 from repository_service_tuf_worker.models.targets import crud
 
 REPOSITORY_PATH = "repository_service_tuf_worker.repository"
+
+
+def _tuf_key_from_signer(signer: CryptoSigner) -> Key:
+    pk = signer.public_key
+    key_dict = pk.to_dict()
+    key_dict["keyid"] = pk.keyid
+    return Key.from_dict(pk.keyid, key_dict)
+
+
+def _partial_root_metadata_update_pair() -> tuple[Metadata[Root], Metadata[Root]]:
+    """Root v1 and v2 where v2 needs one more signature (threshold 2 on root)."""
+    s1 = CryptoSigner.generate_ed25519()
+    s2 = CryptoSigner.generate_ed25519()
+    k1, k2 = _tuf_key_from_signer(s1), _tuf_key_from_signer(s2)
+
+    def make_v1() -> Root:
+        r = Root(version=1)
+        for role in ("root", "timestamp", "snapshot", "targets"):
+            r.add_key(k1, role)
+        return r
+
+    def make_v2() -> Root:
+        r = Root(version=2)
+        r.roles["root"] = Role([k1.keyid, k2.keyid], 2)
+        r.keys[k1.keyid] = k1
+        r.keys[k2.keyid] = k2
+        for role in ("timestamp", "snapshot", "targets"):
+            r.add_key(k1, role)
+            r.add_key(k2, role)
+        return r
+
+    md1 = Metadata(make_v1())
+    md1.sign(s1, append=False)
+    md2 = Metadata(make_v2())
+    md2.sign(s1, append=False)
+    return md1, md2
 
 
 class TestRoles:
@@ -3274,31 +3313,13 @@ class TestMetadataRepository:
     def test__root_metadata_update_signatures_pending(
         self, test_repo, mocked_datetime
     ):
-        fake_new_root_md = pretend.stub(
-            signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids=["k1"])},
-                version=2,
-            )
-        )
-        fake_old_root_md = pretend.stub(
-            signed=pretend.stub(
-                roles={"timestamp": pretend.stub(keyids=["k1"])},
-                version=1,
-            )
-        )
-        test_repo._storage_load_root = pretend.call_recorder(
-            lambda: fake_old_root_md
-        )
-        test_repo._verify_new_root_signing = pretend.raiser(
-            repository.UnsignedMetadataError()
-        )
-
-        fake_new_root_md.to_dict = pretend.call_recorder(lambda: "fake dict")
+        md1, md2 = _partial_root_metadata_update_pair()
+        test_repo._storage_load_root = pretend.call_recorder(lambda: md1)
         test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: "fake"
+            lambda *a: None
         )
 
-        result = test_repo._root_metadata_update(fake_new_root_md)
+        result = test_repo._root_metadata_update(md2)
 
         assert result == {
             "task": repository.TaskName.METADATA_UPDATE,
@@ -3312,9 +3333,58 @@ class TestMetadataRepository:
             },
         }
         assert test_repo._storage_load_root.calls == [pretend.call()]
-        assert test_repo.write_repository_settings.calls == [
-            pretend.call("ROOT_SIGNING", "fake dict")
+        assert len(test_repo.write_repository_settings.calls) == 1
+        assert test_repo.write_repository_settings.calls[0] == pretend.call(
+            "ROOT_SIGNING", md2.to_dict()
+        )
+
+    def test__root_metadata_update_pending_rejects_empty_signatures(
+        self, test_repo, mocked_datetime
+    ):
+        md1, _ = _partial_root_metadata_update_pair()
+        r2 = Root(version=2)
+        k1 = md1.signed.keys[
+            md1.signed.roles[Root.type].keyids[0]
         ]
+        for role in ("root", "timestamp", "snapshot", "targets"):
+            r2.add_key(k1, role)
+        md2 = Metadata(r2)
+        test_repo._storage_load_root = pretend.call_recorder(lambda: md1)
+
+        result = test_repo._root_metadata_update(md2)
+
+        assert result["status"] is False
+        assert result["task"] == repository.TaskName.METADATA_UPDATE
+        assert result["message"] == "Metadata Update Failed"
+        assert "at least one signature" in (result["error"] or "").lower()
+
+    def test__root_metadata_update_pending_rejects_unauthorized_signer(
+        self, test_repo, mocked_datetime
+    ):
+        md1, md2 = _partial_root_metadata_update_pair()
+        outsider = CryptoSigner.generate_ed25519()
+        md2.sign(outsider, append=True)
+        test_repo._storage_load_root = pretend.call_recorder(lambda: md1)
+
+        result = test_repo._root_metadata_update(md2)
+
+        assert result["status"] is False
+        assert "Unauthorized root signature keyid" in (result["error"] or "")
+
+    def test__root_metadata_update_pending_rejects_invalid_signature(
+        self, test_repo, mocked_datetime
+    ):
+        md1, md2 = _partial_root_metadata_update_pair()
+        kid = next(iter(md2.signatures.keys()))
+        bad_dict = md2.signatures[kid].to_dict()
+        bad_dict["sig"] = "ab" * 64
+        md2.signatures[kid] = Signature.from_dict(bad_dict)
+        test_repo._storage_load_root = pretend.call_recorder(lambda: md1)
+
+        result = test_repo._root_metadata_update(md2)
+
+        assert result["status"] is False
+        assert "Invalid root signature" in (result["error"] or "")
 
     def test__root_metadata_update_not_trusted(
         self, test_repo, mocked_datetime
