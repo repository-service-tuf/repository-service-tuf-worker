@@ -1,0 +1,55 @@
+[project]
+name = "repository-service-tuf-worker"
+version = "1.0.0"
+description = "Repository Service for TUF: Worker"
+readme = "README.rst"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic",
+    "awscli-local",
+    "awswrangler",
+    "bcdoc",
+    "boto3",
+    "celery",
+    "dynaconf[ini]",
+    "google-cloud-kms",
+    "psycopg2",
+    "pydantic",
+    "pymysql",
+    "redis",
+    "rsa",
+    "securesystemslib",
+    "sigstore",
+    "sqlalchemy",
+    "supervisor",
+    "tuf",
+    "watchdog"
+]
+
+[dependency-groups]
+dev = [
+    "bandit",
+    "black",
+    "coverage",
+    "dynaconf[ini]",
+    "flake8",
+    "isort",
+    "mypy",
+    "myst-parser",
+    "pre-commit",
+    "pretend",
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "sphinx",
+    "sphinx-rtd-theme",
+    "sphinxcontrib-applehelp",
+    "sphinxcontrib-devhelp",
+    "sphinxcontrib-htmlhelp",
+    "sphinxcontrib-jsmath",
+    "sphinxcontrib-plantuml",
+    "sphinxcontrib-qthelp",
+    "sphinxcontrib-serializinghtml",
+    "tox",
+    "virtualenv"
+]

@@ -5,14 +5,20 @@ FROM python:3.13-slim AS base_os
 FROM base_os AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
-ADD Pipfile* /builder/
+ENV UV_COMPILE_BYTECODE=1
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /builder
+
+
 RUN apt-get update && apt-get install gcc libpq-dev -y
 
-RUN pip install --upgrade pip && pip install pipenv
 
-RUN pipenv install --system --deploy
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --frozen --no-dev --no-install-project
+
 
 RUN apt-get remove gcc --purge -y \
     && rm -rf /var/lib/apt/lists/* \
@@ -22,8 +28,8 @@ RUN apt-get remove gcc --purge -y \
 # Final image
 FROM base_os AS pre-final
 RUN apt-get update && apt-get install libpq-dev -y && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /usr/local/bin /usr/local/bin/
-COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages/
+COPY --from=builder /builder/.venv /opt/repository-service-tuf-worker/.venv
+ENV PATH="/opt/repository-service-tuf-worker/.venv/bin:$PATH"
 
 # Final stage
 FROM pre-final
