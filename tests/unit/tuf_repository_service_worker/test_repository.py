@@ -24,7 +24,7 @@ from tuf.api.metadata import (
     Timestamp,
 )
 
-from repository_service_tuf_worker import Dynaconf, State, repository
+from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
 from repository_service_tuf_worker.models.targets import crud
 
@@ -886,7 +886,7 @@ class TestMetadataRepository:
         assert test_repo._db.commit.calls == [pretend.call(), pretend.call()]
         assert fake_update_state.calls == [
             pretend.call(
-                state=State.RUNNING,
+                state="RUNNING",
                 meta={
                     "details": {
                         "published_roles": ["bin-e"],
@@ -931,7 +931,7 @@ class TestMetadataRepository:
         assert test_repo._db.commit.calls == []  # No commit for PostgreSQL
         assert fake_update_state.calls == [
             pretend.call(
-                state=State.RUNNING,
+                state="RUNNING",
                 meta={
                     "details": {
                         "published_roles": ["bin-e"],

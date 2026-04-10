@@ -9,12 +9,13 @@ import itertools
 import json
 import logging
 import time
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import redis
 from celery import Celery, chain, schedules, signals
 
-from repository_service_tuf_worker import State, get_worker_settings
+from repository_service_tuf_worker import get_worker_settings
 from repository_service_tuf_worker.repository import (
     MetadataRepository,
     MetaFile,
@@ -31,6 +32,15 @@ worker_settings = get_worker_settings()
 
 BOR_LOCK = "BOR"
 BOR_TTL = worker_settings.get("BUMP_ONLINE_ROLES_TTL", 600)  # Lock expiration
+
+
+class status(Enum):
+    RECEIVED = "RECEIVED"
+    PRE_RUN = "PRE_RUN"
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    UNKNOWN = "UNKNOWN"
+    FAILURE = "FAILURE"
 
 
 redis_backend = redis.StrictRedis.from_url(
@@ -266,7 +276,7 @@ def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
 
 
 def _publish_signals(
-    status: State, task_id: str, result: Optional[str] = None
+    status: status, task_id: str, result: Optional[str] = None
 ):
     """
     Publishes Signals to the Result Backend.
@@ -287,22 +297,22 @@ def _publish_signals(
 @signals.task_prerun.connect(sender=repository_service_tuf_worker)
 def task_pre_run_notifier(**kwargs):
     """Publishes Signal when task is in PRE_RUN state"""
-    logging.debug((f"{State.PRE_RUN.value}: {kwargs.get('task_id')}"))
-    _publish_signals(State.PRE_RUN, kwargs.get("task_id"))
+    logging.debug((f"{status.PRE_RUN.value}: {kwargs.get('task_id')}"))
+    _publish_signals(status.PRE_RUN, kwargs.get("task_id"))
 
 
 @signals.task_unknown.connect(sender=repository_service_tuf_worker)
 def task_unknown_notifier(**kwargs):
     """Publishes Signal when task is in UNKNOWN state"""
-    logging.debug((f"{State.UNKNOWN.value}: {kwargs.get('task_id')}"))
-    _publish_signals(State.UNKNOWN, kwargs.get("task_id"))
+    logging.debug((f"{status.UNKNOWN.value}: {kwargs.get('task_id')}"))
+    _publish_signals(status.UNKNOWN, kwargs.get("task_id"))
 
 
 @signals.task_received.connect(sender=repository_service_tuf_worker)
 def task_received_notifier(**kwargs):
     """Publishes Signal when task is in RECEIVED state"""
-    logging.debug((f"{State.RECEIVED}: {kwargs.get('task_id')}"))
-    _publish_signals(State.RECEIVED, kwargs.get("task_id"))
+    logging.debug((f"{status.RECEIVED}: {kwargs.get('task_id')}"))
+    _publish_signals(status.RECEIVED, kwargs.get("task_id"))
 
 
 app.conf.beat_schedule = {
