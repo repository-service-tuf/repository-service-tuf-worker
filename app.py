@@ -16,6 +16,7 @@ import redis
 from celery import Celery, chain, schedules, signals
 
 from repository_service_tuf_worker import get_worker_settings
+from repository_service_tuf_worker.celery_broker_ssl import build_broker_use_ssl
 from repository_service_tuf_worker.repository import (
     MetadataRepository,
     MetaFile,
@@ -49,19 +50,19 @@ redis_backend = redis.StrictRedis.from_url(
     db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0),
 )
 
-# TODO: Issue https://github.com/repository-service-tuf/vmware/issues/6
-# BROKER_USE_SSL = {
-#     "keyfile": "data/certs/engine_mq.pem",
-#     "certfile": "data/certs/engine_mq.crt",
-#     "ca_certs": "data/certs/ca_mq.crt",
-#     "cert_reqs": ssl.CERT_REQUIRED,
-# }
+try:
+    _broker_use_ssl = build_broker_use_ssl(worker_settings)
+except ValueError as err:
+    raise ValueError(
+        "Invalid Celery broker SSL settings "
+        "(check RSTUF_BROKER_USE_SSL / RSTUF_BROKER_SSL_* / "
+        "RSTUF_BROKER_SSL_OPTIONS): "
+        f"{err}"
+    ) from err
 
 repository = MetadataRepository.create_service()
 
-
-app = Celery(
-    f"repository_service_tuf_worker_{worker_settings.WORKER_ID}",
+_celery_kwargs: Dict[str, Any] = dict(
     broker=worker_settings.BROKER_SERVER,
     backend=(
         f"{worker_settings.REDIS_SERVER}"
@@ -72,8 +73,13 @@ app = Celery(
     task_acks_late=True,
     task_track_started=True,
     broker_heartbeat=0,
-    # broker_use_ssl=BROKER_USE_SSL
-    # (https://github.com/repository-service-tuf/vmware/issues/6)
+)
+if _broker_use_ssl is not None:
+    _celery_kwargs["broker_use_ssl"] = _broker_use_ssl
+
+app = Celery(
+    f"repository_service_tuf_worker_{worker_settings.WORKER_ID}",
+    **_celery_kwargs,
 )
 
 
