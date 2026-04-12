@@ -1711,7 +1711,7 @@ class TestMetadataRepository:
             "message": "Publish Artifacts Processed",
             "error": None,
             "details": {
-                "target_roles": ["bins-0", "bins-e"],
+                "artifact_roles": ["bins-0", "bins-e"],
             },
         }
         assert test_repo._redis.lock.calls == [
@@ -1756,7 +1756,7 @@ class TestMetadataRepository:
             "message": "Publish Artifacts Processed",
             "error": None,
             "details": {
-                "target_roles": ["bins-0", "bins-e"],
+                "artifact_roles": ["bins-0", "bins-e"],
             },
         }
         assert test_repo._redis.lock.calls == [
@@ -1806,7 +1806,7 @@ class TestMetadataRepository:
             "message": "Publish Artifacts Processed",
             "error": None,
             "details": {
-                "target_roles": ["bins-0", "bins-e"],
+                "artifact_roles": ["bins-0", "bins-e"],
             },
         }
         assert test_repo._redis.lock.calls == [
@@ -1871,7 +1871,7 @@ class TestMetadataRepository:
             "message": "Publish Artifacts Processed",
             "error": None,
             "details": {
-                "target_roles": None,
+                "artifact_roles": None,
             },
         }
         assert test_repo._redis.lock.calls == [
@@ -1948,7 +1948,7 @@ class TestMetadataRepository:
             "details": {
                 "added_artifacts": ["file1.tar.gz"],
                 "invalid_paths": [],
-                "target_roles": ["bins-e"],
+                "artifact_roles": ["bins-e"],
             },
         }
         assert repository.targets_crud.read_file_by_path.calls == [
@@ -2049,7 +2049,7 @@ class TestMetadataRepository:
             "details": {
                 "added_artifacts": ["file1.tar.gz"],
                 "invalid_paths": [],
-                "target_roles": ["bins-e"],
+                "artifact_roles": ["bins-e"],
             },
         }
         assert test_repo._get_role_for_artifact_path.calls == [
@@ -2154,7 +2154,7 @@ class TestMetadataRepository:
             "details": {
                 "added_artifacts": ["file1.tar.gz"],
                 "invalid_paths": [],
-                "target_roles": ["bins-e"],
+                "artifact_roles": ["bins-e"],
             },
         }
         assert repository.targets_crud.read_file_by_path.calls == [
@@ -2256,7 +2256,7 @@ class TestMetadataRepository:
             "details": {
                 "added_artifacts": [],
                 "invalid_paths": ["file1.tar.gz"],
-                "target_roles": [],
+                "artifact_roles": [],
             },
         }
         assert repository.targets_crud.read_file_by_path.calls == []
