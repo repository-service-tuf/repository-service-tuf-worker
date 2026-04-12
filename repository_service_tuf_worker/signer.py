@@ -107,7 +107,7 @@ class SignerStore:
     under the expected names.
     """
 
-    def __init__(self, settings: Dynaconf):
+    def __init__(self, settings: Dynaconf) -> None:
         # Cache known ambient settings
         self._ambient_settings: dict[str, str] = {}
         for name in _AMBIENT_SETTING_NAMES:
