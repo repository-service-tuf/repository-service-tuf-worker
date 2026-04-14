@@ -4,11 +4,18 @@
 # SPDX-License-Identifier: MIT
 
 import os
+from enum import Enum
 
 from dynaconf import Dynaconf
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
+
+
+class BootstrapState(Enum):
+    PRE = "pre-"
+    SIGNING = "signing-"
+    FINISHED = "finished"
 
 
 def parse_if_secret(env_var: str) -> str:
