@@ -55,7 +55,7 @@ services:
       - "./tests/files/aws/init-services.sh:/etc/localstack/init/ready.d/init-services.sh"
 
   repository-service-tuf-worker:
-    image: ghcr.io/repository-service-tuf/repository-service-tuf-worker:${WORKER_VERSION}
+    image: ghcr.io/repository-service-tuf/repository-service-tuf-worker:${WORKER_VERSION:-dev}
     environment:
       - RSTUF_STORAGE_BACKEND=AWSS3
       - RSTUF_AWS_STORAGE_BUCKET=tuf-metadata
