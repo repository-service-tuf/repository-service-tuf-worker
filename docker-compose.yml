@@ -72,10 +72,8 @@ services:
       - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
       - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
       - RSTUF_BROKER_SERVER=amqp://guest:guest@rabbitmq:5672
-      - RSTUF_DB_SERVER=postgresql://postgres:5432
-      - RSTUF_DB_USER=postgres
-      - RSTUF_DB_PASSWORD=secret
       - RSTUF_REDIS_SERVER=redis://redis
+      - RSTUF_DB_SERVER=postgresql://postgres:secret@postgres:5432
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
