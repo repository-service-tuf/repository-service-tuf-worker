@@ -79,7 +79,7 @@ jobs:
             path: rstuf-umbrella
             ref: ${{ inputs.umbrella_branch }}
 
-      - name: Deploy RSTUF with Worker container image
+      - name: Deploy RSTUF with Worker container from source code
         uses: isbang/compose-action@4894d2492015c1774ee5a13a95b1072093087ec3
         with:
           compose-file: ${{ inputs.docker_compose }}
@@ -106,7 +106,7 @@ jobs:
             path: rstuf-umbrella
             ref: ${{ inputs.umbrella_branch }}
 
-      - name: Deploy RSTUF with Worker container image
+      - name: Deploy RSTUF with Worker container from source code
         uses: isbang/compose-action@4894d2492015c1774ee5a13a95b1072093087ec3
         with:
           compose-file: ${{ inputs.docker_compose }}
@@ -136,7 +136,7 @@ jobs:
           path: rstuf-umbrella
           ref: ${{ inputs.umbrella_branch }}
 
-      - name: Deploy RSTUF with Worker container image
+      - name: Deploy RSTUF with Worker container from source code
         uses: isbang/compose-action@4894d2492015c1774ee5a13a95b1072093087ec3
         with:
           compose-file: ${{ inputs.docker_compose }}

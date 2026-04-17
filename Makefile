@@ -7,7 +7,6 @@ DC := docker-compose.yml
 endif
 
 API_VERSION ?= dev
-WORKER_VERSION ?= dev
 
 build-dev:  ## Build the dev image
 	docker build -t repository-service-tuf-worker:dev .

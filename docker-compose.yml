@@ -63,8 +63,11 @@ services:
       - "6379:6379"
 
   repository-service-tuf-worker:
-    image: ghcr.io/repository-service-tuf/repository-service-tuf-worker:${WORKER_VERSION:-dev}
+    build:
+      context: .
+    entrypoint: "bash entrypoint-dev.sh"
     environment:
+      - DATA_DIR=./data
       - RSTUF_STORAGE_BACKEND=LocalStorage
       - RSTUF_LOCAL_STORAGE_BACKEND_PATH=/var/opt/repository-service-tuf/storage
       - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
@@ -72,6 +75,7 @@ services:
       - RSTUF_REDIS_SERVER=redis://redis
       - RSTUF_DB_SERVER=postgresql://postgres:secret@postgres:5432
     volumes:
+      - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
       - ./tests/files/key_storage/:/var/opt/repository-service-tuf/key_storage
     depends_on:

@@ -55,8 +55,11 @@ services:
       - "./tests/files/aws/init-services.sh:/etc/localstack/init/ready.d/init-services.sh"
 
   repository-service-tuf-worker:
-    image: ghcr.io/repository-service-tuf/repository-service-tuf-worker:${WORKER_VERSION:-dev}
+    build:
+      context: .
+    entrypoint: "bash entrypoint-dev.sh"
     environment:
+      - DATA_DIR=./data
       - RSTUF_STORAGE_BACKEND=AWSS3
       - RSTUF_AWS_STORAGE_BUCKET=tuf-metadata
       - RSTUF_AWS_ACCESS_KEY_ID=access_key
@@ -70,6 +73,7 @@ services:
       - RSTUF_DB_SERVER=postgresql://postgres:secret@postgres:5432
       - METADATA_BASE_URL="http://localstack:4566/tuf-metadata/"
     volumes:
+      - ./:/opt/repository-service-tuf-worker:z
       - ./tests/files/key_storage/:/var/opt/repository-service-tuf/key_storage
     depends_on:
       redis:
