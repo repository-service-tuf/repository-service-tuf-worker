@@ -14,6 +14,7 @@ from repository_service_tuf_worker.models.targets import (  # noqa
 from repository_service_tuf_worker.models.targets import (  # noqa
     schemas as targets_schema,
 )
+from repository_service_tuf_worker.models import settings as settings_models  # noqa
 
 
 def rstuf_db(db_server: str) -> sessionmaker:
