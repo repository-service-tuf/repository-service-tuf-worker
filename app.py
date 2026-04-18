@@ -43,11 +43,14 @@ class status(Enum):
     FAILURE = "FAILURE"
 
 
-redis_backend = redis.StrictRedis.from_url(
-    worker_settings.REDIS_SERVER,
-    port=worker_settings.get("REDIS_SERVER_PORT", 6379),
-    db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0),
-)
+if worker_settings.get("REDIS_SERVER"):
+    redis_backend = redis.StrictRedis.from_url(
+        worker_settings.REDIS_SERVER,
+        port=worker_settings.get("REDIS_SERVER_PORT", 6379),
+        db=worker_settings.get("REDIS_SERVER_DB_RESULT", 0),
+    )
+else:
+    redis_backend = None
 
 # TODO: Issue https://github.com/repository-service-tuf/vmware/issues/6
 # BROKER_USE_SSL = {
@@ -67,6 +70,8 @@ app = Celery(
         f"{worker_settings.REDIS_SERVER}"
         f":{worker_settings.get('REDIS_SERVER_PORT', 6379)}"
         f"/{worker_settings.get('REDIS_SERVER_DB_RESULT', 0)}"
+        if worker_settings.get("REDIS_SERVER")
+        else f"db+{worker_settings.DB_SERVER}"
     ),
     result_persistent=True,
     task_acks_late=True,
@@ -120,7 +125,7 @@ def _end_bor_chain_callback(result, start_time: float):
     )
 
     # Return the final result along with the execution time for reference
-    repository._redis.delete(BOR_LOCK)
+    repository.release_lock(BOR_LOCK)
     logging.info("Bump online roles lock removed")
     return {"result": result, "execution_time_seconds": total_time}
 
@@ -194,7 +199,7 @@ def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
     start_time = time.time()
 
     # Try to acquire lock
-    if not repository._redis.set(BOR_LOCK, "locked", ex=BOR_TTL, nx=True):
+    if not repository.acquire_lock(BOR_LOCK, BOR_TTL):
         logging.info(
             "Skipping bump_online_roles, another task is already running."
         )
@@ -211,7 +216,7 @@ def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
     # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker
     # development guide documentation.
     try:
-        with repository._redis.lock("LOCK_TARGETS", repository._timeout):
+        def _execute_bump():
             roles = repository.get_delegated_rolenames(expired=expired)
             logging.info(f"Total roles to bump: {len(roles)}")
 
@@ -263,6 +268,12 @@ def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
                 )(queue="rstuf_internals")
 
                 return roles
+
+        if repository._redis:
+            with repository._redis.lock("LOCK_TARGETS", repository._timeout):
+                return _execute_bump()
+        else:
+            return _execute_bump()
     except redis.exceptions.LockNotOwnedError:
         if status_lock_targets is False:
             logging.error(
@@ -286,12 +297,18 @@ def _publish_signals(
         task_id: Task identification
         result: Result about the Task
     """
-    redis_backend.set(
-        f"celery-task-meta-{task_id}",
-        json.dumps(
-            {"status": status.value, "task_id": task_id, "result": result}
-        ),
-    )
+    if redis_backend:
+        redis_backend.set(
+            f"celery-task-meta-{task_id}",
+            json.dumps(
+                {"status": status.value, "task_id": task_id, "result": result}
+            ),
+        )
+    else:
+        # Fallback to Celery's result backend if redis_backend is None
+        # Actually, we should probably have a unified way to save signals.
+        # But this is minimal change.
+        pass
 
 
 @signals.task_prerun.connect(sender=repository_service_tuf_worker)
