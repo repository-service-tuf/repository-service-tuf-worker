@@ -51,4 +51,4 @@ myst-parser = "*"
 dynaconf = {extras = ["ini"], version = "*"}  # required to build docs
 
 [requires]
-python_version = "3.13"
+python_version = "3.14"
