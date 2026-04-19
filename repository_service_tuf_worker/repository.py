@@ -866,7 +866,7 @@ class MetadataRepository:
         other_keys = []
         logging.debug("mapping keys")
         for not_delete in targets.signed.delegations.roles:
-            if not_delete == delegated:
+            if not_delete == delegated.name:
                 continue
             other_keys += targets.signed.delegations.roles[not_delete].keyids
 
@@ -874,7 +874,7 @@ class MetadataRepository:
         for key in role_keys:
             if key not in other_keys:
                 logging.debug(f"removing key id {key}")
-                targets.signed.delegations.keys.delete(key)
+                targets.signed.delegations.keys.pop(key, None)
             else:
                 logging.debug(f"key {key} used by other role")
 

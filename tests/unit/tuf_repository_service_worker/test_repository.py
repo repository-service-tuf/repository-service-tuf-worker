@@ -764,6 +764,33 @@ class TestMetadataRepository:
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
 
+    def test__remove_delegated_role_keys(self, test_repo):
+        fake_delegated_role = pretend.stub(name="delegation-1")
+        fake_keys_dict = {
+            "unique_key": pretend.stub(),
+            "shared_key": pretend.stub(),
+        }
+        fake_targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    roles={
+                        "delegation-1": pretend.stub(
+                            keyids=["unique_key", "shared_key"]
+                        ),
+                        "delegation-2": pretend.stub(keyids=["shared_key"]),
+                    },
+                    keys=fake_keys_dict,
+                )
+            )
+        )
+
+        result = test_repo._remove_delegated_role_keys(
+            fake_targets, fake_delegated_role
+        )
+        assert result is None
+        assert "unique_key" not in fake_keys_dict
+        assert "shared_key" in fake_keys_dict
+
     @pytest.mark.parametrize(
         "expired, targets_expired, expected",
         [
