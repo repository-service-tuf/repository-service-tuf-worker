@@ -49,6 +49,7 @@ from tuf.api.metadata import (  # noqa
 from tuf.api.serialization.json import CanonicalJSONSerializer, JSONSerializer
 
 from repository_service_tuf_worker import (  # noqa
+    BootstrapState,
     Dynaconf,
     get_repository_settings,
     get_worker_settings,
@@ -168,19 +169,15 @@ class MetadataRepository:
         self.write_repository_settings("ONLINE_KEY", key_dict)
 
     @property
-    def bootstrap_state(self) -> Optional[str]:
+    def bootstrap_state(self) -> Optional[BootstrapState]:
         bootstrap = self._settings.get_fresh("BOOTSTRAP")
         if bootstrap is None:
             return None
-
-        elif bootstrap.startswith("pre-"):
-            return "pre"
-
-        elif bootstrap.startswith("signing"):
-            return "signing"
-
-        else:
-            return "finished"
+        if bootstrap.startswith(BootstrapState.PRE.value):
+            return BootstrapState.PRE
+        if bootstrap.startswith(BootstrapState.SIGNING.value):
+            return BootstrapState.SIGNING
+        return BootstrapState.FINISHED
 
     @property
     def uses_succinct_roles(self) -> bool:
@@ -1889,12 +1886,11 @@ class MetadataRepository:
                 expire (`self._hours_before_expire`)
         """
         logging.debug(f"Configured timeout: {self._timeout}")
-        bootstrap = self._settings.get_fresh("BOOTSTRAP")
-        if bootstrap is None or "pre-" in bootstrap or "signing-" in bootstrap:
+        if self.bootstrap_state != BootstrapState.FINISHED:
             logging.info(
                 "[automatic_version_bump] Bootstrap not completed, skipping..."
             )
-            return False
+            return []
 
         status_lock_targets = False
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
@@ -2402,8 +2398,19 @@ class MetadataRepository:
         metadata = Metadata.from_dict(metadata_dict)
 
         # If it isn't a "bootstrap" signing event, it must be "update metadata"
-        bootstrap_state = self._settings.get_fresh("BOOTSTRAP")
-        if metadata.signed.type == Root.type and "signing" in bootstrap_state:
+        bootstrap_raw = self._settings.get_fresh("BOOTSTRAP")
+        bootstrap_status = None
+        if bootstrap_raw:
+            if bootstrap_raw.startswith(BootstrapState.PRE.value):
+                bootstrap_status = BootstrapState.PRE
+            elif bootstrap_raw.startswith(BootstrapState.SIGNING.value):
+                bootstrap_status = BootstrapState.SIGNING
+            else:
+                bootstrap_status = BootstrapState.FINISHED
+        if (
+            metadata.signed.type == Root.type
+            and bootstrap_status == BootstrapState.SIGNING
+        ):
             # Signature and threshold of initial root can only self-validate,
             # there is no "trusted root" at bootstrap time yet.
             if not self._validate_signature(metadata, signature):
@@ -2417,7 +2424,7 @@ class MetadataRepository:
                 msg = f"Root v{metadata.signed.version} is pending signatures"
                 return _result(True, bootstrap=msg)
 
-            bootstrap_task_id = bootstrap_state.split("signing-")[1]
+            bootstrap_task_id = bootstrap_raw.split("signing-")[1]
             self._bootstrap_finalize(metadata, bootstrap_task_id)
             return _result(True, bootstrap="Bootstrap Finished")
 

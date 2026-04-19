@@ -24,7 +24,7 @@ from tuf.api.metadata import (
     Timestamp,
 )
 
-from repository_service_tuf_worker import Dynaconf, repository
+from repository_service_tuf_worker import BootstrapState, Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
 from repository_service_tuf_worker.models.targets import crud
 
@@ -143,12 +143,12 @@ class TestMetadataRepository:
             ),
             (
                 "pre-<somehash",
-                "pre",
+                BootstrapState.PRE,
             ),
-            ("signing", "signing"),
+            ("signing-", BootstrapState.SIGNING),
             (
                 "anythingelse",
-                "finished",
+                BootstrapState.FINISHED,
             ),
         ],
     )
@@ -2822,7 +2822,7 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         result = test_repo.bump_online_roles()
-        assert result is False
+        assert result == []
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -2839,7 +2839,7 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         result = test_repo.bump_online_roles()
-        assert result is False
+        assert result == []
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
@@ -2856,7 +2856,7 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         result = test_repo.bump_online_roles()
-        assert result is False
+        assert result == []
         assert test_repo._settings.get_fresh.calls == [
             pretend.call("BOOTSTRAP")
         ]
