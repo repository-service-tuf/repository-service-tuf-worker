@@ -18,7 +18,6 @@ from repository_service_tuf_worker.repository import TaskName
 class TestMetadataDelegationCustom:
     @pytest.fixture()
     def test_repo(self, monkeypatch):
-        # Mock dependencies to avoid real initialization
         mock_settings = pretend.stub(
             get_fresh=lambda k, d=None: None,
             get=lambda k, d=None: "redis://localhost" if "REDIS" in k else "postgresql://localhost",
@@ -28,17 +27,14 @@ class TestMetadataDelegationCustom:
         monkeypatch.setattr(repository, "get_worker_settings", lambda: mock_settings)
         monkeypatch.setattr(repository, "get_repository_settings", lambda *a: mock_settings)
         monkeypatch.setattr(repository, "rstuf_db", lambda *a: pretend.stub())
-        
+
         repo = repository.MetadataRepository.__new__(repository.MetadataRepository)
         repo._db = pretend.stub()
         repo._signer_store = pretend.stub()
         repo._storage_backend = pretend.stub()
         repo._timeout = 30
         repo._uses_succinct_roles = None
-        
-        # Monkeypatch properties if needed, but since they call get_repository_settings,
-        # and we mocked it, it should be fine. Actually, _settings is just a property.
-        
+
         return repo
 
     def test_metadata_delegation_add_custom(self, test_repo, monkeypatch):

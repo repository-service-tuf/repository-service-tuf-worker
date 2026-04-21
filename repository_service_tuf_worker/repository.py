@@ -2212,25 +2212,22 @@ class MetadataRepository:
         match action:
             case "add":
                 if "metadata" in payload:
-                    # Logic for externally signed metadata
+                    # Externally signed metadata integration
                     metadata = Metadata[Targets].from_dict(payload["metadata"])
                     rolename = payload["rolename"]
                     targets = self._storage_load_targets()
 
-                    # 1. Verify if the role is delegated in Targets
                     if rolename not in targets.signed.delegations.roles:
                         raise RepositoryError(
                             f"Role '{rolename}' is not delegated in Targets"
                         )
 
-                    # 2. Basic TUF validation (Type)
                     if metadata.signed.type != Targets.type:
                         raise RepositoryError(
                             f"Expected '{Targets.type}', got "
                             f"'{metadata.signed.type}'"
                         )
 
-                    # 3. Verify threshold and signatures
                     if not self._validate_threshold(
                         metadata, targets, rolename
                     ):
@@ -2239,16 +2236,17 @@ class MetadataRepository:
                             "the threshold or has invalid signatures"
                         )
 
-                    # 4. Check expiration
                     if metadata.signed.expires < datetime.now(timezone.utc):
                         raise RepositoryError(
                             f"Metadata for '{rolename}' is expired"
                         )
 
-                    # 5. Check version (if exists in storage)
                     try:
                         current_metadata = self._storage_backend.get(rolename)
-                        if metadata.signed.version < current_metadata.signed.version:
+                        if (
+                            metadata.signed.version
+                            < current_metadata.signed.version
+                        ):
                             raise RepositoryError(
                                 f"Metadata version {metadata.signed.version} "
                                 "is lower than current version "
@@ -2257,10 +2255,8 @@ class MetadataRepository:
                     except StorageError:
                         logging.debug(f"Role {rolename} not in storage yet")
 
-                    # 6. Persist metadata
                     self._persist(metadata, rolename)
 
-                    # 4. Update snapshot and timestamp
                     snapshot = self._storage_load_snapshot()
                     snapshot.signed.meta[f"{rolename}.json"] = MetaFile(
                         version=metadata.signed.version
@@ -2268,7 +2264,6 @@ class MetadataRepository:
                     self._bump_and_persist(snapshot, Snapshot.type)
                     self._update_timestamp(snapshot.signed.version)
 
-                    # 5. Update DB
                     targets_crud.update_roles_expire_version_by_rolenames(
                         self._db,
                         {
@@ -2281,7 +2276,9 @@ class MetadataRepository:
 
                     success = {rolename: metadata}
                     failed = []
+
                 else:
+                    # Normal delegation logic
                     delegations: Delegations = Delegations.from_dict(
                         payload["delegations"]
                     )
@@ -2311,8 +2308,9 @@ class MetadataRepository:
                                 success[role].to_dict(),
                             )
 
-                    self._bump_and_persist(snapshot, Snapshot.type)
-                    self._update_timestamp(snapshot.signed.version)
+                    if success:
+                        self._bump_and_persist(snapshot, Snapshot.type)
+                        self._update_timestamp(snapshot.signed.version)
 
             case "delete":
                 delegations = payload["delegations"]
