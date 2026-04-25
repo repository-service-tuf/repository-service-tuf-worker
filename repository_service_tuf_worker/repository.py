@@ -952,6 +952,12 @@ class MetadataRepository:
         failed = []
         db_roles = []
 
+        existing_paths: set = set()
+        if targets.signed.delegations.roles:
+            for existing_role in targets.signed.delegations.roles.values():
+                if existing_role.paths:
+                    existing_paths.update(existing_role.paths)
+
         logging.debug("adding roles to Targets delegations")
         for role in delegations.roles:
             if targets.signed.delegations.roles is None:
@@ -971,6 +977,23 @@ class MetadataRepository:
                         "reason": (
                             "role already exists or name used in the past",
                         ),
+                    }
+                )
+                continue
+
+            overlapping = existing_paths.intersection(
+                delegations.roles[role].paths or []
+            )
+            if overlapping:
+                logging.info(
+                    f"Role '{role}' paths overlap with existing delegated "
+                    f"roles: {sorted(overlapping)}, skipping"
+                )
+                failed.append(
+                    {
+                        "role": role,
+                        "reason": f"paths overlap with existing delegated "
+                        f"roles: {sorted(overlapping)}",
                     }
                 )
                 continue
@@ -1010,6 +1033,8 @@ class MetadataRepository:
                 ]
 
             success[role] = role_metadata
+            if delegations.roles[role].paths:
+                existing_paths.update(delegations.roles[role].paths)
 
             logging.debug(f"creating role db '{role}' schema")
             db_roles = targets_schema.RSTUFTargetRoleCreate(
