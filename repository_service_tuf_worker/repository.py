@@ -2019,6 +2019,86 @@ class MetadataRepository:
             },
         )
 
+    def _lookup_root_signing_key(
+        self,
+        keyid: str,
+        current_root: Metadata[Root],
+        new_root: Metadata[Root],
+    ) -> Key:
+        """Return the ``Key`` object for ``keyid`` from current or new root."""
+        cur_keys = current_root.signed.keys
+        new_keys = new_root.signed.keys
+        if keyid in new_keys and keyid in cur_keys:
+            kn, kc = new_keys[keyid], cur_keys[keyid]
+            if kn != kc:
+                raise RepositoryError(
+                    f"Inconsistent public key for root signing keyid {keyid}"
+                )
+            return kn
+        if keyid in new_keys:
+            return new_keys[keyid]
+        if keyid in cur_keys:
+            return cur_keys[keyid]
+        raise RepositoryError(
+            f"Missing key material for root signing keyid {keyid}"
+        )
+
+    def _assert_root_pending_signatures_valid(
+        self,
+        current_root: Metadata[Root],
+        new_root: Metadata[Root],
+    ) -> None:
+        """Reject root metadata that must not enter the ROOT_SIGNING queue.
+
+        When full threshold verification fails with ``UnsignedMetadataError``,
+        we still persist the metadata for offline signers. Require:
+
+        * At least one signature entry.
+        * Every signature keyid is authorized by the current or new root role.
+        * Every signature verifies over ``new_root.signed_bytes``.
+        * ``Root.get_root_verification_result`` reports at least one trusted
+          signer (python-tuf ``get_verification_result``; see #367).
+        """
+        signatures = new_root.signatures
+        if not signatures:
+            raise RepositoryError(
+                "Root metadata pending signatures requires at least one signature"
+            )
+
+        root_role_cur = current_root.signed.roles[Root.type]
+        root_role_new = new_root.signed.roles[Root.type]
+        allowed_keyids = set(root_role_cur.keyids) | set(root_role_new.keyids)
+
+        for keyid, sig in signatures.items():
+            if keyid not in allowed_keyids:
+                raise RepositoryError(
+                    f"Unauthorized root signature keyid: {keyid}"
+                )
+            key = self._lookup_root_signing_key(keyid, current_root, new_root)
+            try:
+                key.verify_signature(sig, new_root.signed_bytes)
+            except UnverifiedSignatureError as e:
+                raise RepositoryError(
+                    f"Invalid root signature for keyid {keyid}"
+                ) from e
+
+        try:
+            vr = new_root.signed.get_root_verification_result(
+                current_root.signed,
+                new_root.signed_bytes,
+                signatures,
+            )
+        except ValueError as e:
+            raise RepositoryError(
+                f"Invalid root metadata for pending signatures: {e}"
+            ) from e
+
+        if len(vr.signed) < 1:
+            raise RepositoryError(
+                "Root metadata needs at least one signature trusted by the "
+                "current or new root role definition"
+            )
+
     def _verify_new_root_signing(
         self, current_root: Metadata[Root], new_root: Metadata[Root]
     ):
@@ -2053,8 +2133,17 @@ class MetadataRepository:
             self._verify_new_root_signing(current_root, new_root)
 
         except UnsignedMetadataError:
-            # TODO: Add missing sanity check - new root must have at least 1
-            # and only valid signature - use `get_verification_status` (#367)
+            try:
+                self._assert_root_pending_signatures_valid(
+                    current_root, new_root
+                )
+            except RepositoryError as err:
+                return self._task_result(
+                    task=TaskName.METADATA_UPDATE,
+                    message="Metadata Update Failed",
+                    error=str(err),
+                    details=None,
+                )
             self.write_repository_settings("ROOT_SIGNING", new_root.to_dict())
             return self._task_result(
                 task=TaskName.METADATA_UPDATE,
