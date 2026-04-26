@@ -125,11 +125,17 @@ class SignerStore:
         """
 
         if key.keyid not in self._signers:
-            if uri := key.unrecognized_fields.get(RSTUF_ONLINE_KEY_URI_FIELD):
-                # (Re-)export ambient settings in isolated environment
-                with isolated_env(self._ambient_settings):
-                    signer = Signer.from_priv_key_uri(uri, key)
+            uri = key.unrecognized_fields.get(RSTUF_ONLINE_KEY_URI_FIELD)
+            if not uri:
+                raise ValueError(
+                    f"Online key {key.keyid!r} is missing the "
+                    f"'{RSTUF_ONLINE_KEY_URI_FIELD}' field. "
+                    "Re-run the TUF ceremony to set the correct key URI."
+                )
+            # (Re-)export ambient settings in isolated environment
+            with isolated_env(self._ambient_settings):
+                signer = Signer.from_priv_key_uri(uri, key)
 
-                self._signers[key.keyid] = signer
+            self._signers[key.keyid] = signer
 
         return self._signers[key.keyid]
