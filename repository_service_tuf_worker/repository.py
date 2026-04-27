@@ -633,9 +633,7 @@ class MetadataRepository:
 
         return role_name
 
-    def get_delegated_rolenames(
-        self, expired: bool = False
-    ) -> List[Optional[str]]:
+    def get_delegated_rolenames(self, expired: bool = False) -> List[str]:
         """
         Get all delegated roles names.
 

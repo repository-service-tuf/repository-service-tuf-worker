@@ -212,11 +212,7 @@ def bump_online_roles(expired: bool = False) -> List[str]:
     # development guide documentation.
     try:
         with repository._redis.lock("LOCK_TARGETS", repository._timeout):
-            roles = [
-                r
-                for r in repository.get_delegated_rolenames(expired=expired)
-                if r is not None
-            ]
+            roles = repository.get_delegated_rolenames(expired=expired)
             logging.info(f"Total roles to bump: {len(roles)}")
 
             # No expired roles, call end within the bump_online_role task
