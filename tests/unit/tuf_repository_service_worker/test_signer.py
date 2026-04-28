@@ -85,27 +85,12 @@ class TestSigner:
         with patch.dict("os.environ", {}, clear=True), pytest.raises(KeyError):
             store.get(fake_key)
 
-    def test_get_from_config_fallback(self, key_metadata):
-        dir_ = _FILES / "pem"
-        uri = "fn:ed25519_private.pem"
-        fake_id = "fake_id"
-        key = Key.from_dict(fake_id, key_metadata)
-
-        # URI is NOT in unrecognized_fields, but in config
-        settings = Dynaconf(
-            ONLINE_KEY_DIR=str(dir_), ONLINE_KEY_URI_MAP={fake_id: uri}
-        )
-        store = SignerStore(settings)
-        signer = store.get(key)
-
-        assert isinstance(signer, FileNameSigner)
-
     def test_get_no_uri_fails(self):
         settings = Dynaconf()
         store = SignerStore(settings)
         fake_key = stub(keyid="fake_id", unrecognized_fields={})
 
-        with pytest.raises(ValueError, match="No private key URI found"):
+        with pytest.raises(ValueError, match="Strict explicit URI mapping from metadata is required"):
             store.get(fake_key)
 
     @pytest.mark.skipif(

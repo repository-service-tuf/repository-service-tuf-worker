@@ -108,7 +108,6 @@ class SignerStore:
     """
 
     def __init__(self, settings: Dynaconf):
-        self._settings = settings
         # Cache known ambient settings
         self._ambient_settings: dict[str, str] = {}
         for name in _AMBIENT_SETTING_NAMES:
@@ -126,17 +125,12 @@ class SignerStore:
         """
 
         if key.keyid not in self._signers:
-            # 1. Preferred source: unrecognized_fields
             uri = key.unrecognized_fields.get(RSTUF_ONLINE_KEY_URI_FIELD)
-
-            # 2. Fallback: configuration
-            if not uri:
-                uri_map = self._settings.get("ONLINE_KEY_URI_MAP", {})
-                uri = uri_map.get(key.keyid)
 
             if not uri:
                 raise ValueError(
-                    f"No private key URI found for keyid {key.keyid}"
+                    f"Missing '{RSTUF_ONLINE_KEY_URI_FIELD}' field in key {key.keyid}. "
+                    "Strict explicit URI mapping from metadata is required."
                 )
 
             # (Re-)export ambient settings in isolated environment
