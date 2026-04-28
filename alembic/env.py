@@ -11,16 +11,9 @@ from alembic import context
 # access to the values within the .ini file in use.
 config = context.config
 
-# Support RSTUF Worker Container multiple environment variables for SQL
-# TODO: Removed deprecated RSTUF_SQL_* environment variables in the future
-sql_server = os.getenv("RSTUF_SQL_SERVER")
-sql_user = os.getenv("RSTUF_SQL_USER")
-sql_password = os.getenv("RSTUF_SQL_PASSWORD")
-if sql_server or sql_user or sql_password:
-    logging.warning("RSTUF_SQL_* are deprecated. Use RSTUF_DB_* instead.")
-db_server = os.getenv("RSTUF_DB_SERVER", sql_server)
-db_user = os.getenv("RSTUF_DB_USER", sql_user)
-db_password = os.getenv("RSTUF_DB_PASSWORD", sql_password)
+db_server = os.getenv("RSTUF_DB_SERVER")
+db_user = os.getenv("RSTUF_DB_USER")
+db_password = os.getenv("RSTUF_DB_PASSWORD")
 
 if db_server is None:
     raise ValueError("RSTUF_DB_SERVER is required")
