@@ -438,3 +438,36 @@ class TestAWSS3Service:
             service.put(fake_file_data, "3.bin-e.json")
 
         assert "Can't write role file '3.bin-e.json'" in str(err)
+
+    def test_delete(self, mocked_boto3):
+        test_settings = pretend.stub(
+            get=pretend.call_recorder(lambda *a: None),
+            AWS_STORAGE_BUCKET="bucket",
+            AWS_ACCESS_KEY_ID="access_key",
+            AWS_SECRET_ACCESS_KEY="secret_key",
+        )
+        service = awss3.AWSS3.configure(test_settings)
+
+        result = service.delete("3.bin-e.json")
+
+        assert result is None
+        assert service._s3_client.delete_object.calls == [
+            pretend.call(Bucket=service._bucket, Key="3.bin-e.json")
+        ]
+
+    def test_delete_ClientError(self, mocked_boto3):
+        test_settings = pretend.stub(
+            get=pretend.call_recorder(lambda *a: None),
+            AWS_STORAGE_BUCKET="bucket",
+            AWS_ACCESS_KEY_ID="access_key",
+            AWS_SECRET_ACCESS_KEY="secret_key",
+        )
+        service = awss3.AWSS3.configure(test_settings)
+        service._s3_client.delete_object = pretend.raiser(
+            awss3.ClientError({}, "delete_object")
+        )
+
+        with pytest.raises(awss3.StorageError) as err:
+            service.delete("3.bin-e.json")
+
+        assert "Can't delete role file '3.bin-e.json'" in str(err)
