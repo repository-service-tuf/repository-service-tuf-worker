@@ -249,3 +249,56 @@ class TestLocalStorageService:
         assert fake_os.path.join.calls == [
             pretend.call(service._path, "3.bin-e.json"),
         ]
+
+    def test_delete(self, monkeypatch):
+        service = local.LocalStorage("/path")
+        fake_os = pretend.stub(
+            path=pretend.stub(
+                join=pretend.call_recorder(
+                    lambda *a, **kw: "/path/3.bin-e.json"
+                )
+            ),
+            remove=pretend.call_recorder(lambda *a: None),
+        )
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
+
+        result = service.delete("3.bin-e.json")
+
+        assert result is None
+        assert fake_os.path.join.calls == [
+            pretend.call(service._path, "3.bin-e.json"),
+        ]
+        assert fake_os.remove.calls == [pretend.call("/path/3.bin-e.json")]
+
+    def test_delete_FileNotFoundError(self, monkeypatch):
+        service = local.LocalStorage("/path")
+        fake_os = pretend.stub(
+            path=pretend.stub(
+                join=pretend.call_recorder(
+                    lambda *a, **kw: "/path/missing.json"
+                )
+            ),
+            remove=pretend.raiser(FileNotFoundError("no such file")),
+        )
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
+
+        result = service.delete("missing.json")
+
+        assert result is None
+
+    def test_delete_OSError(self, monkeypatch):
+        service = local.LocalStorage("/path")
+        fake_os = pretend.stub(
+            path=pretend.stub(
+                join=pretend.call_recorder(
+                    lambda *a, **kw: "/path/3.bin-e.json"
+                )
+            ),
+            remove=pretend.raiser(PermissionError("denied")),
+        )
+        monkeypatch.setattr(f"{MOCK_PATH}.os", fake_os)
+
+        with pytest.raises(local.StorageError) as err:
+            service.delete("3.bin-e.json")
+
+        assert "Can't delete role file '/path/3.bin-e.json'" in str(err)
