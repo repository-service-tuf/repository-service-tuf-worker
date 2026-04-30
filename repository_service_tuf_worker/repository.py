@@ -2222,6 +2222,8 @@ class MetadataRepository:
             targets: optional argument to pass the current targets metadata
         """
         action = payload.get("action")
+        success: Any
+        failed: List[Dict[str, Any]]
 
         match action:
             case "add":
@@ -2259,10 +2261,8 @@ class MetadataRepository:
                 try:
                     status_lock_targets = False
                     with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
-                        deleted, delete_failed = (
-                            self._delete_metadata_delegation(
-                                payload["delegations"]
-                            )
+                        success, failed = self._delete_metadata_delegation(
+                            payload["delegations"]
                         )
                 except redis.exceptions.LockNotOwnedError:
                     if status_lock_targets is False:
