@@ -47,7 +47,7 @@ class IStorage(ABC):
         raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
-    def get(self, rolename: str, version: Optional[int]) -> Metadata[T]:
+    def get(self, rolename: str, version: Optional[int] = None) -> Metadata[T]:
         """
         Return metadata from specific role name, optionally specific version
         (latest if None).
@@ -66,7 +66,9 @@ class IStorage(ABC):
         raise NotImplementedError  # pragma: no cover
 
 
-def _setup_service_dynaconf(cls: Any, backend: Any, settings: Dynaconf):
+def _setup_service_dynaconf(
+    cls: Any, backend: Any, settings: Dynaconf
+) -> None:
     """
     Setup a Interface Service (IService) from settings Dynaconf (environment
     variables)

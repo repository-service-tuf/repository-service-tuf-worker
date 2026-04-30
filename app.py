@@ -126,7 +126,7 @@ def _end_bor_chain_callback(result, start_time: float):
 
 
 @app.task(serializer="json", queue="rstuf_internals")
-def _update_online_role(role: str) -> Optional[str]:
+def _update_online_role(role: str) -> Optional[Dict[str, Any]]:
     """
     Update online role (DB and JSON)
     """
@@ -134,7 +134,7 @@ def _update_online_role(role: str) -> Optional[str]:
 
 
 @app.task(serializer="json", queue="rstuf_internals")
-def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
+def _update_snapshot_timestamp(*args) -> None:
     """
     Update the snapshot timestamp with the updated roles data.
     """
@@ -175,7 +175,7 @@ def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
 
 
 @app.task(serializer="json", queue="rstuf_internals")
-def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
+def bump_online_roles(expired: bool = False) -> List[str]:
     """
     Bump all online roles.
     """
@@ -273,6 +273,8 @@ def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
                 f"RSTUF: Task exceed `LOCK_TIMEOUT` ({repository._timeout} "
                 "seconds)"
             )
+
+    return []
 
 
 def _publish_signals(
