@@ -3929,12 +3929,12 @@ class TestMetadataRepository:
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=test_repo._timeout)
         ]
-        snapshot_persist_calls = [
+        snapshot_bump_calls = [
             call
-            for call in test_repo._persist.calls
+            for call in test_repo._bump_and_persist.calls
             if call.args[1] == Snapshot.type
         ]
-        assert len(snapshot_persist_calls) == 1
+        assert len(snapshot_bump_calls) == 1
         assert result == {
             "task": repository.TaskName.METADATA_DELEGATION,
             "status": True,
@@ -5980,12 +5980,12 @@ class TestMetadataRepository:
         assert result["status"] is True
         assert result["details"]["delegated_roles"] == [parent_role_name]
 
-        snapshot_persist_call = next(
+        snapshot_bump_call = next(
             call
-            for call in test_repo._persist.calls
+            for call in test_repo._bump_and_persist.calls
             if call.args[1] == Snapshot.type
         )
-        updated_snapshot_meta = snapshot_persist_call.args[0].signed.meta
+        updated_snapshot_meta = snapshot_bump_call.args[0].signed.meta
         assert f"{parent_role_name}.json" not in updated_snapshot_meta
         for bin_name in nested_bin_names:
             assert f"{bin_name}.json" not in updated_snapshot_meta

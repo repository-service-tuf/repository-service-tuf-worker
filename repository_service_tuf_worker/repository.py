@@ -91,6 +91,8 @@ OFFLINE_KEYS = {
 }
 
 BINS = "bins"
+NESTED_BINS_SEPARATOR = f"-{BINS}-"
+NESTED_BINS_NAME_SUFFIX = f"-{BINS}"
 SPEC_VERSION: str = ".".join(SPECIFICATION_VERSION)
 
 # lock constants
@@ -221,8 +223,8 @@ class MetadataRepository:
             delegation_keyids = [self._online_key.keyid]
         else:
             logging.debug(f"delegations using custom delegations {rolename}")
-            if "-bins-" in rolename:
-                parent_rolename = rolename.split("-bins-")[0]
+            if NESTED_BINS_SEPARATOR in rolename:
+                parent_rolename = rolename.split(NESTED_BINS_SEPARATOR)[0]
                 parent_metadata: Metadata[Targets] = self._storage_backend.get(
                     parent_rolename
                 )
@@ -362,7 +364,8 @@ class MetadataRepository:
                 expire
                 or self._settings.get_fresh(f"{role_name.upper()}_EXPIRATION")
                 or self._settings.get_fresh(
-                    f"{role_name.split("-bins-")[0].upper()}_EXPIRATION"
+                    f"{role_name.split(NESTED_BINS_SEPARATOR)[0].upper()}"
+                    "_EXPIRATION"
                 )
             )
         )
@@ -534,8 +537,10 @@ class MetadataRepository:
                     )
                 else:
                     logging.debug("delegations using custom delegations")
-                    if "-bins-" in rolename:
-                        parent_rolename = rolename.split("-bins-")[0]
+                    if NESTED_BINS_SEPARATOR in rolename:
+                        parent_rolename = rolename.split(
+                            NESTED_BINS_SEPARATOR
+                        )[0]
                         p_metadata = self._storage_backend.get(parent_rolename)
                         # The keys are defined in the parent's succinct_roles
                         delegation_keyids = (
@@ -974,9 +979,9 @@ class MetadataRepository:
         delegator_name: str,
         expiration: int,
         num_bins: int,
-    ):
+    ) -> Dict[str, Metadata[Targets]]:
         bit_length = int(log(num_bins, 2))
-        name_prefix = f"{delegator_name}-bins"
+        name_prefix = f"{delegator_name}{NESTED_BINS_NAME_SUFFIX}"
         online_key_id = self._online_key.keyid
         success = {}
 
@@ -992,26 +997,28 @@ class MetadataRepository:
             succinct_roles=succinct_roles,
         )
 
-        db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
         online_key = copy.deepcopy(self._online_key)
         expire_bins: int = expiration
         signer = self._signer_store.get(online_key)
 
-        def process_delegated_bin_roles(bin_rolename: str):
+        def process_delegated_bin_roles(
+            bin_rolename: str,
+        ) -> Tuple[
+            str, Metadata[Targets], targets_schema.RSTUFTargetRoleCreate
+        ]:
             bin_metadata = Metadata(Targets(version=1))
             self._bump_expiry(bin_metadata, name_prefix, expire=expire_bins)
             self._sign(bin_metadata, signer)
 
-            db_target_roles.append(
-                targets_schema.RSTUFTargetRoleCreate(
-                    rolename=bin_rolename,
-                    version=1,
-                    expires=bin_metadata.signed.expires,
-                )
+            db_role = targets_schema.RSTUFTargetRoleCreate(
+                rolename=bin_rolename,
+                version=1,
+                expires=bin_metadata.signed.expires,
             )
             self._persist(bin_metadata, bin_rolename)
-            return bin_rolename, bin_metadata
+            return bin_rolename, bin_metadata, db_role
 
+        db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
             start_time = time.time()
             futures = [
@@ -1019,15 +1026,16 @@ class MetadataRepository:
                 for bin_rolename in succinct_roles.get_roles()
             ]
             for future in concurrent.futures.as_completed(futures):
-                rolename, metadata = future.result()
+                rolename, metadata, db_role = future.result()
                 success[rolename] = metadata
+                db_target_roles.append(db_role)
 
         targets_crud.create_roles(self._db, db_target_roles)
         total_time = time.time() - start_time
         logging.debug(
             f"Added {len(db_target_roles)} nested hash bins \
-                      for role '{delegator_name} \
-                      in {total_time} seconds'"
+                      for role '{delegator_name}' \
+                      in {total_time} seconds"
         )
 
         logging.debug(f"{success}")
@@ -1095,6 +1103,18 @@ class MetadataRepository:
                 "x-rstuf-num-bins"
             )
 
+            if num_bins is not None:
+                if num_bins < 1 or num_bins & (num_bins - 1) != 0:
+                    failed.append(
+                        {
+                            "role": role,
+                            "reason": (
+                                "x-rstuf-num-bins must be a power of 2"
+                            ),
+                        }
+                    )
+                    continue
+
             logging.debug(f"Num bins: {num_bins}")
 
             status_lock_targets = False
@@ -1116,9 +1136,12 @@ class MetadataRepository:
                                       hash-bin delegations"
                         )
                         delegations.roles[role].terminating = False
-                        nb_success = self._setup_nested_hashbin_delegations(
-                            role_metadata, role, expires, num_bins
+                        nested_bin_success = (
+                            self._setup_nested_hashbin_delegations(
+                                role_metadata, role, expires, num_bins
+                            )
                         )
+                        nb_success.update(nested_bin_success)
                         if len(delegations.roles[role].keyids) == 0:
                             delegations.roles[role].keyids.append(
                                 self._online_key.keyid
@@ -1175,9 +1198,6 @@ class MetadataRepository:
 
         if persist_targets and len(success) > 0:
             self._bump_and_persist(targets, Targets.type)
-            self._update_timestamp(
-                self._update_snapshot(only_target=True), skip=True
-            )
 
         return (success, failed, nb_success)
 
@@ -1245,7 +1265,6 @@ class MetadataRepository:
                 f"role '{rolename}' removed from Targets delegations"
             )
             snapshot.signed.meta.pop(f"{rolename}.json", None)
-            self._persist(snapshot, Snapshot.type)
             self.write_repository_settings(f"{rolename.upper()}_SIGNING", None)
             db_role = targets_crud.read_role_by_rolename(self._db, rolename)
             targets_crud.update_role_to_deactivated(self._db, db_role)
@@ -1253,9 +1272,11 @@ class MetadataRepository:
 
         if success:
             self._bump_and_persist(targets, Targets.type)
-            self._update_timestamp(
-                self._update_snapshot(only_target=True), skip=True
+            snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
+                version=targets.signed.version
             )
+            self._bump_and_persist(snapshot, Snapshot.type)
+            self._update_timestamp(snapshot.signed.version)
 
         return (success, failed)
 
@@ -2420,6 +2441,10 @@ class MetadataRepository:
                 # helper function `_add_metadata_delegation` because while
                 # running `_bootstrap_online_roles` targets still not exist
                 # and require to be persisted before
+                if len(success) > 0:
+                    snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile(
+                        version=targets.signed.version
+                    )
                 for role in success:
                     if self._validate_threshold(success[role], targets, role):
                         logging.debug(f"role '{role}' uses only online key")
