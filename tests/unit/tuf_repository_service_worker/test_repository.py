@@ -5643,7 +5643,6 @@ class TestMetadataRepository:
         assert len(snapshot_persist_calls) == 1
 
     def test__get_role_for_artifact_path_nested_delegation(self, test_repo):
-
         parent_role_name = "parent-role"
         nested_bin_name = f"{parent_role_name}-bins-a"
         artifact_path = "some/path/file.tar.gz"
