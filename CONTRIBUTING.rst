@@ -5,6 +5,9 @@ Contributing to Repository Service for TUF WORKER
 We welcome contributions from the community and first want to thank you for
 taking the time to contribute!
 
+If you would like to work on an open issue, please first comment on the issue.  
+This helps us to ensure there are not multiple people working on the same issue.
+
 Please familiarize yourself with the `Code of Conduct`_
 before contributing.
 
