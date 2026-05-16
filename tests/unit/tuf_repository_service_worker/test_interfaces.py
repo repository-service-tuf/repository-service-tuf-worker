@@ -89,7 +89,7 @@ class TestInterfaces:
                 ]
 
             def get(
-                self, rolename: str, version: Optional[int]
+                self, rolename: str, version: Optional[int] = None
             ) -> Metadata[T]: ...
 
             def put(self, file_data: bytes, filename: str) -> None: ...

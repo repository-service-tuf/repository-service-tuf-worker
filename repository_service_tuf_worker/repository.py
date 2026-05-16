@@ -125,7 +125,7 @@ class MetadataRepository:
     A repository service to create and maintain TUF role metadata.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._worker_settings: Dynaconf = get_worker_settings()
         app_settings = self.refresh_settings()
         self._storage_backend: IStorage = app_settings.STORAGE
@@ -162,7 +162,7 @@ class MetadataRepository:
             return key
 
     @_online_key.setter
-    def _online_key(self, key: Key):
+    def _online_key(self, key: Key) -> None:
         key_dict = key.to_dict()
         key_dict["keyid"] = key.keyid
         self.write_repository_settings("ONLINE_KEY", key_dict)
@@ -228,7 +228,9 @@ class MetadataRepository:
 
         return delegation_keyids
 
-    def refresh_settings(self, worker_settings: Optional[Dynaconf] = None):
+    def refresh_settings(
+        self, worker_settings: Optional[Dynaconf] = None
+    ) -> Dynaconf:
         """Refreshes the MetadataRepository settings."""
         if worker_settings is None:
             settings = self._worker_settings
@@ -277,7 +279,7 @@ class MetadataRepository:
         self._worker_settings = settings
         return settings
 
-    def write_repository_settings(self, key: str, value: Any):
+    def write_repository_settings(self, key: str, value: Any) -> None:
         """
         Writes repository settings.
 
@@ -439,7 +441,7 @@ class MetadataRepository:
         bump_all: Optional[bool] = False,
         only_target: Optional[bool] = False,
         only_snapshot: Optional[bool] = False,
-    ) -> int:
+    ) -> Optional[int]:
         """
         Loads 'snapshot', updates meta info when 'target_roles' role names are
         given, bumps version and expiration, signs and persists.
@@ -512,7 +514,7 @@ class MetadataRepository:
                 targets_crud.update_files_to_published(
                     self._db, [file.path for file in db_role.target_files]
                 )
-                delegation_keyids = List[str]
+                delegation_keyids: List[str]
                 if targets.signed.delegations.succinct_roles:
                     logging.debug("delegations using succinct delegations")
                     delegation_keyids = (
@@ -585,7 +587,9 @@ class MetadataRepository:
         else:
             return None
 
-    def _update_targets_delegations_key(self, targets: Metadata[Targets]):
+    def _update_targets_delegations_key(
+        self, targets: Metadata[Targets]
+    ) -> None:
         """
         Update the key used by delegations referenced in targets metadata.
 
@@ -657,7 +661,7 @@ class MetadataRepository:
         roles_to_artifacts: Dict[str, List[targets_models.RSTUFTargetFiles]],
         update_state: Task.update_state,
         subtask: Optional[AsyncResult] = None,
-    ):
+    ) -> None:
         """
         Updates the 'RUNNING' state with details if the meta still not
         published in the latest Snapshot. It runs every 3 seconds until the
@@ -729,7 +733,7 @@ class MetadataRepository:
 
     def _send_publish_artifacts_task(
         self, task_id: str, delegated_artifacts: Optional[List[str]]
-    ):  # pragma: no cover
+    ) -> Any:  # pragma: no cover
         """
         Send a new task to the `rstuf_internals` queue to publish artifacts.
         """
@@ -746,7 +750,9 @@ class MetadataRepository:
             acks_late=True,
         )
 
-    def save_settings(self, root: Metadata[Root], roles_info: Dict[str, Any]):
+    def save_settings(
+        self, root: Metadata[Root], roles_info: Dict[str, Any]
+    ) -> None:
         """
         Save settings to the repository settings.
 
@@ -937,7 +943,7 @@ class MetadataRepository:
         delegations: Delegations,
         targets: Optional[Metadata[Targets]] = None,
         persist_targets: Optional[bool] = True,
-    ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
+    ) -> Tuple[Dict[str, Metadata[Targets]], List[Dict[str, Any]]]:
         """Create a custom delegation role"""
 
         if targets is None:
@@ -948,9 +954,9 @@ class MetadataRepository:
                 "Delegations already using hash-bins, cannot add custom roles"
             )
 
-        success = {}
-        failed = []
-        db_roles = []
+        success: Dict[str, Metadata[Targets]] = {}
+        failed: List[Dict[str, Any]] = []
+        db_roles: List[Any] = []
 
         logging.debug("adding roles to Targets delegations")
         for role in delegations.roles:
@@ -1029,14 +1035,14 @@ class MetadataRepository:
 
     def _delete_metadata_delegation(
         self,
-        delegations: List[str],
-    ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
-        """Create a custom delegation role"""
+        delegations: Dict[str, Any],
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """Delete a custom delegation role"""
 
         targets = self._storage_load_targets()
         snapshot = self._storage_load_snapshot()
-        success = []
-        failed = []
+        success: List[str] = []
+        failed: List[Dict[str, Any]] = []
 
         if targets.signed.delegations.succinct_roles:
             raise RepositoryError(
@@ -1045,7 +1051,7 @@ class MetadataRepository:
             )
 
         # remove role from Targets delegations and mapping role unique keys
-        for role in delegations.get("roles"):
+        for role in delegations.get("roles", []):
             rolename = role["name"]
             if rolename not in targets.signed.delegations.roles:
                 logging.info(f"Role '{rolename}' does not exists, skipping")
@@ -1068,7 +1074,8 @@ class MetadataRepository:
             self._persist(snapshot, Snapshot.type)
             self.write_repository_settings(f"{rolename.upper()}_SIGNING", None)
             db_role = targets_crud.read_role_by_rolename(self._db, rolename)
-            targets_crud.update_role_to_deactivated(self._db, db_role)
+            if db_role is not None:
+                targets_crud.update_role_to_deactivated(self._db, db_role)
             success.append(rolename)
 
         if success:
@@ -1082,7 +1089,7 @@ class MetadataRepository:
     def _update_metadata_delegation(
         self,
         delegations: Delegations,
-    ) -> Tuple[Dict[str, Metadata[Targets]], List[str]]:
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Update a custom delegation role"""
 
         targets = self._storage_load_targets()
@@ -1093,8 +1100,8 @@ class MetadataRepository:
                 "custom roles"
             )
 
-        success = {}
-        failed = []
+        success: Dict[str, Any] = {}
+        failed: List[Dict[str, Any]] = []
         u_role: DelegatedRole  # updated role
         o_role: DelegatedRole  # old role
         logging.debug("updating roles in Targets delegations")
@@ -1142,7 +1149,11 @@ class MetadataRepository:
 
         return (success, failed)
 
-    def _update_db_role_target_files(self, delegation, db_role):
+    def _update_db_role_target_files(
+        self,
+        delegation: Metadata[Targets],
+        db_role: targets_models.RSTUFTargetRoles,
+    ) -> Metadata[Targets]:
         delegation.signed.targets.clear()
         delegation.signed.targets = {
             file.path: TargetFile.from_dict(file.info, file.path)
@@ -1204,7 +1215,9 @@ class MetadataRepository:
                 f"{rolename.upper()}_SIGNING", delegation.to_dict()
             )
 
-    def update_targets_delegated_role(self, role: str):
+    def update_targets_delegated_role(
+        self, role: str
+    ) -> Optional[Dict[str, Any]]:
         if role == Targets.type:
             targets: Metadata[Targets] = self._storage_load_targets()
             self._bump_and_persist(targets, Targets.type)
@@ -1252,7 +1265,7 @@ class MetadataRepository:
     def _bootstrap_online_roles(
         self,
         delegations: Optional[Delegations] = None,
-    ):
+    ) -> None:
         """
         Bootstrap the roles that uses the online key
         """
@@ -1334,7 +1347,7 @@ class MetadataRepository:
         )
         return asdict(result)
 
-    def _bootstrap_finalize(self, root: Metadata[Root], task_id: str):
+    def _bootstrap_finalize(self, root: Metadata[Root], task_id: str) -> None:
         """
         Register the bootstrap finished.
         """
@@ -1535,9 +1548,7 @@ class MetadataRepository:
                             targets_role[0] for targets_role in db_roles
                         ]
                 else:
-                    delegated_targets: List[str] = payload.get(
-                        "delegated_targets"
-                    )
+                    delegated_targets = payload.get("delegated_targets", [])
 
                 if len(delegated_targets) == 0:
                     logging.debug(
@@ -1602,7 +1613,7 @@ class MetadataRepository:
                 details=None,
             )
         # The task id required by `_send_publish_artifacts_task` (sub-task).
-        task_id = payload.get("task_id")
+        task_id: str = payload.get("task_id", "")
         added_artifacts: List[str] = []
         invalid_paths: List[str] = []
         # Group target files by responsible delegated role.
@@ -1618,6 +1629,11 @@ class MetadataRepository:
                 self._db, artifact.get("path")
             )
             if db_target_file is None:
+                role = targets_crud.read_role_by_rolename(
+                    self._db, delegated_role
+                )
+                if role is None:
+                    continue
                 db_target_file = targets_crud.create_file(
                     self._db,
                     targets_schema.RSTUFTargetFileCreate(
@@ -1626,9 +1642,7 @@ class MetadataRepository:
                         published=False,
                         action=targets_schema.TargetAction.ADD,
                     ),
-                    target_role=targets_crud.read_role_by_rolename(
-                        self._db, delegated_role
-                    ),
+                    target_role=role,
                 )
             else:
                 db_target_file = targets_crud.update_file_path_and_info(
@@ -1684,7 +1698,7 @@ class MetadataRepository:
                 error="No 'artifacts' in the payload",
                 details=None,
             )
-        task_id = payload.get("task_id")
+        task_id: str = payload.get("task_id", "")
 
         if len(artifacts) == 0:
             return self._task_result(
@@ -1750,7 +1764,7 @@ class MetadataRepository:
             },
         )
 
-    def _run_online_roles_bump(self, force: Optional[bool] = False):
+    def _run_online_roles_bump(self, force: Optional[bool] = False) -> None:
         """
         Bumps version and expiration date of all online roles (`Targets`,
         `Succinct Delegated` targets roles, `Timestamp` and `Snapshot`).
@@ -1792,7 +1806,7 @@ class MetadataRepository:
             logging.info("Targets and delegated Targets roles version bumped")
         else:
             # Updating only those delegated roles that have expired.
-            targets: Metadata[Targets] = self._storage_load_targets()
+            targets = self._storage_load_targets()
             delegated_roles: List[str] = []
             if targets.signed.delegations.succinct_roles:
                 s_roles = targets.signed.delegations.succinct_roles.get_roles()
@@ -1841,7 +1855,7 @@ class MetadataRepository:
                     "skipping"
                 )
 
-    def bump_snapshot(self, force: Optional[bool] = False):
+    def bump_snapshot(self, force: Optional[bool] = False) -> None:
         """
         Bumps version and expiration date of TUF 'snapshot' role metadata.
 
@@ -2143,7 +2157,7 @@ class MetadataRepository:
 
     def metadata_update(
         self,
-        payload: Dict[Literal["metadata"], Dict[Literal[Root.type], Any]],
+        payload: Dict[Literal["metadata"], Dict[Literal["root"], Any]],
         update_state: Optional[
             Task.update_state
         ] = None,  # It is required (see: app.py)
@@ -2208,6 +2222,8 @@ class MetadataRepository:
             targets: optional argument to pass the current targets metadata
         """
         action = payload.get("action")
+        success: Any
+        failed: List[Dict[str, Any]]
 
         match action:
             case "add":
@@ -2242,7 +2258,6 @@ class MetadataRepository:
                 self._update_timestamp(snapshot.signed.version)
 
             case "delete":
-                delegations = payload["delegations"]
                 try:
                     status_lock_targets = False
                     with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
@@ -2261,9 +2276,7 @@ class MetadataRepository:
                         )
 
             case "update":
-                delegations: Delegations = Delegations.from_dict(
-                    payload["delegations"]
-                )
+                delegations = Delegations.from_dict(payload["delegations"])
                 success, failed = self._update_metadata_delegation(delegations)
 
             case _:
@@ -2369,19 +2382,22 @@ class MetadataRepository:
         otherwise it remains in pending state.
         """
 
-        def _result(status, error=None, bootstrap=None, update=None):
-            details = {}
-            if status:
-                result = "Signature Processed"
-            else:
-                result = "Signature Failed"
+        def _result(
+            status: bool,
+            error: Optional[str] = None,
+            bootstrap: Optional[str] = None,
+            update: Optional[str] = None,
+        ) -> Dict[str, Any]:
+            result = "Signature Processed" if status else "Signature Failed"
+            details: Optional[Dict[str, Any]] = None
             if error:
-                error = error
-                details = None
+                pass
             elif bootstrap:
-                details["bootstrap"] = bootstrap
+                details = {"bootstrap": bootstrap}
             elif update:
-                details["update"] = update
+                details = {"update": update}
+            else:
+                details = {}
 
             return self._task_result(
                 task=TaskName.SIGN_METADATA,
@@ -2495,7 +2511,7 @@ class MetadataRepository:
             Task.update_state
         ] = None,  # It is required (see: app.py)
     ) -> Dict[str, Any]:
-        role: str = payload.get("role")
+        role: Optional[str] = payload.get("role")
         if role is None:
             message = "Deletion of metadata pending signatures failed"
             return self._task_result(

@@ -117,7 +117,7 @@ def read_all_roles(db: Session) -> List[models.RSTUFTargetRoles]:
     )
 
 
-def read_all_roles_rolenames(db: Session) -> List[Optional[str]]:
+def read_all_roles_rolenames(db: Session) -> List[str]:
     """
     Read a all Target bin roles.
     """
@@ -174,7 +174,7 @@ def read_role_joint_files(
 
 def read_roles_rolenames_expired(
     db: Session, expire_timedelta: timedelta
-) -> List[Optional[str]]:
+) -> List[str]:
     """
     Read all roles that are expired.
     """
