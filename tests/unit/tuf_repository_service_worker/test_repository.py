@@ -1289,6 +1289,148 @@ class TestMetadataRepository:
             pretend.call(fake_root_md, payload["task_id"])
         ]
 
+    def test_bootstrap_rolls_back_on_finalize_failure(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_root_md = pretend.stub(
+            signatures={"keyid1": "sig1"},
+            signed=pretend.stub(
+                type="root",
+                roles={
+                    "root": pretend.stub(keyids=["keyid1"], threshold=1),
+                    "timestamp": pretend.stub(
+                        keyids=["online_key_id"], threshold=1
+                    ),
+                },
+                keys={"online_key_id": "online_public_key"},
+            ),
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_root_md
+        )
+        test_repo._validate_signature = pretend.call_recorder(lambda *a: True)
+        test_repo._validate_threshold = pretend.call_recorder(lambda *a: True)
+        test_repo.save_settings = pretend.call_recorder(lambda *a: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._storage_backend = pretend.stub(
+            delete=pretend.call_recorder(lambda *a: None)
+        )
+
+        def fake_finalize(root, task_id):
+            test_repo._persist_tracking.append("1.targets.json")
+            test_repo._persist_tracking.append("timestamp.json")
+            raise OSError("Permission Denied")
+
+        test_repo._bootstrap_finalize = fake_finalize
+
+        payload = {
+            "settings": {
+                "roles": {
+                    "root": {"expiration": 365},
+                    "targets": {"expiration": 365},
+                    "snapshot": {"expiration": 1},
+                    "timestamp": {"expiration": 1},
+                    "bins": {"expiration": 30, "number_of_delegated_bins": 4},
+                }
+            },
+            "metadata": {"root": {"md_k1": "md_v1"}},
+            "task_id": "fake_task_id",
+        }
+
+        result = test_repo.bootstrap(payload)
+
+        assert result["status"] is False
+        assert result["message"] == "Bootstrap Failed"
+        assert "Permission Denied" in result["error"]
+        assert test_repo._storage_backend.delete.calls == [
+            pretend.call("1.targets.json"),
+            pretend.call("timestamp.json"),
+        ]
+        # System must not stay locked after a failed bootstrap.
+        assert (
+            pretend.call("BOOTSTRAP", None)
+            in test_repo.write_repository_settings.calls
+        )
+        assert (
+            pretend.call("ROOT_SIGNING", None)
+            in test_repo.write_repository_settings.calls
+        )
+        assert test_repo._persist_tracking is None
+
+    def test_bootstrap_rollback_survives_delete_errors(
+        self, monkeypatch, test_repo, mocked_datetime
+    ):
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda *a: "pre-<task-id>")
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_root_md = pretend.stub(
+            signatures={"keyid1": "sig1"},
+            signed=pretend.stub(
+                type="root",
+                roles={
+                    "root": pretend.stub(keyids=["keyid1"], threshold=1),
+                    "timestamp": pretend.stub(
+                        keyids=["online_key_id"], threshold=1
+                    ),
+                },
+                keys={"online_key_id": "online_public_key"},
+            ),
+        )
+        repository.Metadata.from_dict = pretend.call_recorder(
+            lambda *a: fake_root_md
+        )
+        test_repo._validate_signature = pretend.call_recorder(lambda *a: True)
+        test_repo._validate_threshold = pretend.call_recorder(lambda *a: True)
+        test_repo.save_settings = pretend.call_recorder(lambda *a: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        # First delete raises; rollback must keep going so we still try the
+        # second file and don't strand the system in a locked state.
+        delete_calls = []
+
+        def flaky_delete(name):
+            delete_calls.append(name)
+            if name == "1.targets.json":
+                raise OSError("storage went away")
+
+        test_repo._storage_backend = pretend.stub(delete=flaky_delete)
+
+        def fake_finalize(root, task_id):
+            test_repo._persist_tracking.append("1.targets.json")
+            test_repo._persist_tracking.append("timestamp.json")
+            raise RuntimeError("boom")
+
+        test_repo._bootstrap_finalize = fake_finalize
+
+        payload = {
+            "settings": {"roles": {}},
+            "metadata": {"root": {"md_k1": "md_v1"}},
+            "task_id": "fake_task_id",
+        }
+
+        result = test_repo.bootstrap(payload)
+
+        assert delete_calls == ["1.targets.json", "timestamp.json"]
+        assert result["status"] is False
+        assert "boom" in result["error"]
+
     def test_bootstrap_no_signatures(
         self, monkeypatch, test_repo, mocked_datetime
     ):

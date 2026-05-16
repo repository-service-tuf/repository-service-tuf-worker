@@ -65,6 +65,11 @@ class IStorage(ABC):
         """
         raise NotImplementedError  # pragma: no cover
 
+    @abstractmethod
+    def delete(self, filename: str) -> None:
+        """Delete a file by filename. Missing files are not an error."""
+        raise NotImplementedError  # pragma: no cover
+
 
 def _setup_service_dynaconf(cls: Any, backend: Any, settings: Dynaconf):
     """

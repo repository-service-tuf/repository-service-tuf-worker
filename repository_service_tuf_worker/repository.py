@@ -140,6 +140,7 @@ class MetadataRepository:
         self._expire_timedelta = timedelta(hours=self._hours_before_expire)
         self._timeout = int(app_settings.get("LOCK_TIMEOUT", 500.0))
         self._uses_succinct_roles: Optional[bool] = None
+        self._persist_tracking: Optional[List[str]] = None
 
     @property
     def _settings(self) -> Dynaconf:
@@ -329,6 +330,8 @@ class MetadataRepository:
 
         bytes_data = role.to_bytes(JSONSerializer())
         self._storage_backend.put(bytes_data, filename)
+        if self._persist_tracking is not None:
+            self._persist_tracking.append(filename)
         return filename
 
     def _is_expired(self, role: str) -> Optional[str]:
@@ -1427,7 +1430,29 @@ class MetadataRepository:
 
         signed = self._validate_threshold(root)
         if signed:
-            self._bootstrap_finalize(root, task_id)
+            self._persist_tracking = []
+            try:
+                self._bootstrap_finalize(root, task_id)
+            except Exception as e:
+                logging.error(f"Bootstrap finalize failed ({e}); rolling back")
+                for partial in self._persist_tracking:
+                    try:
+                        self._storage_backend.delete(partial)
+                    except Exception as cleanup_err:
+                        logging.error(
+                            f"Could not delete '{partial}' during "
+                            f"rollback: {cleanup_err}"
+                        )
+                self.write_repository_settings("BOOTSTRAP", None)
+                self.write_repository_settings("ROOT_SIGNING", None)
+                return self._task_result(
+                    task=TaskName.BOOTSTRAP,
+                    message="Bootstrap Failed",
+                    error=f"Bootstrap finalize failed: {e}",
+                    details=None,
+                )
+            finally:
+                self._persist_tracking = None
             message = f"Bootstrap finished {task_id}"
             logging.info(message)
         else:
@@ -2418,7 +2443,24 @@ class MetadataRepository:
                 return _result(True, bootstrap=msg)
 
             bootstrap_task_id = bootstrap_state.split("signing-")[1]
-            self._bootstrap_finalize(metadata, bootstrap_task_id)
+            self._persist_tracking = []
+            try:
+                self._bootstrap_finalize(metadata, bootstrap_task_id)
+            except Exception as e:
+                logging.error(f"Bootstrap finalize failed ({e}); rolling back")
+                for partial in self._persist_tracking:
+                    try:
+                        self._storage_backend.delete(partial)
+                    except Exception as cleanup_err:
+                        logging.error(
+                            f"Could not delete '{partial}' during "
+                            f"rollback: {cleanup_err}"
+                        )
+                self.write_repository_settings("BOOTSTRAP", None)
+                self.write_repository_settings("ROOT_SIGNING", None)
+                return _result(False, error=f"Bootstrap finalize failed: {e}")
+            finally:
+                self._persist_tracking = None
             return _result(True, bootstrap="Bootstrap Finished")
 
         elif metadata.signed.type == Root.type:

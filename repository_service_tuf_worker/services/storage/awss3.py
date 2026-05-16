@@ -172,3 +172,10 @@ class AWSS3(IStorage):
             )
         except ClientError:
             raise StorageError(f"Can't write role file '{filename}'")
+
+    def delete(self, filename: str) -> None:
+        """Remove an object from the TUF S3 bucket."""
+        try:
+            self._s3_client.delete_object(Bucket=self._bucket, Key=filename)
+        except ClientError:
+            raise StorageError(f"Can't delete role file '{filename}'")

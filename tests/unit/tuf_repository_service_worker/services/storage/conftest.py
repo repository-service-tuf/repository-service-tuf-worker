@@ -9,7 +9,8 @@ def mocked_boto3(monkeypatch):
         buckets=pretend.stub(all=pretend.call_recorder(lambda: [fake_bucket]))
     )
     fake_client = pretend.stub(
-        put_object=pretend.call_recorder(lambda **kw: None)
+        put_object=pretend.call_recorder(lambda **kw: None),
+        delete_object=pretend.call_recorder(lambda **kw: None),
     )
     fake_Session = pretend.stub(
         client=pretend.call_recorder(lambda *a, **kw: fake_client),
