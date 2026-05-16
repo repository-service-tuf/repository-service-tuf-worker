@@ -14,11 +14,13 @@ from math import log
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlparse
 
+import contextlib
 import redis
 from celery.app.task import Task
 from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
+from repository_service_tuf_worker import loaders as db_loader
 from securesystemslib.exceptions import StorageError, UnverifiedSignatureError
 from securesystemslib.signer import (
     KEY_FOR_TYPE_AND_SCHEME,
@@ -131,9 +133,12 @@ class MetadataRepository:
         self._storage_backend: IStorage = app_settings.STORAGE
         self._signer_store = SignerStore(app_settings)
         self._db = app_settings.SQL
-        self._redis = redis.StrictRedis.from_url(
-            self._worker_settings.REDIS_SERVER
-        )
+        if self._worker_settings.get("REDIS_SERVER"):
+            self._redis = redis.StrictRedis.from_url(
+                self._worker_settings.REDIS_SERVER
+            )
+        else:
+            self._redis = None
         self._hours_before_expire: int = self._settings.get_fresh(
             "HOURS_BEFORE_EXPIRE", 1
         )
@@ -296,7 +301,47 @@ class MetadataRepository:
         logging.info(f"Saving {key} with value: {value}")
         settings_data = self._settings.as_dict(env=self._settings.current_env)
         settings_data[key] = value
-        redis_loader.write(self._settings, settings_data)
+        if self._worker_settings.get("REDIS_SERVER"):
+            redis_loader.write(self._settings, settings_data)
+        else:
+            db_loader.write(self._settings, settings_data)
+
+    @contextlib.contextmanager
+    def lock(self, name: str, timeout: int):
+        """
+        Distributed lock context manager.
+        """
+        if self._redis:
+            with self._redis.lock(name, timeout=timeout):
+                yield
+        else:
+            if db_loader.acquire_lock(self._settings, name, timeout):
+                try:
+                    yield
+                finally:
+                    db_loader.release_lock(self._settings, name)
+            else:
+                raise redis.exceptions.LockError(
+                    f"RSTUF: Could not acquire lock {name}"
+                )
+
+    def acquire_lock(self, name: str, expire: int) -> bool:
+        """
+        Acquires a distributed lock.
+        """
+        if self._redis:
+            return self._redis.set(name, "locked", ex=expire, nx=True)
+        else:
+            return db_loader.acquire_lock(self._settings, name, expire)
+
+    def release_lock(self, name: str):
+        """
+        Releases a distributed lock.
+        """
+        if self._redis:
+            self._redis.delete(name)
+        else:
+            db_loader.release_lock(self._settings, name)
 
     def _sign(self, role: Metadata, signer: Optional[Signer] = None) -> None:
         """
@@ -1522,7 +1567,7 @@ class MetadataRepository:
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
         # documentation.
         try:
-            with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+            with self.lock(LOCK_TARGETS, timeout=self._timeout):
                 # get all delegated role names with unpublished targets
                 if payload is None or payload.get("delegated_targets") is None:
                     db_roles = targets_crud.read_roles_with_unpublished_files(
@@ -1900,7 +1945,7 @@ class MetadataRepository:
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
         # documentation.
         try:
-            with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+            with self.lock(LOCK_TARGETS, timeout=self._timeout):
                 self._run_online_roles_bump(force=force)
 
             status_lock_targets = True
@@ -1986,7 +2031,7 @@ class MetadataRepository:
         # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker guide
         # documentation.
         try:
-            with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+            with self.lock(LOCK_TARGETS, timeout=self._timeout):
                 roles_updated = self._run_force_online_metadata_update(
                     payload["roles"]
                 )
@@ -2111,7 +2156,7 @@ class MetadataRepository:
             # metadata.
             status_lock_targets = False
             try:
-                with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+                with self.lock(LOCK_TARGETS, timeout=self._timeout):
                     curr_online_key = self._online_key
                     self._online_key = new_root.signed.keys[new_keyid]
 
@@ -2245,7 +2290,7 @@ class MetadataRepository:
                 delegations = payload["delegations"]
                 try:
                     status_lock_targets = False
-                    with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
+                    with self.lock(LOCK_TARGETS, timeout=self._timeout):
                         success, failed = self._delete_metadata_delegation(
                             payload["delegations"]
                         )
