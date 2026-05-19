@@ -26,7 +26,9 @@ from securesystemslib.signer import (
     Signature,
     Signer,
     SigstoreKey,
+    SSlibKey
 )
+
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
@@ -62,9 +64,11 @@ from repository_service_tuf_worker.models import (
 )
 from repository_service_tuf_worker.signer import SignerStore
 
+KEY_FOR_TYPE_AND_SCHEME.clear()
 KEY_FOR_TYPE_AND_SCHEME.update(
     {
         ("sigstore-oidc", "Fulcio"): SigstoreKey,
+        ("ed25519", "ed25519"): SSlibKey,  
     }
 )
 
@@ -1346,7 +1350,8 @@ class MetadataRepository:
         # All roles except root share the same one key and it doesn't matter
         # from which role we will get the key.
         keyid: str = root.signed.roles["timestamp"].keyids[0]
-        self._online_key = root.signed.keys[keyid]
+        key_obj = root.signed.keys[keyid]
+        self._online_key = Key.from_dict(keyid, key_obj.to_dict())
         self._bootstrap_online_roles(delegations=delegations)
         self.write_repository_settings("ROOT_SIGNING", None)
         self._persist(root, Root.type)
