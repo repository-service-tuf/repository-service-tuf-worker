@@ -1366,7 +1366,6 @@ class MetadataRepository:
         rolename: str,
         from_storage: bool,
     ):
-
         delegation_keyids = self.get_delegation_keyids(rolename)
 
         if (
@@ -1755,7 +1754,7 @@ class MetadataRepository:
                         task=TaskName.PUBLISH_ARTIFACTS,
                         message="Publish Artifacts Processed",
                         error=None,
-                        details={"target_roles": None},
+                        details={"artifact_roles": None},
                     )
 
                 self._update_timestamp(
@@ -1785,7 +1784,7 @@ class MetadataRepository:
             message="Publish Artifacts Processed",
             error=None,
             details={
-                "target_roles": delegated_targets,
+                "artifact_roles": delegated_targets,
             },
         )
 
@@ -1874,7 +1873,7 @@ class MetadataRepository:
             details={
                 "added_artifacts": added_artifacts,
                 "invalid_paths": invalid_paths,
-                "target_roles": updated_roles,
+                "artifact_roles": updated_roles,
             },
         )
 
