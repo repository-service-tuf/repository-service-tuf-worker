@@ -130,6 +130,16 @@ RSTUF Worker can have large number of delegations (ex: hash bins).
 RSTUF Worker calculates automatically the chunk. Depending on the
 number of Workers and Roles it can be customized.
 
+#### (Optional) `TASK_TIME_LIMIT`
+Task time limit in seconds. Default: 3600
+This is the time limit for the task to be executed. If the Task
+exceeds this time limit, it will be terminated.
+This is useful to avoid long running tasks.
+
+#### (Optional) `TASK_SOFT_TIME_LIMIT`
+Task soft time limit in seconds. Default: 300
+The SoftTimeLimitExceeded exception will be raised when this is exceeded.
+
 #### (Optional) `RSTUF_REDIS_SERVER_DB_REPO_SETTINGS`
 
 Redis Server DB number for repository settings. Default: 1

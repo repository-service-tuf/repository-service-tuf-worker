@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import redis
 from celery import Celery, chain, schedules, signals
-
+from celery.exceptions import SoftTimeLimitExceeded
 from repository_service_tuf_worker import get_worker_settings
 from repository_service_tuf_worker.repository import (
     MetadataRepository,
@@ -32,7 +32,10 @@ worker_settings = get_worker_settings()
 
 BOR_LOCK = "BOR"
 BOR_TTL = worker_settings.get("BUMP_ONLINE_ROLES_TTL", 600)  # Lock expiration
-
+TASK_TIME_LIMIT = worker_settings.get("TASK_TIME_LIMIT", 3600)
+TASK_SOFT_TIME_LIMIT = worker_settings.get(
+    "TASK_SOFT_TIME_LIMIT", 300
+)  # Soft time limit for tasks
 
 class status(Enum):
     RECEIVED = "RECEIVED"
@@ -77,7 +80,7 @@ app = Celery(
 )
 
 
-@app.task(serializer="json", bind=True)
+@app.task(serializer="json", bind=True , task_time_limit=TASK_TIME_LIMIT , task_soft_time_limit=TASK_SOFT_TIME_LIMIT)
 def repository_service_tuf_worker(
     self,
     action: str,
@@ -90,16 +93,21 @@ def repository_service_tuf_worker(
         action: which action to be executed by the task.
         payload: data that will be given to the action.
     """
-    repository_action = getattr(repository, action)
-    if payload is None:
-        result = repository_action()
-    else:
+    try:    
+        repository_action = getattr(repository, action)
+        if payload is None:
+            result = repository_action()
+        else:
         # add task id to payload
-        payload["task_id"] = self.request.id
+            payload["task_id"] = self.request.id
 
-        result = repository_action(payload, update_state=self.update_state)
+            result = repository_action(payload, update_state=self.update_state)
 
-    return result
+        return result
+    except SoftTimeLimitExceeded:
+        logging.warning(f"Task {self.request.id} reached soft time limit. Cleaning up.")
+        self.update_state(state='TIMED_OUT')
+        return {"status": "error" , "message": "Task time limit exceeded."}
 
 
 @app.task(serializer="json", queue="rstuf_internals")
@@ -125,56 +133,68 @@ def _end_bor_chain_callback(result, start_time: float):
     return {"result": result, "execution_time_seconds": total_time}
 
 
-@app.task(serializer="json", queue="rstuf_internals")
+@app.task(serializer="json", queue="rstuf_internals", task_time_limit=TASK_TIME_LIMIT , task_soft_time_limit=TASK_SOFT_TIME_LIMIT)
 def _update_online_role(role: str) -> Optional[str]:
     """
     Update online role (DB and JSON)
     """
-    return repository.update_targets_delegated_role(role)
+    try:
+        return repository.update_targets_delegated_role(role)
+    except SoftTimeLimitExceeded:
+        logging.warning(
+            f"Task {role} reached soft time limit. Cleaning up."
+        )
+        return None
 
-
-@app.task(serializer="json", queue="rstuf_internals")
+@app.task(serializer="json", queue="rstuf_internals", task_time_limit=TASK_TIME_LIMIT , task_soft_time_limit=TASK_SOFT_TIME_LIMIT)
 def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
     """
     Update the snapshot timestamp with the updated roles data.
     """
-    updated_roles = list(itertools.chain.from_iterable(args[0]))
-    snapshot_meta = {}
-    database_meta = {}
-    start_time = time.time()
-    for role in updated_roles:
-        if role:
-            # Generate snapshot meta
-            snapshot_meta.update(
-                {f"{k}.json": MetaFile(v["version"]) for k, v in role.items()}
-            )
-            # Generate database meta
-            database_meta.update(
-                {
-                    k: (v["expire"], v["version"])
-                    for k, v in role.items()
-                    if k != "targets"
-                }
-            )
-    logging.info(
-        "Time parsing _update_snapshot_timestamp: "
-        f"{time.time() - start_time} seconds"
-    )
+    try:
+        updated_roles = list(itertools.chain.from_iterable(args[0]))
+        snapshot_meta = {}
+        database_meta = {}
+        start_time = time.time()
+        for role in updated_roles:
+            if role:
+                # Generate snapshot meta
+                snapshot_meta.update(
+                    {f"{k}.json": MetaFile(v["version"]) for k, v in role.items()}
+                )
+                # Generate database meta
+                database_meta.update(
+                    {
+                        k: (v["expire"], v["version"])
+                        for k, v in role.items()
+                        if k != "targets"
+                    }
+                )
+        logging.info(
+            "Time parsing _update_snapshot_timestamp: "
+            f"{time.time() - start_time} seconds"
+        )
 
-    repository._update_timestamp(
-        repository.update_snapshot(snapshot_meta, database_meta).signed.version
-    )
-    logging.info(
-        "Time updating _update_snapshot_timestamp: "
-        f"{time.time() - start_time} seconds"
-    )
+        repository._update_timestamp(
+            repository.update_snapshot(snapshot_meta, database_meta).signed.version
+        )
+        logging.info(
+            "Time updating _update_snapshot_timestamp: "
+            f"{time.time() - start_time} seconds"
+        )
 
-    logging.info(
-        f"Updated snapshot/timestamp with {len(updated_roles)} role(s)"
-    )
+        logging.info(
+            f"Updated snapshot/timestamp with {len(updated_roles)} role(s)"
+        )
+    except SoftTimeLimitExceeded:
+        logging.warning(
+            f"Task _update_snapshot_timestamp reached soft time limit. "
+            "Cleaning up."
+        )
+        return {"status": "error", "message": "Task time limit exceeded."}
 
 
-@app.task(serializer="json", queue="rstuf_internals")
+@app.task(serializer="json", queue="rstuf_internals" , task_time_limit=TASK_TIME_LIMIT , task_soft_time_limit=TASK_SOFT_TIME_LIMIT)
 def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
     """
     Bump all online roles.
@@ -190,55 +210,55 @@ def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
             chunk_size = chunk_size_cfg
 
         return chunk_size
-
-    start_time = time.time()
-
-    # Try to acquire lock
-    if not repository._redis.set(BOR_LOCK, "locked", ex=BOR_TTL, nx=True):
-        logging.info(
-            "Skipping bump_online_roles, another task is already running."
-        )
-        _end_bor_chain_callback(None, start_time)
-        return []
-
-    if repository.bootstrap_state != "finished":
-        logging.info("Skipping bump_online_roles, bootstrap not finished.")
-        # call end within the bump_online_role task
-        _end_bor_chain_callback(None, start_time)
-        return []
-
-    status_lock_targets = False
-    # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker
-    # development guide documentation.
     try:
-        with repository._redis.lock("LOCK_TARGETS", repository._timeout):
-            roles = repository.get_delegated_rolenames(expired=expired)
-            logging.info(f"Total roles to bump: {len(roles)}")
+        start_time = time.time()
 
-            # No expired roles, call end within the bump_online_role task
-            if len(roles) == 0:
-                _end_bor_chain_callback(None, start_time)
-                return roles
+        # Try to acquire lock
+        if not repository._redis.set(BOR_LOCK, "locked", ex=BOR_TTL, nx=True):
+            logging.info(
+                "Skipping bump_online_roles, another task is already running."
+            )
+            _end_bor_chain_callback(None, start_time)
+            return []
 
-            chunk_size = _calculate_chunk_size(len(roles))
+        if repository.bootstrap_state != "finished":
+            logging.info("Skipping bump_online_roles, bootstrap not finished.")
+            # call end within the bump_online_role task
+            _end_bor_chain_callback(None, start_time)
+            return []
 
-            # It is a corner cases
-            # We have only one role to be update and chunk_size is 0
-            # _calculate_chunk_size() will return (1 / 2) = 0
-            # Celery chunks cannot have group equal 1, so we execute
-            # without groups, directly.
-            # it also applies when there is one role independet of the chunk
-            # size
-            if chunk_size == 0 and len(roles) == 1:
-                # call the update and end of chain within bump_online_role task
-                _update_snapshot_timestamp(
-                    [[repository.update_targets_delegated_role(roles[0])]]
-                )
-                _end_bor_chain_callback(None, start_time)
+        status_lock_targets = False
+        # Lock to avoid race conditions. See `LOCK_TIMEOUT` in the Worker
+        # development guide documentation.
+        try:
+            with repository._redis.lock("LOCK_TARGETS", repository._timeout):
+                roles = repository.get_delegated_rolenames(expired=expired)
+                logging.info(f"Total roles to bump: {len(roles)}")
 
-                return roles
+                # No expired roles, call end within the bump_online_role task
+                if len(roles) == 0:
+                    _end_bor_chain_callback(None, start_time)
+                    return roles
 
-            else:
+                chunk_size = _calculate_chunk_size(len(roles))
+
+                # It is a corner cases
+                # We have only one role to be update and chunk_size is 0
+                # _calculate_chunk_size() will return (1 / 2) = 0
+                # Celery chunks cannot have group equal 1, so we execute
+                # without groups, directly.
+                # it also applies when there is one role independet of the chunk
+                # size
+                if chunk_size == 0 and len(roles) == 1:
+                    # call the update and end of chain within bump_online_role task
+                    _update_snapshot_timestamp(
+                        [[repository.update_targets_delegated_role(roles[0])]]
+                    )
+                    _end_bor_chain_callback(None, start_time)
+
+                    return roles
+
+                else:
                 # Run updates in chain using chunks which improves the
                 # performance.
                 # As a Worker can pick multiple tasks in parallel, more
@@ -246,34 +266,40 @@ def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
 
                 # task groups from the chunk size
                 # ex: 2048 creates 5 task groups of _update_online_role task
-                task_groups = _update_online_role.chunks(
-                    zip(roles), chunk_size
-                ).group()
-                logging.info(
-                    f"Tasks: {len(task_groups)} | Chunk size: {chunk_size}"
+                    task_groups = _update_online_role.chunks(
+                        zip(roles), chunk_size
+                    ).group()
+                    logging.info(
+                        f"Tasks: {len(task_groups)} | Chunk size: {chunk_size}"
+                    )
+                    # create the chain with task groups and call a task
+                    # _update_snapshot_timestamp with the result of
+                    # _update_online_role task
+                    # when finished, call _end_bor_chain_callback task
+                    chain(
+                        task_groups,
+                        _update_snapshot_timestamp.s(task_groups),
+                        _end_bor_chain_callback.s(start_time),
+                    )(queue="rstuf_internals")
+
+                    return roles
+        except redis.exceptions.LockNotOwnedError:
+            if status_lock_targets is False:
+                logging.error(
+                    "The task to bump all online roles exceeded the timeout "
+                    f"of {repository._timeout} seconds."
                 )
-                # create the chain with task groups and call a task
-                # _update_snapshot_timestamp with the result of
-                # _update_online_role task
-                # when finished, call _end_bor_chain_callback task
-                chain(
-                    task_groups,
-                    _update_snapshot_timestamp.s(task_groups),
-                    _end_bor_chain_callback.s(start_time),
-                )(queue="rstuf_internals")
+                raise redis.exceptions.LockError(
+                    f"RSTUF: Task exceed `LOCK_TIMEOUT` ({repository._timeout} "
+                    "seconds)"
+                )
 
-                return roles
-    except redis.exceptions.LockNotOwnedError:
-        if status_lock_targets is False:
-            logging.error(
-                "The task to bump all online roles exceeded the timeout "
-                f"of {repository._timeout} seconds."
-            )
-            raise redis.exceptions.LockError(
-                f"RSTUF: Task exceed `LOCK_TIMEOUT` ({repository._timeout} "
-                "seconds)"
-            )
-
+    except SoftTimeLimitExceeded:
+        logging.warning("bump_online_roles reached soft time limit. Cleaning up.")
+        # Release the BOR lock if we were holding it
+        repository._redis.delete(BOR_LOCK)
+        logging.info("Bump online roles lock removed due to timeout")
+        return []
 
 def _publish_signals(
     status: status, task_id: str, result: Optional[str] = None
