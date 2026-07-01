@@ -5,11 +5,13 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from dynaconf import Dynaconf
 from securesystemslib.signer import (
     SIGNER_FOR_URI_SCHEME,
+    AWSSigner,
     CryptoSigner,
     Key,
     SecretsHandler,
@@ -72,8 +74,67 @@ class FileNameSigner(CryptoSigner):
 RSTUF_ONLINE_KEY_URI_FIELD = "x-rstuf-online-key-uri"
 
 
+def normalize_aws_kms_priv_key_uri(uri: str) -> str:
+    """Map ``aws-kms`` URIs to the ``awskms:`` form used by ``AWSSigner``.
+
+    securesystemslib registers ``AWSSigner`` under scheme ``awskms``. Some
+    deployments and docs use ``aws-kms`` or ``aws-kms://`` instead; this keeps
+    ``x-rstuf-online-key-uri`` interoperable without forking the KMS signer.
+
+    Accepts:
+
+    - ``aws-kms:alias/name`` → ``awskms:alias/name``
+    - ``aws-kms:arn:aws:kms:region:account:key/id`` → same with ``awskms:`` prefix
+    - ``aws-kms:///alias/name`` (path-style) → ``awskms:alias/name``
+    - ``aws-kms://arn:aws:kms:...`` where the ARN is split across netloc/path by
+      :func:`urllib.parse.urlparse` → reconstructed ARN
+
+    Any other scheme is returned unchanged.
+
+    Raises:
+        ValueError: If the scheme is ``aws-kms`` but no key id can be derived.
+    """
+    parsed = urlparse(uri)
+    if parsed.scheme != "aws-kms":
+        return uri
+
+    if parsed.netloc.startswith("arn:"):
+        key_id = f"{parsed.netloc}{parsed.path}"
+    elif parsed.netloc:
+        # e.g. aws-kms://alias/my-key → netloc=alias, path=/my-key
+        key_id = f"{parsed.netloc}{parsed.path}"
+    elif parsed.path:
+        key_id = parsed.path.lstrip("/")
+    else:
+        raise ValueError(f"empty AWS KMS key id in uri: {uri!r}")
+
+    if not key_id:
+        raise ValueError(f"empty AWS KMS key id in uri: {uri!r}")
+
+    return f"{AWSSigner.SCHEME}:{key_id}"
+
+
+class AwsKmsUriSigner(AWSSigner):
+    """Accept ``aws-kms:`` / ``aws-kms://`` URIs; delegate to ``AWSSigner``."""
+
+    SCHEME = "aws-kms"
+
+    @classmethod
+    def from_priv_key_uri(
+        cls,
+        priv_key_uri: str,
+        public_key: Key,
+        secrets_handler: Optional[SecretsHandler] = None,
+    ) -> AWSSigner:
+        normalized = normalize_aws_kms_priv_key_uri(priv_key_uri)
+        return AWSSigner.from_priv_key_uri(
+            normalized, public_key, secrets_handler
+        )
+
+
 # Register custom FileNameSigner
 SIGNER_FOR_URI_SCHEME[FileNameSigner.SCHEME] = FileNameSigner
+SIGNER_FOR_URI_SCHEME[AwsKmsUriSigner.SCHEME] = AwsKmsUriSigner
 
 
 @contextmanager
@@ -94,6 +155,7 @@ _AMBIENT_SETTING_NAMES = [
     "ONLINE_KEY_DIR",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
     "AWS_ENDPOINT_URL",
     "AWS_DEFAULT_REGION",
     "GOOGLE_APPLICATION_CREDENTIALS",
@@ -120,7 +182,7 @@ class SignerStore:
         """Return signer for passed key.
 
         - signer is loaded from the uri included in the passed public key
-          (see SIGNER_FOR_URI_SCHEME for available uri schemes)
+          (see SIGNER_FOR_URI_SCHEME: ``fn``, ``awskms``, ``aws-kms``, etc.)
         - additional signer settings can be provided "ambiently" (see __init__)
         """
 
