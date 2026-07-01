@@ -82,9 +82,7 @@ class TestAWSS3Service:
                 endpoint_url=service._endpoint_url,
             )
         ]
-        assert awss3.boto3.Session().resource().buckets.all.calls == [
-            pretend.call()
-        ]
+        assert awss3.boto3.Session().resource().buckets.all.calls == [pretend.call()]  # noqa: E501
         # By using awss3.boto3 functions we can access the internal objects
         # mocked in mocked_boto3.
         assert service._bucket == "bucket"
@@ -168,6 +166,7 @@ class TestAWSS3Service:
         ]
 
     def test_get(self, mocked_boto3):
+        awss3.AWSS3._version_cache.clear()
         service = awss3.AWSS3(
             "bucket",
             "session",
@@ -187,8 +186,10 @@ class TestAWSS3Service:
         fake_aws3_object = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_file_obj)
         )
+        get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
-            get_object=pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
+            get_object=get_obj,
+            head_object=pretend.raiser(awss3.ClientError({}, "head_object")),
         )
 
         expected_root = Metadata(Root())
@@ -213,6 +214,7 @@ class TestAWSS3Service:
         ]
 
     def test_get_endpoint_url_not_none(self, mocked_boto3):
+        awss3.AWSS3._version_cache.clear()
         service = awss3.AWSS3(
             bucket="bucket",
             s3_session="session",
@@ -234,8 +236,10 @@ class TestAWSS3Service:
         fake_aws3_object = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_file_obj)
         )
+        get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
-            get_object=pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
+            get_object=get_obj,
+            head_object=pretend.raiser(awss3.ClientError({}, "head_object")),
         )
 
         expected_root = Metadata(Root())
@@ -303,6 +307,7 @@ class TestAWSS3Service:
         ]
 
     def test_get_max_version_ValueError(self, mocked_boto3, monkeypatch):
+        awss3.AWSS3._version_cache.clear()
         service = awss3.AWSS3(
             bucket="bucket",
             s3_session="session",
@@ -324,12 +329,12 @@ class TestAWSS3Service:
         fake_aws3_object = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_file_obj)
         )
+        get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
-            get_object=pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
+            get_object=get_obj,
+            head_object=pretend.raiser(awss3.ClientError({}, "head_object")),
         )
-        monkeypatch.setitem(
-            awss3.__builtins__, "max", pretend.raiser(ValueError)
-        )
+        monkeypatch.setitem(awss3.__builtins__, "max", pretend.raiser(ValueError))  # noqa: E501
         expected_root = Metadata(Root())
         awss3.Metadata = pretend.stub(
             from_bytes=pretend.call_recorder(lambda *a: expected_root)
@@ -351,6 +356,7 @@ class TestAWSS3Service:
         ]
 
     def test_get_DeserializationError(self, mocked_boto3):
+        awss3.AWSS3._version_cache.clear()
         service = awss3.AWSS3(
             bucket="bucket",
             s3_session="session",
@@ -372,8 +378,10 @@ class TestAWSS3Service:
         fake_aws3_object = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_file_obj)
         )
+        get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
-            get_object=pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
+            get_object=get_obj,
+            head_object=pretend.raiser(awss3.ClientError({}, "head_object")),
         )
         awss3.Metadata = pretend.stub(
             from_bytes=pretend.raiser(awss3.DeserializationError("failed"))
