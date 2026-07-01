@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-import logging
-import time
 from io import BytesIO
 from typing import Any, Dict, List, Optional
 
@@ -24,33 +22,11 @@ from repository_service_tuf_worker.interfaces import (
 
 
 class AWSS3(IStorage):
-    # In-process version cache: role_name -> latest known version number.
-    #
-    # AWSS3.get() needs to resolve the latest version of a role before it can
-    # fetch it from S3.  The original implementation called
-    # awswrangler.s3.list_objects(path="s3://bucket/*.{role}.json") on every
-    # call, which cannot use an S3 key-prefix scan and instead lists all
-    # objects in the bucket client-side.  At ~5 000+ objects that took 2.5–4 s
-    # per call; with 9+ calls per task it dominated task latency (~27 s of
-    # ~33 s total).
-    #
-    # The fix has two parts:
-    #
-    # 1. Pre-warmup (_prewarm_version_cache): called once per worker process
-    #    from configure() at startup.  Lists the entire bucket a single time,
-    #    parses every "N.rolename.json" filename, and stores the max version
-    #    seen for each role.  This runs before the first task arrives so there
-    #    is no cold-start penalty.
-    #
-    # 2. Cache maintenance: get() reads from the cache (skipping list_objects
-    #    entirely after warmup); put() updates the cache after every write so
-    #    the next get() fetches the correct version key directly.
-    #
-    # The cache is per-worker-process.  Celery ForkPoolWorkers each get their
-    # own copy after fork, independently pre-warmed.  A worker restart triggers
-    # a fresh prewarm (~4 s) before accepting tasks.
+    # Per-process version cache. Keys are role names, values are the
+    # highest version this process has seen. Acts as a lower bound: the
+    # real latest is always >= the cached value because a process only
+    # learns versions it wrote or explicitly probed.
     _version_cache: Dict[str, int] = {}
-    _cache_warmed: bool = False
 
     def __init__(
         self,
@@ -103,7 +79,7 @@ class AWSS3(IStorage):
             endpoint_url=endpoint,
         )
 
-        instance = cls(
+        return cls(
             bucket_name,
             s3_session,
             s3_client,
@@ -112,8 +88,6 @@ class AWSS3(IStorage):
             region,
             endpoint,
         )
-        cls._prewarm_version_cache(bucket_name, s3_session)
-        return instance
 
     @classmethod
     def settings(cls) -> List[ServiceSettings]:
@@ -144,50 +118,59 @@ class AWSS3(IStorage):
             ),
         ]
 
-    @classmethod
-    def _prewarm_version_cache(
-        cls, bucket: str, s3_session: boto3.Session
-    ) -> None:
-        """
-        Populate _version_cache with a single list_objects call at worker
-        startup.  Scans all objects in the bucket once, parses every
-        "N.rolename.json" filename, and records the highest version seen for
-        each role.  Subsequent get() calls skip list_objects entirely.
+    def _scan_latest_version(self, role: str) -> int:
+        """Full bucket scan to find the highest version for a role.
 
-        Guarded by _cache_warmed so it runs at most once per worker process
-        even if configure() is called multiple times.
+        This is the original list_objects path and is expensive at scale
+        (scans every object in the bucket client-side). It is used only
+        when the version cache has no entry for the role.
         """
-        if cls._cache_warmed:
-            return
-        t0 = time.perf_counter()
-        try:
-            all_keys = awswrangler.s3.list_objects(
-                path=f"s3://{bucket}/",
-                boto3_session=s3_session,
-            )
-        except Exception as e:
-            logging.warning("S3 version cache prewarm failed, skipping: %s", e)
-            return
-        prefix = f"s3://{bucket}/"
-        for s3_uri in all_keys:
-            filename = s3_uri[len(prefix):]
-            parts = filename.split(".", 1)
-            if (
-                len(parts) == 2
-                and parts[0].isdigit()
-                and filename.endswith(".json")
-            ):
-                role_name = parts[1][:-5]  # strip ".json"
-                version = int(parts[0])
-                if version > cls._version_cache.get(role_name, 0):
-                    cls._version_cache[role_name] = version
-        cls._cache_warmed = True
-        logging.info(
-            "S3 version cache warmed: %d roles, %d objects scanned (%.2fs)",
-            len(cls._version_cache),
-            len(all_keys),
-            time.perf_counter() - t0,
+        s3_path = f"s3://{self._bucket}/"
+        filenames = awswrangler.s3.list_objects(
+            path=f"{s3_path}*.{role}.json",
+            boto3_session=self._s3_session,
         )
+        versions = [
+            int(name.split(s3_path)[-1].split(".", 1)[0]) for name in filenames
+        ]
+        try:
+            return max(versions)
+        except ValueError:
+            return 1  # no existing file -> start at 1
+
+    def _latest_version(self, role: str) -> int:
+        """Return the latest version number for a role, self-healing across
+        processes.
+
+        The cached value is a lower bound: a process only ever learns versions
+        it wrote or listed, so its cache is always <= the real latest.
+
+        After obtaining the hint (from cache or a full scan), we probe upward
+        one step at a time using cheap head_object calls. TUF versions are
+        strictly contiguous (n -> n+1), so the loop terminates after at most
+        one probe in the steady state (when this process is the sole writer)
+        or a few probes when another process has advanced the version.
+        """
+        version = AWSS3._version_cache.get(role)
+        if version is None:
+            # Cache miss: fall back to the full bucket scan once.
+            version = self._scan_latest_version(role)
+
+        # Self-heal across processes: probe upward until the next key is
+        # absent. Because TUF versions are contiguous this converges quickly
+        # even when another Celery worker has already written ahead.
+        client = self._s3_client
+        while True:
+            try:
+                client.head_object(
+                    Bucket=self._bucket, Key=f"{version + 1}.{role}.json"
+                )
+                version += 1
+            except ClientError:
+                break
+
+        AWSS3._version_cache[role] = version
+        return version
 
     def get(self, role: str, version: Optional[int] = None) -> Metadata[T]:
         """
@@ -201,26 +184,7 @@ class AWSS3(IStorage):
             filename = f"{role}.json"
         else:
             if version is None:
-                cached_version = AWSS3._version_cache.get(role)
-                if cached_version is not None:
-                    version = cached_version
-                else:
-                    # Cache miss (role not yet seen by this worker process).
-                    # Scan the bucket once for this role and cache the result.
-                    s3_path = f"s3://{self._bucket}/"
-                    filenames = awswrangler.s3.list_objects(
-                        path=f"{s3_path}*.{role}.json",
-                        boto3_session=self._s3_session,
-                    )
-                    versions = [
-                        int(name.split(s3_path)[-1].split(".", 1)[0])
-                        for name in filenames
-                    ]
-                    try:
-                        version = max(versions)
-                    except ValueError:
-                        version = 1
-                    AWSS3._version_cache[role] = version
+                version = self._latest_version(role)
 
             filename = f"{version}.{role}.json"
 
@@ -257,11 +221,13 @@ class AWSS3(IStorage):
         except ClientError:
             raise StorageError(f"Can't write role file '{filename}'")
 
-        # Keep the version cache consistent: after writing "N.rolename.json",
-        # record N so the next get() for this role fetches it directly without
-        # calling list_objects.  Timestamp uses a fixed key ("timestamp.json")
-        # and is not version-tracked in the cache.
+        # Keep the version cache current so subsequent _latest_version calls
+        # skip the upward probe for this role. filename format: "N.role.json"
+        # Timestamp is the only role stored without a version prefix; skip it.
         parts = filename.split(".", 1)
-        if parts[0].isdigit():
-            role_name = parts[1][:-5]  # strip ".json"
-            AWSS3._version_cache[role_name] = int(parts[0])
+        if len(parts) == 2 and parts[0].isdigit():
+            role = parts[1].removesuffix(".json")
+            written_version = int(parts[0])
+            current = AWSS3._version_cache.get(role, 0)
+            if written_version > current:
+                AWSS3._version_cache[role] = written_version
