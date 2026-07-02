@@ -82,7 +82,9 @@ class TestAWSS3Service:
                 endpoint_url=service._endpoint_url,
             )
         ]
-        assert awss3.boto3.Session().resource().buckets.all.calls == [pretend.call()]  # noqa: E501
+        assert awss3.boto3.Session().resource().buckets.all.calls == [
+            pretend.call()
+        ]
         # By using awss3.boto3 functions we can access the internal objects
         # mocked in mocked_boto3.
         assert service._bucket == "bucket"
@@ -189,7 +191,15 @@ class TestAWSS3Service:
         get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
             get_object=get_obj,
-            head_object=pretend.raiser(awss3.ClientError({}, "head_object")),
+            head_object=pretend.raiser(
+                awss3.ClientError(
+                    {
+                        "Error": {"Code": "404", "Message": "Not Found"},
+                        "ResponseMetadata": {"HTTPStatusCode": 404},
+                    },
+                    "head_object",
+                )
+            ),
         )
 
         expected_root = Metadata(Root())
@@ -239,7 +249,15 @@ class TestAWSS3Service:
         get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
             get_object=get_obj,
-            head_object=pretend.raiser(awss3.ClientError({}, "head_object")),
+            head_object=pretend.raiser(
+                awss3.ClientError(
+                    {
+                        "Error": {"Code": "404", "Message": "Not Found"},
+                        "ResponseMetadata": {"HTTPStatusCode": 404},
+                    },
+                    "head_object",
+                )
+            ),
         )
 
         expected_root = Metadata(Root())
@@ -332,9 +350,19 @@ class TestAWSS3Service:
         get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
             get_object=get_obj,
-            head_object=pretend.raiser(awss3.ClientError({}, "head_object")),
+            head_object=pretend.raiser(
+                awss3.ClientError(
+                    {
+                        "Error": {"Code": "404", "Message": "Not Found"},
+                        "ResponseMetadata": {"HTTPStatusCode": 404},
+                    },
+                    "head_object",
+                )
+            ),
         )
-        monkeypatch.setitem(awss3.__builtins__, "max", pretend.raiser(ValueError))  # noqa: E501
+        monkeypatch.setitem(
+            awss3.__builtins__, "max", pretend.raiser(ValueError)
+        )
         expected_root = Metadata(Root())
         awss3.Metadata = pretend.stub(
             from_bytes=pretend.call_recorder(lambda *a: expected_root)
@@ -381,7 +409,15 @@ class TestAWSS3Service:
         get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
             get_object=get_obj,
-            head_object=pretend.raiser(awss3.ClientError({}, "head_object")),
+            head_object=pretend.raiser(
+                awss3.ClientError(
+                    {
+                        "Error": {"Code": "404", "Message": "Not Found"},
+                        "ResponseMetadata": {"HTTPStatusCode": 404},
+                    },
+                    "head_object",
+                )
+            ),
         )
         awss3.Metadata = pretend.stub(
             from_bytes=pretend.raiser(awss3.DeserializationError("failed"))

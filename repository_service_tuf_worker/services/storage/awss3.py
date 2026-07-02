@@ -166,8 +166,13 @@ class AWSS3(IStorage):
                     Bucket=self._bucket, Key=f"{version + 1}.{role}.json"
                 )
                 version += 1
-            except ClientError:
-                break
+            except ClientError as e:
+                status = e.response.get("ResponseMetadata", {}).get(
+                    "HTTPStatusCode"
+                )
+                if status == 404:
+                    break
+                raise
 
         AWSS3._version_cache[role] = version
         return version
@@ -220,14 +225,3 @@ class AWSS3(IStorage):
             )
         except ClientError:
             raise StorageError(f"Can't write role file '{filename}'")
-
-        # Keep the version cache current so subsequent _latest_version calls
-        # skip the upward probe for this role. filename format: "N.role.json"
-        # Timestamp is the only role stored without a version prefix; skip it.
-        parts = filename.split(".", 1)
-        if len(parts) == 2 and parts[0].isdigit():
-            role = parts[1].removesuffix(".json")
-            written_version = int(parts[0])
-            current = AWSS3._version_cache.get(role, 0)
-            if written_version > current:
-                AWSS3._version_cache[role] = written_version
