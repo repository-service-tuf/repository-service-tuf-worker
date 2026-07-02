@@ -168,6 +168,7 @@ class TestAWSS3Service:
         ]
 
     def test_get(self, mocked_boto3):
+        awss3.AWSS3._version_cache.clear()
         service = awss3.AWSS3(
             "bucket",
             "session",
@@ -187,8 +188,18 @@ class TestAWSS3Service:
         fake_aws3_object = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_file_obj)
         )
+        get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
-            get_object=pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
+            get_object=get_obj,
+            head_object=pretend.raiser(
+                awss3.ClientError(
+                    {
+                        "Error": {"Code": "404", "Message": "Not Found"},
+                        "ResponseMetadata": {"HTTPStatusCode": 404},
+                    },
+                    "head_object",
+                )
+            ),
         )
 
         expected_root = Metadata(Root())
@@ -213,6 +224,7 @@ class TestAWSS3Service:
         ]
 
     def test_get_endpoint_url_not_none(self, mocked_boto3):
+        awss3.AWSS3._version_cache.clear()
         service = awss3.AWSS3(
             bucket="bucket",
             s3_session="session",
@@ -234,8 +246,18 @@ class TestAWSS3Service:
         fake_aws3_object = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_file_obj)
         )
+        get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
-            get_object=pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
+            get_object=get_obj,
+            head_object=pretend.raiser(
+                awss3.ClientError(
+                    {
+                        "Error": {"Code": "404", "Message": "Not Found"},
+                        "ResponseMetadata": {"HTTPStatusCode": 404},
+                    },
+                    "head_object",
+                )
+            ),
         )
 
         expected_root = Metadata(Root())
@@ -303,6 +325,7 @@ class TestAWSS3Service:
         ]
 
     def test_get_max_version_ValueError(self, mocked_boto3, monkeypatch):
+        awss3.AWSS3._version_cache.clear()
         service = awss3.AWSS3(
             bucket="bucket",
             s3_session="session",
@@ -324,8 +347,18 @@ class TestAWSS3Service:
         fake_aws3_object = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_file_obj)
         )
+        get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
-            get_object=pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
+            get_object=get_obj,
+            head_object=pretend.raiser(
+                awss3.ClientError(
+                    {
+                        "Error": {"Code": "404", "Message": "Not Found"},
+                        "ResponseMetadata": {"HTTPStatusCode": 404},
+                    },
+                    "head_object",
+                )
+            ),
         )
         monkeypatch.setitem(
             awss3.__builtins__, "max", pretend.raiser(ValueError)
@@ -351,6 +384,7 @@ class TestAWSS3Service:
         ]
 
     def test_get_DeserializationError(self, mocked_boto3):
+        awss3.AWSS3._version_cache.clear()
         service = awss3.AWSS3(
             bucket="bucket",
             s3_session="session",
@@ -372,8 +406,18 @@ class TestAWSS3Service:
         fake_aws3_object = pretend.stub(
             get=pretend.call_recorder(lambda *a: fake_file_obj)
         )
+        get_obj = pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
         service._s3_client = pretend.stub(
-            get_object=pretend.call_recorder(lambda *a, **kw: fake_aws3_object)
+            get_object=get_obj,
+            head_object=pretend.raiser(
+                awss3.ClientError(
+                    {
+                        "Error": {"Code": "404", "Message": "Not Found"},
+                        "ResponseMetadata": {"HTTPStatusCode": 404},
+                    },
+                    "head_object",
+                )
+            ),
         )
         awss3.Metadata = pretend.stub(
             from_bytes=pretend.raiser(awss3.DeserializationError("failed"))
