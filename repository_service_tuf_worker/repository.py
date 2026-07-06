@@ -1139,11 +1139,14 @@ class MetadataRepository:
                     # NOTE: Currently only if the custom role uses
                     # global online key,
                     # we can add further hash-bin delegations
-                    online_keyids = self._online_keyids
-                    if num_bins and (
-                        len(delegations.roles[role].keyids) == 0
-                        or (set(delegations.roles[role].keyids) & set(online_keyids))
-                    ):
+                    role_keyids = set(delegations.roles[role].keyids)
+                    is_nested_bin = False
+                    if num_bins:
+                        online_keyids = self._online_keyids
+                        if len(role_keyids) == 0 or role_keyids.issubset(set(online_keyids)):
+                            is_nested_bin = True
+
+                    if is_nested_bin:
                         logging.debug(
                             f"Role '{role}' has nested \
                                       hash-bin delegations"
