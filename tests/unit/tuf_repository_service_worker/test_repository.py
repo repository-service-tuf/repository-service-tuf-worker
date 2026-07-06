@@ -367,6 +367,127 @@ class TestMetadataRepository:
             pretend.call("postgresql://psql:psqlpass@fake-sql:5433")
         ]
 
+    def test__add_delegated_role_keys_no_keys_uses_all_online_keys(
+        self, test_repo, monkeypatch
+    ):
+        online_keys = [
+            pretend.stub(keyid="online_1"),
+            pretend.stub(keyid="online_2"),
+        ]
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keys",
+            property(lambda self: online_keys),
+        )
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keyids",
+            property(lambda self: ["online_1", "online_2"]),
+        )
+
+        role_name = "delegation-1"
+        role = pretend.stub(keyids=[])
+        delegations = pretend.stub(
+            roles={role_name: role},
+            keys={
+                "online_1": pretend.stub(),
+                "online_2": pretend.stub(),
+            },
+        )
+        targets = pretend.stub(signed=pretend.stub(delegations=pretend.stub(keys={})))
+        role_metadata = pretend.stub()
+        test_repo._sign_with_online_keys = pretend.call_recorder(lambda *a, **kw: None)
+
+        test_repo._add_delegated_role_keys(
+            targets, delegations, role_name, role_metadata
+        )
+
+        assert role.keyids == ["online_1", "online_2"]
+        assert test_repo._sign_with_online_keys.calls == [
+            pretend.call(role_metadata, ["online_1", "online_2"])
+        ]
+
+    def test__add_delegated_role_keys_partial_online_keys_signs_subset(
+        self, test_repo, monkeypatch
+    ):
+        # Role trusts only ONE of two configured online keys, plus an offline key.
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keyids",
+            property(lambda self: ["online_1", "online_2"]),
+        )
+
+        role_name = "delegation-1"
+        role = pretend.stub(keyids=["online_1", "offline_1"])
+        delegations = pretend.stub(
+            roles={role_name: role},
+            keys={
+                "online_1": pretend.stub(),
+                "offline_1": pretend.stub(),
+            },
+        )
+        targets = pretend.stub(signed=pretend.stub(delegations=pretend.stub(keys={})))
+        role_metadata = pretend.stub()
+        test_repo._sign_with_online_keys = pretend.call_recorder(lambda *a, **kw: None)
+
+        test_repo._add_delegated_role_keys(
+            targets, delegations, role_name, role_metadata
+        )
+
+        assert test_repo._sign_with_online_keys.calls == [
+            pretend.call(role_metadata, ["online_1"])
+        ]
+
+    def test__add_delegated_role_keys_offline_only_not_signed(
+        self, test_repo, monkeypatch
+    ):
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keyids",
+            property(lambda self: ["online_1", "online_2"]),
+        )
+
+        role_name = "delegation-1"
+        role = pretend.stub(keyids=["offline_1", "offline_2"])
+        delegations = pretend.stub(
+            roles={role_name: role},
+            keys={
+                "offline_1": pretend.stub(),
+                "offline_2": pretend.stub(),
+            },
+        )
+        targets = pretend.stub(signed=pretend.stub(delegations=pretend.stub(keys={})))
+        role_metadata = pretend.stub()
+        test_repo._sign_with_online_keys = pretend.call_recorder(lambda *a, **kw: None)
+
+        test_repo._add_delegated_role_keys(
+            targets, delegations, role_name, role_metadata
+        )
+
+        assert test_repo._sign_with_online_keys.calls == []
+
+    def test__add_delegated_role_keys_no_role_metadata_skips_signing(
+        self, test_repo, monkeypatch
+    ):
+        # role_metadata=None (used during _update_metadata_delegation) must never sign.
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keyids",
+            property(lambda self: ["online_1"]),
+        )
+
+        role_name = "delegation-1"
+        role = pretend.stub(keyids=["online_1"])
+        delegations = pretend.stub(
+            roles={role_name: role},
+            keys={"online_1": pretend.stub()},
+        )
+        targets = pretend.stub(signed=pretend.stub(delegations=pretend.stub(keys={})))
+        test_repo._sign_with_online_keys = pretend.call_recorder(lambda *a, **kw: None)
+
+        test_repo._add_delegated_role_keys(targets, delegations, role_name, None)
+
+        assert test_repo._sign_with_online_keys.calls == []
     def test_refresh_settings_with_sql_user_password_secrets_OSError(
         self, test_repo, monkeypatch, caplog
     ):
@@ -421,6 +542,98 @@ class TestMetadataRepository:
         assert test_repo._signer_store.get.calls == [pretend.call(fake_key)]
         assert fake_md.sign.calls == [pretend.call("key_signer_1", append=True)]
 
+    def test__sign_with_online_keys_multiple(self, test_repo, monkeypatch):
+        fake_key_dicts = [
+            {"keyval": "foo1", "keyid": "keyid1"},
+            {"keyval": "foo2", "keyid": "keyid2"},
+        ]
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(
+                lambda a: copy(fake_key_dicts) if a == "ONLINE_KEYS" else None
+            )
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_keys = [pretend.stub(keyid="keyid1"), pretend.stub(keyid="keyid2")]
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: fake_keys.pop(0))
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
+
+        fake_md = pretend.stub(sign=pretend.call_recorder(lambda *a, **kw: None))
+        test_repo._signer_store = pretend.stub(
+            get=pretend.call_recorder(lambda key: f"signer_for_{key.keyid}")
+        )
+
+        test_result = test_repo._sign_with_online_keys(fake_md)
+
+        assert test_result is None
+        assert fake_md.sign.calls == [
+            pretend.call("signer_for_keyid1", append=True),
+            pretend.call("signer_for_keyid2", append=True),
+        ]
+
+    def test__sign_with_online_keys_single(self, test_repo, monkeypatch):
+        # Backward-compat: only ONLINE_KEY configured, no ONLINE_KEYS
+        fake_key_dict = {"keyval": "foo", "keyid": "keyid"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(
+                lambda a: copy(fake_key_dict) if a == "ONLINE_KEY" else None
+            )
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_key = pretend.stub(keyid="keyid")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: fake_key)
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
+
+        fake_md = pretend.stub(sign=pretend.call_recorder(lambda *a, **kw: None))
+        test_repo._signer_store = pretend.stub(
+            get=pretend.call_recorder(lambda key: "signer_for_keyid")
+        )
+
+        test_repo._sign_with_online_keys(fake_md)
+
+        assert fake_md.sign.calls == [pretend.call("signer_for_keyid", append=True)]
+
+    def test__sign_with_online_keys_keyids_filter(self, test_repo, monkeypatch):
+        # Only sign with the subset of online keys matching `keyids`
+        fake_key_dicts = [
+            {"keyval": "foo1", "keyid": "keyid1"},
+            {"keyval": "foo2", "keyid": "keyid2"},
+        ]
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(
+                lambda a: copy(fake_key_dicts) if a == "ONLINE_KEYS" else None
+            )
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        fake_keys = [pretend.stub(keyid="keyid1"), pretend.stub(keyid="keyid2")]
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: fake_keys.pop(0))
+        )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
+
+        fake_md = pretend.stub(sign=pretend.call_recorder(lambda *a, **kw: None))
+        test_repo._signer_store = pretend.stub(
+            get=pretend.call_recorder(lambda key: f"signer_for_{key.keyid}")
+        )
+
+        test_repo._sign_with_online_keys(fake_md, keyids=["keyid1"])
+
+        assert fake_md.sign.calls == [pretend.call("signer_for_keyid1", append=True)]
     def _test_helper_persist(
         self, test_repo, role, version, expected_file_name
     ):

@@ -953,20 +953,25 @@ class MetadataRepository:
         role_name: str,
         role_metadata: Optional[Metadata[Targets]] = None,
     ):
+        online_keyids = self._online_keyids
         if len(delegations.roles[role_name].keyids) == 0:
-            logging.debug(f"role '{role_name}' without key, adding online key")
-            delegations.roles[role_name].keyids.append(self._online_key.keyid)
+            logging.debug(f"role '{role_name}' without key, adding online keys")
+            delegations.roles[role_name].keyids.extend(online_keyids)
 
-        for keyid in delegations.roles[role_name].keyids:
+        role_keyids = delegations.roles[role_name].keyids
+        for keyid in role_keyids:
             if keyid not in targets.signed.delegations.keys.keys():
                 logging.debug(f"added key id {keyid}")
                 if delegation_key := delegations.keys[keyid]:
                     targets.signed.delegations.keys[keyid] = delegation_key
                 else:
                     raise ValueError(f"role {role_name} has inconsistent keys")
-            if keyid == self._online_key.keyid and role_metadata:
-                logging.debug(f"role '{role_name}' using online key, signing")
-                self._sign(role_metadata)
+
+        online_keyid_set = set(online_keyids)
+        matching_online_keyids = [k for k in role_keyids if k in online_keyid_set]
+        if matching_online_keyids and role_metadata:
+            logging.debug(f"role '{role_name}' using online key(s), signing")
+            self._sign_with_online_keys(role_metadata, matching_online_keyids)
 
     def _update_delegated_roles(
         self,
