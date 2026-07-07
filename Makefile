@@ -1,4 +1,4 @@
-.PHONY: build-dev run-dev stop clean purge reformat tests requirements coverage docs
+.PHONY: all build-dev run-dev db-migration stop clean purge reformat tests coverage docs precommit clone-umbrella ft-das ft-das-local ft-signed ft-signed-local help
 
 all: help
 
