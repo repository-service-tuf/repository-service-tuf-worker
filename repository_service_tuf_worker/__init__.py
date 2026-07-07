@@ -32,13 +32,26 @@ def get_worker_settings() -> Dynaconf:
 
 def get_repository_settings() -> Dynaconf:
     worker_settings = get_worker_settings()
+    redis_server = worker_settings.get("REDIS_SERVER")
 
-    return Dynaconf(
-        redis_enabled=True,
-        redis={
-            "host": worker_settings.REDIS_SERVER.split("redis://")[1],
-            "port": worker_settings.get("REDIS_SERVER_PORT", 6379),
-            "db": worker_settings.get("REDIS_SERVER_DB_REPO_SETTINGS", 1),
-            "decode_responses": True,
-        },
-    )
+    if redis_server:
+        # Host can be redis://redis or just redis
+        if "://" in redis_server:
+            host = redis_server.split("://")[1]
+        else:
+            host = redis_server
+
+        return Dynaconf(
+            redis_enabled=True,
+            redis={
+                "host": host,
+                "port": worker_settings.get("REDIS_SERVER_PORT", 6379),
+                "db": worker_settings.get("REDIS_SERVER_DB_REPO_SETTINGS", 1),
+                "decode_responses": True,
+            },
+        )
+    else:
+        return Dynaconf(
+            loaders=["repository_service_tuf_worker.loaders"],
+            DB_SERVER=worker_settings.get("DB_SERVER"),
+        )
