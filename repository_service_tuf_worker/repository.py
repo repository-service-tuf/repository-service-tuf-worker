@@ -952,6 +952,10 @@ class MetadataRepository:
         role_name: str,
         role_metadata: Optional[Metadata[Targets]] = None,
     ):
+        # Add all configured online keys to the target delegations keys
+        for key in self._online_keys:
+            targets.signed.delegations.keys[key.keyid] = key
+
         online_keyids = self._online_keyids
         if len(delegations.roles[role_name].keyids) == 0:
             logging.debug(f"role '{role_name}' without key, adding online keys")
@@ -961,7 +965,7 @@ class MetadataRepository:
         for keyid in role_keyids:
             if keyid not in targets.signed.delegations.keys.keys():
                 logging.debug(f"added key id {keyid}")
-                if delegation_key := delegations.keys[keyid]:
+                if delegation_key := delegations.keys.get(keyid):
                     targets.signed.delegations.keys[keyid] = delegation_key
                 else:
                     raise ValueError(f"role {role_name} has inconsistent keys")
@@ -1101,7 +1105,7 @@ class MetadataRepository:
                 failed.append(
                     {
                         "role": role,
-                        "reason": ("role already exists or name used in the past",),
+                        "reason": "role already exists or name used in the past",
                     }
                 )
                 continue
@@ -1385,9 +1389,9 @@ class MetadataRepository:
         elif delegation_keyid_set & online_keyids:
             logging.debug(f"role {rolename} online/offline keys")
             self._bump_expiry(delegation, rolename)
-            self._sign_with_online_keys(delegation, delegation_keyids)
             if from_storage:
                 self._bump_version(delegation)
+            self._sign_with_online_keys(delegation, delegation_keyids)
             self.write_repository_settings(
                 f"{rolename.upper()}_SIGNING", delegation.to_dict()
             )

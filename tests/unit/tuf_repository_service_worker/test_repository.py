@@ -24,6 +24,11 @@ from tuf.api.metadata import (
     Timestamp,
 )
 
+def generate_key_and_signer():
+    key = pretend.stub(keyid=f"key_{datetime.datetime.now().timestamp()}")
+    signer = pretend.stub(sign=pretend.call_recorder(lambda *a, **kw: None))
+    return key, signer
+
 from repository_service_tuf_worker import Dynaconf, repository
 from repository_service_tuf_worker.models import targets_schema
 from repository_service_tuf_worker.models.targets import crud
