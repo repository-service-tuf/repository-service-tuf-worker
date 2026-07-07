@@ -133,9 +133,7 @@ class MetadataRepository:
         self._storage_backend: IStorage = app_settings.STORAGE
         self._signer_store = SignerStore(app_settings)
         self._db = app_settings.SQL
-        self._redis = redis.StrictRedis.from_url(
-            self._worker_settings.REDIS_SERVER
-        )
+        self._redis = redis.StrictRedis.from_url(self._worker_settings.REDIS_SERVER)
         self._hours_before_expire: int = self._settings.get_fresh(
             "HOURS_BEFORE_EXPIRE", 1
         )
@@ -192,7 +190,6 @@ class MetadataRepository:
         self.write_repository_settings("ONLINE_KEYS", key_dicts)
         if keys:
             self._online_key = keys[0]
-
 
     @property
     def _online_keyids(self) -> List[str]:
@@ -338,7 +335,9 @@ class MetadataRepository:
         settings_data[key] = value
         redis_loader.write(self._settings, settings_data)
 
-    def _sign(self, role: Metadata, signer: Optional[Union[Signer, Key]] = None) -> None:
+    def _sign(
+        self, role: Metadata, signer: Optional[Union[Signer, Key]] = None
+    ) -> None:
         """
         Re-signs metadata with role-specific key from global key store.
 
@@ -1143,7 +1142,9 @@ class MetadataRepository:
                     is_nested_bin = False
                     if num_bins:
                         online_keyids = self._online_keyids
-                        if len(role_keyids) == 0 or role_keyids.issubset(set(online_keyids)):
+                        if len(role_keyids) == 0 or role_keyids.issubset(
+                            set(online_keyids)
+                        ):
                             is_nested_bin = True
 
                     if is_nested_bin:

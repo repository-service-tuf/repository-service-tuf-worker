@@ -57,9 +57,7 @@ class TestMetadataRepository:
         settings = repository.get_worker_settings()
         del settings.KEYVAULT_BACKEND
 
-        monkeypatch.setattr(
-            repository, "get_worker_settings", lambda: settings
-        )
+        monkeypatch.setattr(repository, "get_worker_settings", lambda: settings)
         test_repo = repository.MetadataRepository()
         assert "KEYVAULT" not in test_repo.refresh_settings()
 
@@ -88,9 +86,7 @@ class TestMetadataRepository:
             lambda *a, **kw: fake_settings,
         )
         key = pretend.stub(keyid="key_id")
-        fake_key_obj = pretend.stub(
-            from_dict=pretend.call_recorder(lambda *a: key)
-        )
+        fake_key_obj = pretend.stub(from_dict=pretend.call_recorder(lambda *a: key))
         monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
         result = test_repo._online_key
         assert result == key
@@ -119,9 +115,7 @@ class TestMetadataRepository:
             )
         )
         test_repo._storage_load_root = pretend.call_recorder(lambda: fake_root)
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: None
-        )
+        test_repo.write_repository_settings = pretend.call_recorder(lambda *a: None)
         result = test_repo._online_key
         assert result == key
         assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
@@ -162,7 +156,7 @@ class TestMetadataRepository:
             pretend.call("key_id_1", {"keyval": "foo"}),
             pretend.call("key_id_2", {"keyval": "bar"}),
         ]
-        
+
     def test_sign_accumulates_multiple_signatures(self, test_repo):
         role = Metadata(Targets(version=1))
         key1, signer1 = generate_key_and_signer()  # however your test fixtures do this
@@ -212,9 +206,7 @@ class TestMetadataRepository:
             ),
         ],
     )
-    def test_bootstrap_state(
-        self, monkeypatch, test_repo, mock_setting, expected
-    ):
+    def test_bootstrap_state(self, monkeypatch, test_repo, mock_setting, expected):
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(lambda *a: mock_setting)
         )
@@ -225,35 +217,25 @@ class TestMetadataRepository:
         )
         result = test_repo.bootstrap_state
         assert result == expected
-        assert test_repo._settings.get_fresh.calls == [
-            pretend.call("BOOTSTRAP")
-        ]
+        assert test_repo._settings.get_fresh.calls == [pretend.call("BOOTSTRAP")]
 
     @pytest.mark.parametrize(
         "mocked_targets, expected_result",
         [
             (
                 Metadata(
-                    Targets(
-                        delegations=pretend.stub(succinct_roles=pretend.stub())
-                    )
+                    Targets(delegations=pretend.stub(succinct_roles=pretend.stub()))
                 ),
                 True,
             ),
             (
-                Metadata(
-                    Targets(delegations=pretend.stub(succinct_roles=None))
-                ),
+                Metadata(Targets(delegations=pretend.stub(succinct_roles=None))),
                 False,
             ),
         ],
     )
-    def test_uses_succinct_roles(
-        self, test_repo, mocked_targets, expected_result
-    ):
-        test_repo._storage_load_targets = pretend.call_recorder(
-            lambda: mocked_targets
-        )
+    def test_uses_succinct_roles(self, test_repo, mocked_targets, expected_result):
+        test_repo._storage_load_targets = pretend.call_recorder(lambda: mocked_targets)
 
         assert test_repo.uses_succinct_roles == expected_result
         assert test_repo._storage_load_targets.calls == [pretend.call()]
@@ -272,10 +254,7 @@ class TestMetadataRepository:
 
         test_repo.refresh_settings(fake_worker_settings)
 
-        assert (
-            test_repo._worker_settings.to_dict()
-            == fake_worker_settings.to_dict()
-        )
+        assert test_repo._worker_settings.to_dict() == fake_worker_settings.to_dict()
 
     def test_refresh_settings_with_invalid_storage_backend(self, test_repo):
         fake_worker_settings = pretend.stub(STORAGE_BACKEND="INVALID_STORAGE_BACKEND")
@@ -329,9 +308,7 @@ class TestMetadataRepository:
         with pytest.raises(AttributeError) as e:
             test_repo.refresh_settings()
 
-        assert "'Settings' object has no attribute 'RSTUF_DB_PASSWORD'" in str(
-            e
-        )
+        assert "'Settings' object has no attribute 'RSTUF_DB_PASSWORD'" in str(e)
 
     def test_refresh_settings_with_sql_user_missing_scheme(self, test_repo):
         test_repo._worker_settings.DB_SERVER = "fake-sql"
@@ -348,9 +325,7 @@ class TestMetadataRepository:
         test_repo._worker_settings.DB_SERVER = "postgresql://fake-sql:5433"
         test_repo._worker_settings.DB_USER = "psql"
         test_repo._worker_settings.DB_PASSWORD = "/run/secrets/DB_PASSWORD"
-        fake_data = pretend.stub(
-            read=pretend.call_recorder(lambda: "psqlpass\n")
-        )
+        fake_data = pretend.stub(read=pretend.call_recorder(lambda: "psqlpass\n"))
         fake_file_obj = pretend.stub(
             __enter__=pretend.call_recorder(lambda: fake_data),
             __exit__=pretend.call_recorder(lambda *a: None),
@@ -488,6 +463,7 @@ class TestMetadataRepository:
         test_repo._add_delegated_role_keys(targets, delegations, role_name, None)
 
         assert test_repo._sign_with_online_keys.calls == []
+
     def test_refresh_settings_with_sql_user_password_secrets_OSError(
         self, test_repo, monkeypatch, caplog
     ):
@@ -510,7 +486,9 @@ class TestMetadataRepository:
     def test__sign(self, test_repo, monkeypatch):
         fake_key_dict = {"keyval": "foo", "keyid": "keyid"}
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict) if a == "ONLINE_KEY" else None)
+            get_fresh=pretend.call_recorder(
+                lambda a: copy(fake_key_dict) if a == "ONLINE_KEY" else None
+            )
         )
         monkeypatch.setattr(
             repository,
@@ -634,9 +612,8 @@ class TestMetadataRepository:
         test_repo._sign_with_online_keys(fake_md, keyids=["keyid1"])
 
         assert fake_md.sign.calls == [pretend.call("signer_for_keyid1", append=True)]
-    def _test_helper_persist(
-        self, test_repo, role, version, expected_file_name
-    ):
+
+    def _test_helper_persist(self, test_repo, role, version, expected_file_name):
         fake_bytes = b""
 
         fake_role = pretend.stub(
@@ -650,9 +627,7 @@ class TestMetadataRepository:
         test_repo._storage_backend = pretend.stub(
             put=pretend.call_recorder(lambda *a: None)
         )
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: None
-        )
+        test_repo.write_repository_settings = pretend.call_recorder(lambda *a: None)
 
         test_result = test_repo._persist(fake_role, role)
         assert test_result == expected_file_name
@@ -676,9 +651,7 @@ class TestMetadataRepository:
         self._test_helper_persist(test_repo, "snapshot", 2, "2.snapshot.json")
 
     def test__persist_file_has_version(self, test_repo):
-        self._test_helper_persist(
-            test_repo, "1.snapshot", 1, "1.snapshot.json"
-        )
+        self._test_helper_persist(test_repo, "1.snapshot", 1, "1.snapshot.json")
 
     def test__persist_file_has_number_name(self, test_repo):
         self._test_helper_persist(test_repo, "bin-3", 2, "2.bin-3.json")
@@ -729,9 +702,7 @@ class TestMetadataRepository:
         assert test_repo._storage_backend.get.calls == [pretend.call(role)]
 
     def test_bump_expiry(self, monkeypatch, test_repo, mocked_datetime):
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: 1460)
-        )
+        fake_settings = pretend.stub(get_fresh=pretend.call_recorder(lambda *a: 1460))
         monkeypatch.setattr(
             repository,
             "get_repository_settings",
@@ -771,9 +742,7 @@ class TestMetadataRepository:
         ]
         assert test_repo._bump_version.calls == [pretend.call(timestamp)]
         assert test_repo._sign.calls == [pretend.call(timestamp, None)]
-        assert test_repo._persist.calls == [
-            pretend.call(timestamp, Timestamp.type)
-        ]
+        assert test_repo._persist.calls == [pretend.call(timestamp, Timestamp.type)]
 
     def test__bump_and_persist_without_persist(self, test_repo):
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
@@ -863,12 +832,8 @@ class TestMetadataRepository:
             md.signed.expires = datetime.datetime(2035, 6, 16, 9, 5, 1)
             # md.signed.meta.update(snapshot_meta)
 
-        test_repo._bump_and_persist = pretend.call_recorder(
-            fake__bump_and_persist
-        )
-        test_repo._is_expired = pretend.call_recorder(
-            lambda *a: expired_snapshot
-        )
+        test_repo._bump_and_persist = pretend.call_recorder(fake__bump_and_persist)
+        test_repo._is_expired = pretend.call_recorder(lambda *a: expired_snapshot)
 
         result = test_repo.update_snapshot(snapshot_meta, {"database_meta"})
 
@@ -892,9 +857,7 @@ class TestMetadataRepository:
     def test__update_timestamp(self, monkeypatch, test_repo):
         snapshot_version = 3
         timestamp_version = 5
-        fake_metafile = pretend.call_recorder(
-            lambda *a, **kw: snapshot_version
-        )
+        fake_metafile = pretend.call_recorder(lambda *a, **kw: snapshot_version)
         monkeypatch.setattr(
             "repository_service_tuf_worker.repository.MetaFile", fake_metafile
         )
@@ -909,9 +872,7 @@ class TestMetadataRepository:
         def fake__bump_and_persist(md, role, **kw):
             md.signed.version += 1
 
-        test_repo._bump_and_persist = pretend.call_recorder(
-            fake__bump_and_persist
-        )
+        test_repo._bump_and_persist = pretend.call_recorder(fake__bump_and_persist)
 
         test_repo._update_timestamp(snapshot_version)
 
@@ -941,18 +902,14 @@ class TestMetadataRepository:
         )
         test_repo._storage_backend.get = pretend.call_recorder(
             lambda rolename: (
-                mocked_snapshot
-                if rolename == Snapshot.type
-                else mocked_targets
+                mocked_snapshot if rolename == Snapshot.type else mocked_targets
             )
         )
 
         def fake__bump_and_persist(md, role, **kw):
             md.signed.version += 1
 
-        test_repo._bump_and_persist = pretend.call_recorder(
-            fake__bump_and_persist
-        )
+        test_repo._bump_and_persist = pretend.call_recorder(fake__bump_and_persist)
 
         result = test_repo._update_snapshot()
 
@@ -965,9 +922,7 @@ class TestMetadataRepository:
         ]
         assert test_repo._bump_and_persist.calls == []
 
-    def test__update_targets_delegations_key_bins(
-        self, test_repo, monkeypatch
-    ):
+    def test__update_targets_delegations_key_bins(self, test_repo, monkeypatch):
         fake_key_dict = {"keyval": "foo", "keyid": "keyid"}
         fake_settings = pretend.stub(
             get_fresh=pretend.call_recorder(
@@ -1005,9 +960,7 @@ class TestMetadataRepository:
         assert fake_key_obj.from_dict.calls == [
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
-        assert fake_targets.signed.revoke_key.calls == [
-            pretend.call("old_keyid")
-        ]
+        assert fake_targets.signed.revoke_key.calls == [pretend.call("old_keyid")]
         assert fake_targets.signed.add_key.calls == [pretend.call(fake_key)]
 
     def test__update_targets_delegations_online_key_not_changed(
@@ -1075,9 +1028,7 @@ class TestMetadataRepository:
         monkeypatch.setattr(
             repository.targets_crud,
             "read_all_roles_rolenames",
-            pretend.call_recorder(
-                lambda *a: ["bins-0", "bins-1", "bins-2", "bins-3"]
-            ),
+            pretend.call_recorder(lambda *a: ["bins-0", "bins-1", "bins-2", "bins-3"]),
         )
         test_repo._is_expired = pretend.call_recorder(lambda a: targets_expired)
 
@@ -1101,12 +1052,8 @@ class TestMetadataRepository:
                 ),
             )
         )
-        test_repo._storage_load_targets = pretend.call_recorder(
-            lambda: fake_targets
-        )
-        result = test_repo._get_role_for_artifact_path(
-            "v0.0.1/test_path.tar.gz"
-        )
+        test_repo._storage_load_targets = pretend.call_recorder(lambda: fake_targets)
+        result = test_repo._get_role_for_artifact_path("v0.0.1/test_path.tar.gz")
 
         assert result == "bins-e"
         delegations = fake_targets.signed.delegations
@@ -1119,18 +1066,12 @@ class TestMetadataRepository:
         fake_targets = pretend.stub(
             signed=pretend.stub(
                 delegations=pretend.stub(
-                    get_roles_for_target=pretend.call_recorder(
-                        lambda a: iter([])
-                    )
+                    get_roles_for_target=pretend.call_recorder(lambda a: iter([]))
                 ),
             )
         )
-        test_repo._storage_load_targets = pretend.call_recorder(
-            lambda: fake_targets
-        )
-        result = test_repo._get_role_for_artifact_path(
-            "v0.0.1/test_path.tar.gz"
-        )
+        test_repo._storage_load_targets = pretend.call_recorder(lambda: fake_targets)
+        result = test_repo._get_role_for_artifact_path("v0.0.1/test_path.tar.gz")
 
         assert result is None
         delegations = fake_targets.signed.delegations
@@ -1252,9 +1193,7 @@ class TestMetadataRepository:
         )
 
         with pytest.raises(ChordError) as err:
-            test_repo._update_task(
-                fake_bin_targets, fake_update_state, fake_subtask
-            )
+            test_repo._update_task(fake_bin_targets, fake_update_state, fake_subtask)
 
         assert "Failed to execute publish_artifacts-fakeid" in str(err)
         assert test_repo._db.refresh.calls == [
@@ -1285,9 +1224,7 @@ class TestMetadataRepository:
                 roles={"root": pretend.stub(threshold=1)},
             ),
         )
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: None
-        )
+        test_repo.write_repository_settings = pretend.call_recorder(lambda *a: None)
         payload = {
             "root": {"expiration": 365},
             "targets": {"expiration": 365},
@@ -1319,18 +1256,14 @@ class TestMetadataRepository:
         ]
 
     def test_update_settings(self, test_repo, mocked_datetime, monkeypatch):
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: None
-        )
+        test_repo.write_repository_settings = pretend.call_recorder(lambda *a: None)
         TARGETS_EXP = 100
         SNAPSHOT_EXP = 50
         TIMESTAMP_EXP = 20
         BINS_EXP = 5
         BINS = repository.Roles.BINS.value
 
-        fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda *a: 30)
-        )
+        fake_settings = pretend.stub(get_fresh=pretend.call_recorder(lambda *a: 30))
         monkeypatch.setattr(
             repository,
             "get_repository_settings",
@@ -1377,9 +1310,7 @@ class TestMetadataRepository:
         ]
 
     def test_update_settings_no_settings(self, test_repo, mocked_datetime):
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: None
-        )
+        test_repo.write_repository_settings = pretend.call_recorder(lambda *a: None)
 
         result = test_repo.update_settings(payload={})
         assert result == {
@@ -1402,12 +1333,8 @@ class TestMetadataRepository:
             "details": None,
         }
 
-    def test_update_settings_no_role_in_expiration(
-        self, test_repo, mocked_datetime
-    ):
-        result = test_repo.update_settings(
-            payload={"settings": {"expiration": {}}}
-        )
+    def test_update_settings_no_role_in_expiration(self, test_repo, mocked_datetime):
+        result = test_repo.update_settings(payload={"settings": {"expiration": {}}})
         assert result == {
             "task": "update_settings",
             "status": False,
@@ -1438,9 +1365,7 @@ class TestMetadataRepository:
     def test_update_settings_valid_and_invalid_roles(
         self, test_repo, mocked_datetime, monkeypatch
     ):
-        test_repo.write_repository_settings = pretend.call_recorder(
-            lambda *a: None
-        )
+        test_repo.write_repository_settings = pretend.call_recorder(lambda *a: None)
         TARGETS_EXP = 100
         SNAPSHOT_EXP = 50
 
