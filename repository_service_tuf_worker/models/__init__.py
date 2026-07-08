@@ -17,7 +17,17 @@ from repository_service_tuf_worker.models.targets import (  # noqa
 
 
 def rstuf_db(db_server: str) -> sessionmaker:
-    engine = create_engine(db_server)
+    engine = create_engine(
+        db_server,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+        connect_args={
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 5,
+            "keepalives_count": 3,
+        },
+    )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     # Base.metadata.create_all(bind=engine)
