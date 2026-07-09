@@ -21,6 +21,7 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError, UnverifiedSignatureError
+from sqlalchemy.engine import URL
 from securesystemslib.signer import (
     KEY_FOR_TYPE_AND_SCHEME,
     Key,
@@ -263,9 +264,25 @@ class MetadataRepository:
                 except OSError as err:
                     logging.error(str(err))
                     raise err
-            db_uri = f"{uri.scheme}://{db_user}:{db_password}@{uri.netloc}"
+            url = URL.create(
+                drivername=uri.scheme,
+                username=db_user,
+                password=db_password,
+                host=uri.hostname,
+                port=uri.port,
+                database=uri.path.lstrip("/") or None,
+            )
+            db_uri = url.render_as_string(hide_password=False)
         else:
-            db_uri = f"{uri.scheme}:{uri._replace(scheme='').geturl()}"
+            url = URL.create(
+                drivername=uri.scheme,
+                username=uri.username,
+                password=uri.password,
+                host=uri.hostname,
+                port=uri.port,
+                database=uri.path.lstrip("/") or None,
+            )
+            db_uri = url.render_as_string(hide_password=False)
 
         settings.SQL = rstuf_db(db_uri)
         #
