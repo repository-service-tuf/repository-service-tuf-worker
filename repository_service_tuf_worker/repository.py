@@ -21,7 +21,6 @@ from celery.exceptions import ChordError
 from celery.result import AsyncResult, states
 from dynaconf.loaders import redis_loader
 from securesystemslib.exceptions import StorageError, UnverifiedSignatureError
-from sqlalchemy.engine import URL
 from securesystemslib.signer import (
     KEY_FOR_TYPE_AND_SCHEME,
     Key,
@@ -29,6 +28,7 @@ from securesystemslib.signer import (
     Signer,
     SigstoreKey,
 )
+from sqlalchemy.engine import URL
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
