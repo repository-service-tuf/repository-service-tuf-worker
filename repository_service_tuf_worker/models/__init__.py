@@ -20,20 +20,21 @@ from repository_service_tuf_worker.models.targets import (  # noqa
 
 
 def rstuf_db(db_server: str) -> Session:
-    connect_args = {
-        "keepalives": 1,
-        "keepalives_idle": int(
-            os.environ.get("RSTUF_DB_KEEPALIVE_IDLE", "30")
-        ),
-        "keepalives_interval": int(
-            os.environ.get("RSTUF_DB_KEEPALIVE_INTERVAL", "5")
-        ),
-    }
+    connect_args = {}
 
-    if sys.platform == "linux":
-        connect_args["keepalives_count"] = int(
-            os.environ.get("RSTUF_DB_KEEPALIVE_COUNT", "3")
+    if os.environ.get("RSTUF_DB_KEEPALIVE"):
+        connect_args["keepalives"] = 1
+        connect_args["keepalives_idle"] = int(
+            os.environ.get("RSTUF_DB_KEEPALIVE_IDLE", "30")
         )
+        connect_args["keepalives_interval"] = int(
+            os.environ.get("RSTUF_DB_KEEPALIVE_INTERVAL", "5")
+        )
+
+        if sys.platform == "linux":
+            connect_args["keepalives_count"] = int(
+                os.environ.get("RSTUF_DB_KEEPALIVE_COUNT", "3")
+            )
 
     engine = create_engine(
         db_server,
