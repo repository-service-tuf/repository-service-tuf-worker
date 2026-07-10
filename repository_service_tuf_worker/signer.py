@@ -125,11 +125,18 @@ class SignerStore:
         """
 
         if key.keyid not in self._signers:
-            if uri := key.unrecognized_fields.get(RSTUF_ONLINE_KEY_URI_FIELD):
-                # (Re-)export ambient settings in isolated environment
-                with isolated_env(self._ambient_settings):
-                    signer = Signer.from_priv_key_uri(uri, key)
+            uri = key.unrecognized_fields.get(RSTUF_ONLINE_KEY_URI_FIELD)
 
-                self._signers[key.keyid] = signer
+            if not uri:
+                raise ValueError(
+                    f"Missing '{RSTUF_ONLINE_KEY_URI_FIELD}' field in key {key.keyid}. "
+                    "Strict explicit URI mapping from metadata is required."
+                )
+
+            # (Re-)export ambient settings in isolated environment
+            with isolated_env(self._ambient_settings):
+                signer = Signer.from_priv_key_uri(uri, key)
+
+            self._signers[key.keyid] = signer
 
         return self._signers[key.keyid]
