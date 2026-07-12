@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import redis
 from celery import Celery, chain, schedules, signals
+from celery.exceptions import SoftTimeLimitExceeded
 
 from repository_service_tuf_worker import get_worker_settings
 from repository_service_tuf_worker.repository import (
@@ -77,7 +78,12 @@ app = Celery(
 )
 
 
-@app.task(serializer="json", bind=True)
+@app.task(
+    serializer="json",
+    bind=True,
+    soft_time_limit=worker_settings.get("TASK_SOFT_TIME_LIMIT", 300),
+    time_limit=worker_settings.get("TASK_TIME_LIMIT", 600),
+)
 def repository_service_tuf_worker(
     self,
     action: str,
@@ -90,16 +96,24 @@ def repository_service_tuf_worker(
         action: which action to be executed by the task.
         payload: data that will be given to the action.
     """
-    repository_action = getattr(repository, action)
-    if payload is None:
-        result = repository_action()
-    else:
-        # add task id to payload
-        payload["task_id"] = self.request.id
+    try:
+        repository_action = getattr(repository, action)
+        if payload is None:
+            result = repository_action()
+        else:
+            # add task id to payload
+            payload["task_id"] = self.request.id
 
-        result = repository_action(payload, update_state=self.update_state)
+            result = repository_action(payload, update_state=self.update_state)
 
-    return result
+        return result
+    except SoftTimeLimitExceeded:
+        logging.error(
+            f"Task {self.request.id} exceeded the soft time limit "
+            f"({worker_settings.get('TASK_SOFT_TIME_LIMIT', 300)}s). "
+            "The task will be terminated."
+        )
+        raise
 
 
 @app.task(serializer="json", queue="rstuf_internals")
