@@ -123,8 +123,15 @@ class TestMetadataRepository:
         test_repo.write_repository_settings = pretend.call_recorder(lambda *a: None)
         result = test_repo._online_key
         assert result == key
-        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
-        assert test_repo._storage_load_root.calls == [pretend.call()]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ONLINE_KEY"),
+            pretend.call("ONLINE_KEYS"),
+            pretend.call("ONLINE_KEY"),
+        ]
+        assert test_repo._storage_load_root.calls == [
+            pretend.call(),
+            pretend.call(),
+        ]
         expected_dict["keyid"] = key.keyid
         assert key.to_dict.calls == [pretend.call()]
         assert test_repo.write_repository_settings.calls == [
@@ -161,16 +168,6 @@ class TestMetadataRepository:
             pretend.call("key_id_1", {"keyval": "foo"}),
             pretend.call("key_id_2", {"keyval": "bar"}),
         ]
-
-    def test_sign_accumulates_multiple_signatures(self, test_repo):
-        role = Metadata(Targets(version=1))
-        key1, signer1 = generate_key_and_signer()  # however your test fixtures do this
-        key2, signer2 = generate_key_and_signer()
-
-        test_repo._sign(role, key1)
-        test_repo._sign(role, key2)
-
-        assert len(role.signatures) == 2  # currently fails — only 1 signature survives
 
     def test_online_keys_property_falls_back_to_online_key(
         self, test_repo, monkeypatch
@@ -297,14 +294,29 @@ class TestMetadataRepository:
         ]
 
     def test_sign_accumulates_multiple_signatures(self, test_repo):
-        role = Metadata(Targets(version=1))
-        key1, signer1 = generate_key_and_signer()  # however your test fixtures do this
-        key2, signer2 = generate_key_and_signer()
+        # `_sign` must append signatures (append=True) so multiple online keys
+        # each contribute a signature instead of overwriting one another.
+        signatures = {}
 
-        test_repo._sign(role, key1)
-        test_repo._sign(role, key2)
+        def fake_sign(signer, append):
+            assert append is True
+            signatures[signer.keyid] = signer
 
-        assert len(role.signatures) == 2  # currently fails — only 1 signature survives
+        role = pretend.stub(
+            signatures=signatures,
+            sign=pretend.call_recorder(fake_sign),
+        )
+        signer1 = pretend.stub(keyid="k1", sign=lambda *a, **kw: None)
+        signer2 = pretend.stub(keyid="k2", sign=lambda *a, **kw: None)
+
+        test_repo._sign(role, signer1)
+        test_repo._sign(role, signer2)
+
+        assert len(role.signatures) == 2
+        assert role.sign.calls == [
+            pretend.call(signer1, append=True),
+            pretend.call(signer2, append=True),
+        ]
 
     def test_refresh_settings_with_sql_user_missing_password(self, test_repo):
         test_repo._worker_settings.DB_SERVER = "postgresql://fake-sql:5433"
@@ -735,7 +747,10 @@ class TestMetadataRepository:
     def test__bump_and_persist(self, test_repo):
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._bump_version = pretend.call_recorder(lambda *a: None)
-        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._resolve_keyids_for_role = pretend.call_recorder(
+            lambda *a: ["online_keyid"]
+        )
+        test_repo._sign_with_online_keys = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
 
         timestamp = Metadata(Timestamp(expires=datetime.datetime.now()))
@@ -746,13 +761,21 @@ class TestMetadataRepository:
             pretend.call(timestamp, Timestamp.type, None)
         ]
         assert test_repo._bump_version.calls == [pretend.call(timestamp)]
-        assert test_repo._sign.calls == [pretend.call(timestamp, None)]
+        assert test_repo._resolve_keyids_for_role.calls == [
+            pretend.call(Timestamp.type)
+        ]
+        assert test_repo._sign_with_online_keys.calls == [
+            pretend.call(timestamp, ["online_keyid"])
+        ]
         assert test_repo._persist.calls == [pretend.call(timestamp, Timestamp.type)]
 
     def test__bump_and_persist_without_persist(self, test_repo):
         test_repo._bump_expiry = pretend.call_recorder(lambda *a: None)
         test_repo._bump_version = pretend.call_recorder(lambda *a: None)
-        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._resolve_keyids_for_role = pretend.call_recorder(
+            lambda *a: ["online_keyid"]
+        )
+        test_repo._sign_with_online_keys = pretend.call_recorder(lambda *a: None)
         test_repo._persist = pretend.call_recorder(lambda *a: None)
 
         timestamp = Metadata(Timestamp(expires=datetime.datetime.now()))
@@ -763,7 +786,12 @@ class TestMetadataRepository:
             pretend.call(timestamp, Timestamp.type, None)
         ]
         assert test_repo._bump_version.calls == [pretend.call(timestamp)]
-        assert test_repo._sign.calls == [pretend.call(timestamp, None)]
+        assert test_repo._resolve_keyids_for_role.calls == [
+            pretend.call(Timestamp.type)
+        ]
+        assert test_repo._sign_with_online_keys.calls == [
+            pretend.call(timestamp, ["online_keyid"])
+        ]
         assert test_repo._persist.calls == []
 
     @pytest.mark.parametrize(
