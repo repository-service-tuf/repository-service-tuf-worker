@@ -60,7 +60,10 @@ from repository_service_tuf_worker.models import (
     targets_models,
     targets_schema,
 )
-from repository_service_tuf_worker.signer import SignerStore
+from repository_service_tuf_worker.signer import (
+    RSTUF_ONLINE_KEY_URI_FIELD,
+    SignerStore,
+)
 
 KEY_FOR_TYPE_AND_SCHEME.update(
     {
@@ -146,39 +149,38 @@ class MetadataRepository:
         return get_repository_settings()
 
     @property
-    def _online_key(self) -> Key:
+    def _online_keys(self) -> List[Key]:
+        # Priority 1: Metadata is the source of truth. Read online keys from
+        # root metadata in storage so ceremony-driven key rotation is honored
+        # everywhere (post-bootstrap). Settings are only a pre-bootstrap seed.
+        try:
+            root = self._storage_load_root()
+            if root is not None:
+                online_keys = []
+                for key in root.signed.keys.values():
+                    if RSTUF_ONLINE_KEY_URI_FIELD in key.unrecognized_fields:
+                        online_keys.append(key)
+                if online_keys:
+                    return online_keys
+        except Exception as e:
+            logging.debug(f"Could not load online keys from root metadata: {e}")
+
+        # Priority 2: Pre-bootstrap fallback -- ONLINE_KEYS setting (collection).
+        key_dicts = self._settings.get_fresh("ONLINE_KEYS")
+        if key_dicts is not None:
+            online_keys = []
+            for key_dict in key_dicts:
+                key_dict = copy.deepcopy(key_dict)
+                online_keys.append(Key.from_dict(key_dict.pop("keyid"), key_dict))
+            return online_keys
+
+        # Priority 3: Pre-bootstrap fallback -- single ONLINE_KEY setting.
         key_dict = self._settings.get_fresh("ONLINE_KEY")
         if key_dict is not None:
             key_dict = copy.deepcopy(key_dict)
-            return Key.from_dict(key_dict.pop("keyid"), key_dict)
-        else:
-            root: Metadata[Root] = self._storage_load_root()
-            # All roles except root share the same one key and it doesn't
-            # matter from which role we will get the key.
-            keyid: str = root.signed.roles["timestamp"].keyids[0]
-            key = root.signed.keys[keyid]
-            key_dict = key.to_dict()
-            key_dict["keyid"] = key.keyid
-            self.write_repository_settings("ONLINE_KEY", key_dict)
-            return key
+            return [Key.from_dict(key_dict.pop("keyid"), key_dict)]
 
-    @_online_key.setter
-    def _online_key(self, key: Key):
-        key_dict = key.to_dict()
-        key_dict["keyid"] = key.keyid
-        self.write_repository_settings("ONLINE_KEY", key_dict)
-
-    @property
-    def _online_keys(self) -> List[Key]:
-        key_dicts = self._settings.get_fresh("ONLINE_KEYS")
-        if key_dicts is None:
-            return [self._online_key]
-
-        online_keys = []
-        for key_dict in key_dicts:
-            key_dict = copy.deepcopy(key_dict)
-            online_keys.append(Key.from_dict(key_dict.pop("keyid"), key_dict))
-        return online_keys
+        return []
 
     @_online_keys.setter
     def _online_keys(self, keys: List[Key]):
@@ -192,8 +194,93 @@ class MetadataRepository:
             self._online_key = keys[0]
 
     @property
+    def _online_key(self) -> Key:
+        key_dict = self._settings.get_fresh("ONLINE_KEY")
+        if key_dict is not None:
+            key_dict = copy.deepcopy(key_dict)
+            return Key.from_dict(key_dict.pop("keyid"), key_dict)
+
+        # If no ONLINE_KEY setting, try to get the first one from dynamic online_keys
+        online_keys = self._online_keys
+        if online_keys:
+            key = online_keys[0]
+            key_dict = key.to_dict()
+            key_dict["keyid"] = key.keyid
+            self.write_repository_settings("ONLINE_KEY", key_dict)
+            return key
+
+        # Fallback to loading root metadata and getting timestamp key
+        try:
+            root = self._storage_load_root()
+            keyid = root.signed.roles["timestamp"].keyids[0]
+            key = root.signed.keys[keyid]
+            key_dict = key.to_dict()
+            key_dict["keyid"] = key.keyid
+            self.write_repository_settings("ONLINE_KEY", key_dict)
+            return key
+        except Exception as e:
+            raise RepositoryError("No online key found or loaded") from e
+
+    @_online_key.setter
+    def _online_key(self, key: Key):
+        key_dict = key.to_dict()
+        key_dict["keyid"] = key.keyid
+        self.write_repository_settings("ONLINE_KEY", key_dict)
+
+    @property
     def _online_keyids(self) -> List[str]:
         return [key.keyid for key in self._online_keys]
+
+    def _declared_role_keyids(self, role_name: str) -> List[str]:
+        """Per-role online keyids declared for ``role_name``.
+
+        Read from stored ``targets`` metadata (the source of truth) so that
+        re-bumps with no fresh payload stay stable. Returns ``[]`` when the
+        role declares nothing (caller then falls back to the global set).
+        """
+        try:
+            targets: Metadata[Targets] = self._storage_load_targets()
+            delegations = targets.signed.delegations
+            if delegations.roles and role_name in delegations.roles:
+                return list(delegations.roles[role_name].keyids)
+        except Exception as e:  # pragma: no cover - defensive
+            logging.debug(f"Could not read declared keyids for {role_name}: {e}")
+        return []
+
+    def _resolve_online_keys(
+        self,
+        role_name: str,
+        declared_keyids: Optional[List[str]] = None,
+    ) -> List[Key]:
+        """Resolve the online ``Key`` objects that must sign ``role_name``.
+
+        Order:
+          1. Nested bin -> inherit the parent custom delegation's keys.
+          2. Declared per-role keyids -> those keys (from ``declared_keyids``
+             if provided, else read from stored metadata).
+          3. Fallback -> the global online key collection.
+
+        Pure: no persistence side effects. Unknown declared keyids are dropped
+        (defense in depth); the subset guard / API validation own hard failures.
+        """
+        # 1. Nested bin inherits from its parent custom delegation.
+        if declared_keyids is None and NESTED_BINS_SEPARATOR in role_name:
+            parent = role_name.split(NESTED_BINS_SEPARATOR)[0]
+            return self._resolve_online_keys(parent)
+
+        # 2. Declared per-role keys.
+        if declared_keyids is None:
+            declared_keyids = self._declared_role_keyids(role_name)
+
+        online_keys = self._online_keys
+        if declared_keyids:
+            by_id = {k.keyid: k for k in online_keys}
+            resolved = [by_id[kid] for kid in declared_keyids if kid in by_id]
+            if resolved:
+                return resolved
+
+        # 3. Fallback: global online keys.
+        return list(online_keys)
 
     @property
     def bootstrap_state(self) -> Optional[str]:
@@ -264,6 +351,24 @@ class MetadataRepository:
                 delegation_keyids = targets.signed.delegations.roles[rolename].keyids
 
         return delegation_keyids
+
+    def _resolve_keyids_for_role(self, role_name: str) -> List[str]:
+        # 1. Top-level roles
+        if role_name in [Root.type, Targets.type, Snapshot.type, Timestamp.type]:
+            try:
+                root = self._storage_load_root()
+                return root.signed.roles[role_name].keyids
+            except Exception as e:
+                logging.debug(f"Could not load root to resolve keyids for {role_name}: {e}")
+                # Fallback: if root not loaded (e.g., during bootstrap), return all online_keyids
+                return self._online_keyids
+
+        # 2. Delegated roles
+        try:
+            return self.get_delegation_keyids(role_name)
+        except Exception as e:
+            logging.debug(f"Could not get delegation keyids for {role_name}: {e}")
+            return self._online_keyids
 
     def refresh_settings(self, worker_settings: Optional[Dynaconf] = None):
         """Refreshes the MetadataRepository settings."""
@@ -336,7 +441,7 @@ class MetadataRepository:
         redis_loader.write(self._settings, settings_data)
 
     def _sign(
-        self, role: Metadata, signer: Optional[Union[Signer, Key]] = None
+        self, role: Metadata, signer: Optional[Union[Signer, Key]] = None, role_name: Optional[str] = None
     ) -> None:
         """
         Re-signs metadata with role-specific key from global key store.
@@ -349,7 +454,10 @@ class MetadataRepository:
                 signer = self._signer_store.get(signer)
             role.sign(signer, append=True)
         else:
-            self._sign_with_online_keys(role)
+            keyids = None
+            if role_name is not None:
+                keyids = self._resolve_keyids_for_role(role_name)
+            self._sign_with_online_keys(role, keyids)
 
     def _sign_with_online_keys(
         self, role: Metadata, keyids: Optional[List[str]] = None
@@ -429,10 +537,12 @@ class MetadataRepository:
         """
         self._bump_expiry(role, role_name, expire)
         self._bump_version(role)
-        if signer is None and keyids is not None:
+        if signer is None:
+            if keyids is None:
+                keyids = self._resolve_keyids_for_role(role_name)
             self._sign_with_online_keys(role, keyids)
         else:
-            self._sign(role, signer)
+            self._sign(role, signer, role_name=role_name)
         if persist:
             self._persist(role, role_name)
 
@@ -655,7 +765,7 @@ class MetadataRepository:
         current_root = self._storage_load_root()
         old_online_keyids = current_root.signed.roles[Targets.type].keyids
         new_online_keys = self._online_keys
-        new_online_keyids = self._online_keyids
+        new_online_keyids = [key.keyid for key in new_online_keys]
 
         if set(old_online_keyids) == set(new_online_keyids):
             return
@@ -1008,10 +1118,16 @@ class MetadataRepository:
         delegator_name: str,
         expiration: int,
         num_bins: int,
+        role_keys: Optional[List[Key]] = None,
     ) -> Dict[str, Metadata[Targets]]:
         bit_length = int(log(num_bins, 2))
         name_prefix = f"{delegator_name}{NESTED_BINS_NAME_SUFFIX}"
-        online_keys = copy.deepcopy(self._online_keys)
+        # Key the nested bins from the parent role's resolved key set so the
+        # bins inherit exactly the keys their delegator trusts. Falls back to
+        # the global online keys when no per-role set is supplied.
+        if role_keys is None:
+            role_keys = self._resolve_online_keys(delegator_name)
+        online_keys = copy.deepcopy(role_keys)
         online_keyids = [key.keyid for key in online_keys]
         success = {}
 
@@ -1156,13 +1272,29 @@ class MetadataRepository:
                             f"Role '{role}' has nested \
                                       hash-bin delegations"
                         )
+                        # Guard passed above (empty or subset of online keys).
+                        # Resolve the role's key set: declared keyids -> those
+                        # keys, else fall back to the global online keys.
+                        declared = list(delegations.roles[role].keyids)
+                        role_keys = self._resolve_online_keys(
+                            role, declared_keyids=declared
+                        )
+                        resolved_keyids = [k.keyid for k in role_keys]
                         delegations.roles[role].terminating = False
+                        # Ensure the role's keys are present in the parent
+                        # targets delegations.keys (invariant: every keyid the
+                        # role trusts has a corresponding Key object).
+                        for k in role_keys:
+                            targets.signed.delegations.keys.setdefault(k.keyid, k)
                         nested_bin_success = self._setup_nested_hashbin_delegations(
-                            role_metadata, role, expires, num_bins
+                            role_metadata, role, expires, num_bins,
+                            role_keys=role_keys,
                         )
                         nb_success.update(nested_bin_success)
-                        if len(delegations.roles[role].keyids) == 0:
-                            delegations.roles[role].keyids.extend(online_keyids)
+                        # Unconditional: resolved_keyids already went through the
+                        # full declared -> fallback chain, so it is the source of
+                        # truth for this role's keyids.
+                        delegations.roles[role].keyids = list(resolved_keyids)
                         self._sign_with_online_keys(
                             role_metadata,
                             delegations.roles[role].keyids,
@@ -1466,9 +1598,10 @@ class MetadataRepository:
         snapshot.signed.meta[f"{Targets.type}.json"] = MetaFile()
         timestamp: Metadata[Timestamp] = Metadata(Timestamp())
 
-        if self._online_key.keyid not in targets.signed.delegations.keys:
-            logging.debug("online key not in targets, adding key")
-            targets.signed.delegations.keys[self._online_key.keyid] = self._online_key
+        for online_key in self._online_keys:
+            if online_key.keyid not in targets.signed.delegations.keys:
+                logging.debug(f"online key {online_key.keyid} not in targets, adding key")
+                targets.signed.delegations.keys[online_key.keyid] = online_key
 
         online_roles = {
             Targets.type: targets,
@@ -1515,7 +1648,7 @@ class MetadataRepository:
         # `Timestamp``, `Snapshot`) in the backend storage service.
         for role in online_roles:
             self._bump_expiry(online_roles[role], role)
-            self._sign(online_roles[role])
+            self._sign(online_roles[role], role_name=role)
             self._persist(online_roles[role], role)
 
     @staticmethod
@@ -1549,10 +1682,16 @@ class MetadataRepository:
             delegations = Delegations.from_dict(pending_delegations)
         else:
             delegations = None
-        # All roles except root share the same one key and it doesn't matter
-        # from which role we will get the key.
-        keyid: str = root.signed.roles["timestamp"].keyids[0]
-        self._online_key = root.signed.keys[keyid]
+        online_keys = [
+            key for key in root.signed.keys.values()
+            if RSTUF_ONLINE_KEY_URI_FIELD in key.unrecognized_fields
+        ]
+        if not online_keys:
+            online_keys = [
+                root.signed.keys[kid]
+                for kid in root.signed.roles["timestamp"].keyids
+            ]
+        self._online_keys = online_keys
         self._bootstrap_online_roles(delegations=delegations)
         self.write_repository_settings("ROOT_SIGNING", None)
         self._persist(root, Root.type)
@@ -2286,12 +2425,28 @@ class MetadataRepository:
         self, current_root: Metadata[Root], new_root: Metadata[Root]
     ) -> None:
         # We always persist the new root metadata, but we cannot persist
-        # without verifying if the online key is rotated to avoid a mismatch
-        # with the rest of the roles using the online key.
-        current_keyid = current_root.signed.roles[Timestamp.type].keyids[0]
-        new_keyid = new_root.signed.roles[Timestamp.type].keyids[0]
-        if current_keyid == new_keyid:
-            # online key is not changed, persist the new root
+        # without verifying if the online keys are rotated to avoid a mismatch
+        # with the rest of the roles using the online keys.
+        current_online_keys = [
+            key for key in current_root.signed.keys.values()
+            if RSTUF_ONLINE_KEY_URI_FIELD in key.unrecognized_fields
+        ]
+        current_online_keyids = {key.keyid for key in current_online_keys}
+
+        new_online_keys = [
+            key for key in new_root.signed.keys.values()
+            if RSTUF_ONLINE_KEY_URI_FIELD in key.unrecognized_fields
+        ]
+        new_online_keyids = {key.keyid for key in new_online_keys}
+
+        # Fallback to old behavior if no online key URI fields are set
+        if not current_online_keyids:
+            current_online_keyids = set(current_root.signed.roles[Timestamp.type].keyids)
+        if not new_online_keyids:
+            new_online_keyids = set(new_root.signed.roles[Timestamp.type].keyids)
+
+        if current_online_keyids == new_online_keyids:
+            # online keys are not changed, persist the new root
             self._persist(new_root, Root.type)
             logging.info(f"Updating root metadata: {new_root.signed.version}")
 
@@ -2304,18 +2459,23 @@ class MetadataRepository:
             status_lock_targets = False
             try:
                 with self._redis.lock(LOCK_TARGETS, timeout=self._timeout):
-                    curr_online_key = self._online_key
-                    self._online_key = new_root.signed.keys[new_keyid]
+                    curr_online_keys = self._online_keys
+                    if not new_online_keys:
+                        new_online_keys = [
+                            new_root.signed.keys[kid]
+                            for kid in new_root.signed.roles[Timestamp.type].keyids
+                        ]
+                    self._online_keys = new_online_keys
 
                     try:
                         self._run_online_roles_bump(force=True)
                         logging.info("Updating all targets metadata")
                     except Exception as e:
-                        # Recover to correct online key state.
-                        self._online_key = curr_online_key
+                        # Recover to correct online keys state.
+                        self._online_keys = curr_online_keys
                         raise e
 
-                    # root metadata and online key are updated
+                    # root metadata and online keys are updated
                     # 1. persist the new root
                     # 2. bump all target roles
                     self._persist(new_root, Root.type)
