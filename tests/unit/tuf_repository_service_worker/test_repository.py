@@ -256,6 +256,44 @@ class TestMetadataRepository:
             pretend.call("postgresql://psql:psqlpass@fake-sql:5433")
         ]
 
+    def test_refresh_settings_with_sql_user_password_special_chars(
+        self, test_repo
+    ):
+        test_repo._worker_settings.DB_SERVER = "postgresql://fake-sql:5433"
+        test_repo._worker_settings.DB_USER = "psql"
+        test_repo._worker_settings.DB_PASSWORD = "p%ss?w^rd]!"
+        fake_sql = pretend.stub()
+        repository.rstuf_db = pretend.call_recorder(lambda *a: fake_sql)
+
+        test_repo.refresh_settings()
+
+        assert test_repo._worker_settings.SQL == fake_sql
+        assert repository.rstuf_db.calls == [
+            pretend.call(
+                "postgresql://psql:p%25ss%3Fw%5Erd%5D%21@fake-sql:5433"
+            )
+        ]
+
+    def test_refresh_settings_with_sql_user_password_custom_db(
+        self, test_repo
+    ):
+        test_repo._worker_settings.DB_SERVER = (
+            "postgresql://fake-sql:5433/db-custom-name"
+        )
+        test_repo._worker_settings.DB_USER = "psql"
+        test_repo._worker_settings.DB_PASSWORD = "psqlpass"
+        fake_sql = pretend.stub()
+        repository.rstuf_db = pretend.call_recorder(lambda *a: fake_sql)
+
+        test_repo.refresh_settings()
+
+        assert test_repo._worker_settings.SQL == fake_sql
+        assert repository.rstuf_db.calls == [
+            pretend.call(
+                "postgresql://psql:psqlpass@fake-sql:5433/db-custom-name"
+            )
+        ]
+
     def test_refresh_settings_with_sql_user_missing_password(self, test_repo):
         test_repo._worker_settings.DB_SERVER = "postgresql://fake-sql:5433"
         test_repo._worker_settings.DB_USER = "psql"

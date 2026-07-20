@@ -4,6 +4,7 @@ from logging.config import fileConfig
 from urllib.parse import urlparse
 
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import URL
 
 from alembic import context
 
@@ -41,9 +42,25 @@ elif db_user and db_password:
     if db_password.startswith("/run/secrets"):
         with open(db_password) as f:
             db_password = f.read().rstrip("\n")
-    sql_server_uri = f"{uri.scheme}://{db_user}:{db_password}@{uri.netloc}"
+    url = URL.create(
+        drivername=uri.scheme,
+        username=db_user,
+        password=db_password,
+        host=uri.hostname,
+        port=uri.port,
+        database=uri.path.lstrip("/") or None,
+    )
+    sql_server_uri = url.render_as_string(hide_password=False)
 else:
-    sql_server_uri = f"{uri.scheme}:{uri._replace(scheme='').geturl()}"
+    url = URL.create(
+        drivername=uri.scheme,
+        username=uri.username,
+        password=uri.password,
+        host=uri.hostname,
+        port=uri.port,
+        database=uri.path.lstrip("/") or None,
+    )
+    sql_server_uri = url.render_as_string(hide_password=False)
 
 config.set_main_option("sqlalchemy.url", sql_server_uri)
 

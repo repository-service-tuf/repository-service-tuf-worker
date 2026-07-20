@@ -28,6 +28,7 @@ from securesystemslib.signer import (
     Signer,
     SigstoreKey,
 )
+from sqlalchemy.engine import URL
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
@@ -263,9 +264,25 @@ class MetadataRepository:
                 except OSError as err:
                     logging.error(str(err))
                     raise err
-            db_uri = f"{uri.scheme}://{db_user}:{db_password}@{uri.netloc}"
+            url = URL.create(
+                drivername=uri.scheme,
+                username=db_user,
+                password=db_password,
+                host=uri.hostname,
+                port=uri.port,
+                database=uri.path.lstrip("/") or None,
+            )
+            db_uri = url.render_as_string(hide_password=False)
         else:
-            db_uri = f"{uri.scheme}:{uri._replace(scheme='').geturl()}"
+            url = URL.create(
+                drivername=uri.scheme,
+                username=uri.username,
+                password=uri.password,
+                host=uri.hostname,
+                port=uri.port,
+                database=uri.path.lstrip("/") or None,
+            )
+            db_uri = url.render_as_string(hide_password=False)
 
         settings.SQL = rstuf_db(db_uri)
         #
