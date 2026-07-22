@@ -6,6 +6,7 @@
 import concurrent.futures
 import copy
 import enum
+import json
 import logging
 import time
 from dataclasses import asdict, dataclass
@@ -27,6 +28,7 @@ from securesystemslib.signer import (
     Signer,
     SigstoreKey,
 )
+from sqlalchemy.engine import URL
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
@@ -147,7 +149,7 @@ class MetadataRepository:
 
     @property
     def _online_key(self) -> Key:
-        key_dict = self._settings.get_fresh("ONLINE_KEY")
+        key_dict = self._get_fresh_as_plain("ONLINE_KEY")
         if key_dict is not None:
             return Key.from_dict(key_dict.pop("keyid"), key_dict)
         else:
@@ -262,9 +264,25 @@ class MetadataRepository:
                 except OSError as err:
                     logging.error(str(err))
                     raise err
-            db_uri = f"{uri.scheme}://{db_user}:{db_password}@{uri.netloc}"
+            url = URL.create(
+                drivername=uri.scheme,
+                username=db_user,
+                password=db_password,
+                host=uri.hostname,
+                port=uri.port,
+                database=uri.path.lstrip("/") or None,
+            )
+            db_uri = url.render_as_string(hide_password=False)
         else:
-            db_uri = f"{uri.scheme}:{uri._replace(scheme='').geturl()}"
+            url = URL.create(
+                drivername=uri.scheme,
+                username=uri.username,
+                password=uri.password,
+                host=uri.hostname,
+                port=uri.port,
+                database=uri.path.lstrip("/") or None,
+            )
+            db_uri = url.render_as_string(hide_password=False)
 
         settings.SQL = rstuf_db(db_uri)
         #
@@ -297,6 +315,27 @@ class MetadataRepository:
         settings_data = self._settings.as_dict(env=self._settings.current_env)
         settings_data[key] = value
         redis_loader.write(self._settings, settings_data)
+
+    def _get_fresh_as_plain(self, key: str) -> Any:
+        """Return a fresh repository setting as plain Python objects.
+
+        `get_fresh` returns dynaconf node objects (``DataDict``) whose
+        ``.items()`` can yield phantom/duplicate entries. ``tuf`` (>=7)
+        ``Signed.from_dict`` iterates ``keys.items()`` while replacing each
+        value in place, so on a ``DataDict`` it re-reads a value it just
+        converted into an ``SSlibKey`` and raises
+        ``'SSlibKey' object has no attribute 'get'``.
+
+        Round-tripping through JSON returns plain ``dict``/``list`` objects
+        with correct iteration semantics (and an independent copy, so the
+        destructive ``from_dict`` cannot touch dynaconf's cached value).
+        Repository settings are always JSON-serialisable (they are persisted
+        to Redis as JSON).
+        """
+        value = self._settings.get_fresh(key)
+        if value is None:
+            return None
+        return json.loads(json.dumps(value))
 
     def _sign(self, role: Metadata, signer: Optional[Signer] = None) -> None:
         """
@@ -483,7 +522,7 @@ class MetadataRepository:
                     logging.debug(f"role {rolename} loaded from disk")
                     source = "storage"
                 except StorageError as err:
-                    if delegation_signing := self._settings.get_fresh(
+                    if delegation_signing := self._get_fresh_as_plain(
                         f"{rolename.upper()}_SIGNING"
                     ):
                         delegation = Metadata[Targets].from_dict(
@@ -1227,7 +1266,7 @@ class MetadataRepository:
                 rolename, db_target_role.version
             )
         except StorageError as err:
-            if delegation_signing := self._settings.get_fresh(
+            if delegation_signing := self._get_fresh_as_plain(
                 f"{role.upper()}_SIGNING"
             ):
                 delegation = Metadata[Targets].from_dict(delegation_signing)
@@ -1338,7 +1377,7 @@ class MetadataRepository:
         """
         Register the bootstrap finished.
         """
-        pending_delegations = self._settings.get_fresh("DELEGATIONS")
+        pending_delegations = self._get_fresh_as_plain("DELEGATIONS")
         if pending_delegations:
             delegations = Delegations.from_dict(pending_delegations)
         else:
@@ -2364,7 +2403,7 @@ class MetadataRepository:
         rolename = payload["role"]
 
         # Assert pending signing event exists
-        metadata_dict = self._settings.get_fresh(f"{rolename.upper()}_SIGNING")
+        metadata_dict = self._get_fresh_as_plain(f"{rolename.upper()}_SIGNING")
         if metadata_dict is None:
             msg = f"No signatures pending for {rolename}"
             return _result(False, error=msg)
@@ -2475,7 +2514,7 @@ class MetadataRepository:
                 details=None,
             )
 
-        signing_status = self._settings.get_fresh(f"{role.upper()}_SIGNING")
+        signing_status = self._get_fresh_as_plain(f"{role.upper()}_SIGNING")
         if signing_status is None:
             return self._task_result(
                 task=TaskName.DELETE_SIGN_METADATA,

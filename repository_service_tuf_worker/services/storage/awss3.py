@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 from io import BytesIO
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import awswrangler
 import boto3
@@ -22,6 +22,12 @@ from repository_service_tuf_worker.interfaces import (
 
 
 class AWSS3(IStorage):
+    # Per-process version cache. Keys are role names, values are the
+    # highest version this process has seen. Acts as a lower bound: the
+    # real latest is always >= the cached value because a process only
+    # learns versions it wrote or explicitly probed.
+    _version_cache: Dict[str, int] = {}
+
     def __init__(
         self,
         bucket: str,
@@ -112,6 +118,65 @@ class AWSS3(IStorage):
             ),
         ]
 
+    def _scan_latest_version(self, role: str) -> int:
+        """Full bucket scan to find the highest version for a role.
+
+        This is the original list_objects path and is expensive at scale
+        (scans every object in the bucket client-side). It is used only
+        when the version cache has no entry for the role.
+        """
+        s3_path = f"s3://{self._bucket}/"
+        filenames = awswrangler.s3.list_objects(
+            path=f"{s3_path}*.{role}.json",
+            boto3_session=self._s3_session,
+        )
+        versions = [
+            int(name.split(s3_path)[-1].split(".", 1)[0]) for name in filenames
+        ]
+        try:
+            return max(versions)
+        except ValueError:
+            return 1  # no existing file -> start at 1
+
+    def _latest_version(self, role: str) -> int:
+        """Return the latest version number for a role, self-healing across
+        processes.
+
+        The cached value is a lower bound: a process only ever learns versions
+        it wrote or listed, so its cache is always <= the real latest.
+
+        After obtaining the hint (from cache or a full scan), we probe upward
+        one step at a time using cheap head_object calls. TUF versions are
+        strictly contiguous (n -> n+1), so the loop terminates after at most
+        one probe in the steady state (when this process is the sole writer)
+        or a few probes when another process has advanced the version.
+        """
+        version = AWSS3._version_cache.get(role)
+        if version is None:
+            # Cache miss: fall back to the full bucket scan once.
+            version = self._scan_latest_version(role)
+
+        # Self-heal across processes: probe upward until the next key is
+        # absent. Because TUF versions are contiguous this converges quickly
+        # even when another Celery worker has already written ahead.
+        client = self._s3_client
+        while True:
+            try:
+                client.head_object(
+                    Bucket=self._bucket, Key=f"{version + 1}.{role}.json"
+                )
+                version += 1
+            except ClientError as e:
+                status = e.response.get("ResponseMetadata", {}).get(
+                    "HTTPStatusCode"
+                )
+                if status == 404:
+                    break
+                raise
+
+        AWSS3._version_cache[role] = version
+        return version
+
     def get(self, role: str, version: Optional[int] = None) -> Metadata[T]:
         """
         Returns TUF role metadata object for the passed role name,
@@ -124,19 +189,7 @@ class AWSS3(IStorage):
             filename = f"{role}.json"
         else:
             if version is None:
-                s3_path = f"s3://{self._bucket}/"
-                filenames = awswrangler.s3.list_objects(
-                    path=f"{s3_path}*.{role}.json",
-                    boto3_session=self._s3_session,
-                )
-                versions = [
-                    int(name.split(s3_path)[-1].split(".", 1)[0])
-                    for name in filenames
-                ]
-                try:
-                    version = max(versions)
-                except ValueError:
-                    version = 1
+                version = self._latest_version(role)
 
             filename = f"{version}.{role}.json"
 

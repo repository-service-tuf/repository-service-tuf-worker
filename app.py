@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import redis
 from celery import Celery, chain, schedules, signals
+from sqlalchemy.exc import OperationalError
 
 from repository_service_tuf_worker import get_worker_settings
 from repository_service_tuf_worker.repository import (
@@ -77,7 +78,13 @@ app = Celery(
 )
 
 
-@app.task(serializer="json", bind=True)
+@app.task(
+    serializer="json",
+    bind=True,
+    autoretry_for=(OperationalError,),
+    max_retries=3,
+    retry_backoff=True,
+)
 def repository_service_tuf_worker(
     self,
     action: str,
@@ -97,7 +104,11 @@ def repository_service_tuf_worker(
         # add task id to payload
         payload["task_id"] = self.request.id
 
-        result = repository_action(payload, update_state=self.update_state)
+        try:
+            result = repository_action(payload, update_state=self.update_state)
+        except OperationalError:
+            repository._db.rollback()
+            raise
 
     return result
 
