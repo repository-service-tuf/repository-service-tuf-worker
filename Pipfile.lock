@@ -76,20 +76,20 @@
         },
         "boto3": {
             "hashes": [
-                "sha256:5383e705d8a976a14f23bb8c113c07a396931a019db98fce4cdc68650ec6e4d8",
-                "sha256:c80425acab314d7af09609562053f565139e1fe49108eacfcc1601ebfaee235b"
+                "sha256:3fe21f37f5b34e00fc360190f363229cef425f3c0e80a6f2b6a52f6501c3ec90",
+                "sha256:8353beda3ce4037758b24ab6bce7162e6cc084fd14c88637956d208d76cee244"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.10'",
-            "version": "==1.43.53"
+            "version": "==1.43.54"
         },
         "botocore": {
             "hashes": [
-                "sha256:36d93dd8db68ee75f6b61ca9f775161b8168844e4601698701530e6efdded141",
-                "sha256:b7ee9a70d187e5348883c820990ccd9436ab14e2bd6622741fc96fe561e816b8"
+                "sha256:22b447e6c5e295d610a00df262efdffb062805d293c00e94f52a4cd3fe9d391d",
+                "sha256:5b58969503eda747e0b69c33735edfc02dab3d31fe3bba87dd83ea787152ffa4"
             ],
             "markers": "python_version >= '3.10'",
-            "version": "==1.43.53"
+            "version": "==1.43.54"
         },
         "celery": {
             "hashes": [
@@ -425,11 +425,11 @@
                 "ini"
             ],
             "hashes": [
-                "sha256:3b50232b774142702c3d4623633bcd76bb9951abf8567b7f1340d73a30a80899",
-                "sha256:4bb8ac4222af0bb4315e3da40022c283ed140bafb80c36282a7973404a67cd8a"
+                "sha256:1740ca23ff9da042531f507f664cb5b79b0e5120b65f98b74e1387491b6d078a",
+                "sha256:1fc189416e7ddadc0c3bbebad8390d15219a68bb07d24d051478233f08f272a6"
             ],
             "markers": "python_version >= '3.10' and python_version < '3.15'",
-            "version": "==3.3.2"
+            "version": "==3.3.3"
         },
         "email-validator": {
             "hashes": [
@@ -1286,11 +1286,11 @@
         },
         "s3transfer": {
             "hashes": [
-                "sha256:d3d6371dc3f1e5c5427b2b457bcf13bcf87bec334c95aed18642eae61f6926f3",
-                "sha256:d5fd7005ee39307455ad5f310b5ea67f4b1960d7fed5b3671ee50c249de675de"
+                "sha256:ba0309fd86be3c27dbf78cdd813c13c5e1df16e5874b99d2535ebbdfb9892993",
+                "sha256:d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25"
             ],
             "markers": "python_version >= '3.10'",
-            "version": "==0.19.1"
+            "version": "==0.19.2"
         },
         "securesystemslib": {
             "hashes": [
