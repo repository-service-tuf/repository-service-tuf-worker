@@ -651,6 +651,7 @@ class MetadataRepository:
                 raise ValueError("'bump_all' or 'target_roles")
 
             snapshot_meta_updated = False
+            online_keyid_set = set(self._online_keyids)
             for db_role in db_target_roles:
                 rolename = db_role.rolename
                 try:
@@ -689,7 +690,7 @@ class MetadataRepository:
                 targets_crud.update_files_to_published(
                     self._db, [file.path for file in db_role.target_files]
                 )
-                delegation_keyids = List[str]
+                delegation_keyids: List[str]
                 if targets.signed.delegations.succinct_roles:
                     logging.debug("delegations using succinct delegations")
                     delegation_keyids = (
@@ -707,18 +708,20 @@ class MetadataRepository:
                             p_metadata.signed.delegations.succinct_roles.keyids
                         )
                     else:
-                        # Original logic for top-level custom roles
-                        targets: Metadata[Targets] = self._storage_backend.get(
-                            Targets.type
-                        )
+                        # Top-level custom roles: reuse the targets metadata
+                        # already loaded above (re-fetching would shadow it
+                        # for later iterations).
                         delegation_keyids = targets.signed.delegations.roles[
                             rolename
                         ].keyids
 
-                online_keyid_set = set(self._online_keyids)
                 delegation_keyid_set = set(delegation_keyids)
 
-                if delegation_keyid_set.issubset(online_keyid_set):
+                # Empty keyids must not pass as "full online" (an empty set
+                # is a subset of anything); mirror bump_persist_role's guard.
+                if delegation_keyids and delegation_keyid_set.issubset(
+                    online_keyid_set
+                ):
                     logging.debug(f"role {rolename} full online keys")
                     logging.debug("update expiry, bump version and persist")
                     self._bump_and_persist(
@@ -1201,7 +1204,6 @@ class MetadataRepository:
                 version=1,
                 expires=bin_metadata.signed.expires,
             )
-            self._persist(bin_metadata, bin_rolename)
             return bin_rolename, bin_metadata, db_role
 
         db_target_roles: List[targets_schema.RSTUFTargetRoleCreate] = []
@@ -1215,6 +1217,17 @@ class MetadataRepository:
                 rolename, metadata, db_role = future.result()
                 success[rolename] = metadata
                 db_target_roles.append(db_role)
+
+            # Persist only after every bin was created and signed: a bin
+            # failing above raises before any file is written, so a partially
+            # signed delegation is never persisted and the caller never
+            # advances the snapshot for it.
+            persist_futures = [
+                executor.submit(self._persist, metadata, rolename)
+                for rolename, metadata in success.items()
+            ]
+            for future in concurrent.futures.as_completed(persist_futures):
+                future.result()
 
         targets_crud.create_roles(self._db, db_target_roles)
         total_time = time.time() - start_time

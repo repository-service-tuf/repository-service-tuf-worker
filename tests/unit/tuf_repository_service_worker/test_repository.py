@@ -172,23 +172,35 @@ class TestMetadataRepository:
     def test_online_keys_property_falls_back_to_online_key(
         self, test_repo, monkeypatch
     ):
-        fake_settings = pretend.stub(get_fresh=pretend.call_recorder(lambda a: None))
-        fake_key = pretend.stub(keyid="key_id")
+        # No root metadata and no ONLINE_KEYS: falls back to the single
+        # legacy ONLINE_KEY setting.
+        fake_key_dict = {"keyval": "foo", "keyid": "key_id"}
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(
+                lambda a: copy(fake_key_dict) if a == "ONLINE_KEY" else None
+            )
+        )
         monkeypatch.setattr(
             repository,
             "get_repository_settings",
             lambda *a, **kw: fake_settings,
         )
-        monkeypatch.setattr(
-            repository.MetadataRepository,
-            "_online_key",
-            property(lambda self: fake_key),
+        fake_key = pretend.stub(keyid="key_id")
+        fake_key_obj = pretend.stub(
+            from_dict=pretend.call_recorder(lambda *a: fake_key)
         )
+        monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
 
         result = test_repo._online_keys
 
         assert result == [fake_key]
-        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEYS")]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ONLINE_KEYS"),
+            pretend.call("ONLINE_KEY"),
+        ]
+        assert fake_key_obj.from_dict.calls == [
+            pretend.call("key_id", {"keyval": "foo"})
+        ]
 
     @pytest.mark.parametrize(
         "mock_setting, expected",
@@ -980,7 +992,9 @@ class TestMetadataRepository:
         test_repo._storage_load_root = pretend.call_recorder(lambda: fake_root)
         fake_targets = pretend.stub(
             signed=pretend.stub(
-                delegations=pretend.stub(succinct_roles=True),
+                delegations=pretend.stub(
+                    succinct_roles=pretend.stub(keyids=["old_keyid"])
+                ),
                 revoke_key=pretend.call_recorder(lambda a: None),
                 add_key=pretend.call_recorder(lambda a: None),
             )
@@ -988,13 +1002,23 @@ class TestMetadataRepository:
 
         result = test_repo._update_targets_delegations_key(fake_targets)
         assert result is None
-        assert test_repo._storage_load_root.calls == [pretend.call()]
-        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        # loaded once directly and once by the _online_keys property
+        assert test_repo._storage_load_root.calls == [
+            pretend.call(),
+            pretend.call(),
+        ]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ONLINE_KEYS"),
+            pretend.call("ONLINE_KEY"),
+        ]
         assert fake_key_obj.from_dict.calls == [
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
         assert fake_targets.signed.revoke_key.calls == [pretend.call("old_keyid")]
         assert fake_targets.signed.add_key.calls == [pretend.call(fake_key)]
+        assert fake_targets.signed.delegations.succinct_roles.keyids == [
+            "new_key"
+        ]
 
     def test__update_targets_delegations_online_key_not_changed(
         self, test_repo, monkeypatch
@@ -1024,8 +1048,15 @@ class TestMetadataRepository:
 
         result = test_repo._update_targets_delegations_key("targets")
         assert result is None
-        assert test_repo._storage_load_root.calls == [pretend.call()]
-        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        # loaded once directly and once by the _online_keys property
+        assert test_repo._storage_load_root.calls == [
+            pretend.call(),
+            pretend.call(),
+        ]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ONLINE_KEYS"),
+            pretend.call("ONLINE_KEY"),
+        ]
         assert fake_key_obj.from_dict.calls == [
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
@@ -3267,12 +3298,14 @@ class TestMetadataRepository:
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids=["k1"])},
+                keys={},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids=["k1"])},
+                keys={},
                 version=1,
             )
         )
@@ -3374,7 +3407,9 @@ class TestMetadataRepository:
     ):
         fake_key_dict = {"keyval": "foo", "keyid": "old_key_id"}
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+            get_fresh=pretend.call_recorder(
+                lambda a: copy(fake_key_dict) if a == "ONLINE_KEY" else None
+            )
         )
         monkeypatch.setattr(
             repository,
@@ -3388,6 +3423,7 @@ class TestMetadataRepository:
         new_key = pretend.stub(
             to_dict=pretend.call_recorder(lambda: new_key_dict),
             keyid="new_key_id",
+            unrecognized_fields={},
         )
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
@@ -3399,6 +3435,7 @@ class TestMetadataRepository:
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids=["old_key_id"])},
+                keys={},
                 version=1,
             )
         )
@@ -3428,7 +3465,11 @@ class TestMetadataRepository:
                 "role": "root",
             },
         }
-        assert test_repo._storage_load_root.calls == [pretend.call()]
+        # loaded once directly and once by the _online_keys property
+        assert test_repo._storage_load_root.calls == [
+            pretend.call(),
+            pretend.call(),
+        ]
         assert test_repo._verify_new_root_signing.calls == [
             pretend.call(fake_old_root_md, fake_new_root_md)
         ]
@@ -3438,15 +3479,22 @@ class TestMetadataRepository:
         assert test_repo._persist.calls == [
             pretend.call(fake_new_root_md, repository.Root.type)
         ]
-        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ONLINE_KEYS"),
+            pretend.call("ONLINE_KEY"),
+        ]
         assert fake_key_obj.from_dict.calls == [
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
-        assert new_key.to_dict.calls == [pretend.call()]
+        # to_dict is called by the _online_keys setter and again when it
+        # mirrors the first key into the legacy ONLINE_KEY setting
+        assert new_key.to_dict.calls == [pretend.call(), pretend.call()]
         assert test_repo._run_online_roles_bump.calls == [pretend.call(force=True)]
         assert test_repo.write_repository_settings.calls == [
-            pretend.call("ONLINE_KEY", new_key_dict)
+            pretend.call("ONLINE_KEYS", [new_key_dict]),
+            pretend.call("ONLINE_KEY", new_key_dict),
         ]
+        assert new_key_dict == {"keyval": "bar", "keyid": "new_key_id"}
 
     def test__root_metadata_update_online_key_lock_timeout(
         self, monkeypatch, test_repo
@@ -3454,12 +3502,14 @@ class TestMetadataRepository:
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids=["k1"])},
+                keys={},
                 version=2,
             )
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids=["k2"])},
+                keys={},
                 version=1,
             )
         )
@@ -3495,7 +3545,9 @@ class TestMetadataRepository:
     ) -> None:
         fake_key_dict = {"keyval": "foo", "keyid": "old_key_id"}
         fake_settings = pretend.stub(
-            get_fresh=pretend.call_recorder(lambda a: copy(fake_key_dict))
+            get_fresh=pretend.call_recorder(
+                lambda a: copy(fake_key_dict) if a == "ONLINE_KEY" else None
+            )
         )
         monkeypatch.setattr(
             repository,
@@ -3509,10 +3561,11 @@ class TestMetadataRepository:
         )
         fake_key_obj = pretend.stub(from_dict=pretend.call_recorder(lambda *a: old_key))
         monkeypatch.setattr(f"{REPOSITORY_PATH}.Key", fake_key_obj)
-        new_key_dict = {"keyval": "old_bar"}
+        new_key_dict = {"keyval": "new_bar"}
         new_key = pretend.stub(
             to_dict=pretend.call_recorder(lambda: new_key_dict),
             keyid="new_key_id",
+            unrecognized_fields={},
         )
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
@@ -3524,8 +3577,12 @@ class TestMetadataRepository:
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids=["old_key_id"])},
+                keys={},
                 version=1,
             )
+        )
+        test_repo._storage_load_root = pretend.raiser(
+            repository.StorageError("no root")
         )
 
         @contextmanager
@@ -3544,16 +3601,22 @@ class TestMetadataRepository:
         assert test_repo._redis.lock.calls == [
             pretend.call(repository.LOCK_TARGETS, timeout=500.0)
         ]
-        assert fake_settings.get_fresh.calls == [pretend.call("ONLINE_KEY")]
+        assert fake_settings.get_fresh.calls == [
+            pretend.call("ONLINE_KEYS"),
+            pretend.call("ONLINE_KEY"),
+        ]
         assert fake_key_obj.from_dict.calls == [
             pretend.call(fake_key_dict.pop("keyid"), fake_key_dict)
         ]
-        assert new_key.to_dict.calls == [pretend.call()]
-        # Assert that we have recovered to the previous online key.
-        # These calls assert that the online key is set to current online key.
-        assert old_key.to_dict.calls == [pretend.call()]
+        # The _online_keys setter serializes the key and mirrors it into the
+        # legacy ONLINE_KEY setting -- two to_dict calls per assignment.
+        assert new_key.to_dict.calls == [pretend.call(), pretend.call()]
+        # Assert that we have recovered to the previous online key set.
+        assert old_key.to_dict.calls == [pretend.call(), pretend.call()]
         assert test_repo.write_repository_settings.calls == [
+            pretend.call("ONLINE_KEYS", [new_key_dict]),
             pretend.call("ONLINE_KEY", new_key_dict),
+            pretend.call("ONLINE_KEYS", [old_key_dict]),
             pretend.call("ONLINE_KEY", old_key_dict),
         ]
 
@@ -5231,12 +5294,13 @@ class TestMetadataRepository:
             pretend.call(delegation, rolename, expire=None)
         ]
         assert test_repo._bump_version.calls == [pretend.call(delegation)]
-        assert len(test_repo._sign.calls) == 2
         assert test_repo._persist.calls == [pretend.call(delegation, rolename)]
-        signer_keyids = [
-            call.args[0].keyid for call in test_repo._signer_store.get.calls
+        # _sign_with_online_keys signs once per resolved key, passing the Key
+        # object to _sign (signer resolution now happens inside _sign).
+        signed_keyids = [
+            call.args[1].keyid for call in test_repo._sign.calls
         ]
-        assert signer_keyids == ["online_keyid_1", "online_keyid_2"]
+        assert signed_keyids == ["online_keyid_1", "online_keyid_2"]
 
     def test_update_targets_delegated_role_main_targets(self, test_repo):
         mocked_targets = pretend.stub(
@@ -5698,9 +5762,9 @@ class TestMetadataRepository:
         targets = Metadata(Targets(delegations=Delegations(keys={}, roles={})))
         test_repo.write_repository_settings = pretend.call_recorder(lambda *a: None)
         test_repo._setup_nested_hashbin_delegations = pretend.call_recorder(
-            lambda *a: {"nested-bin-1": "md1", "nested-bin-2": "md2"}
+            lambda *a, **kw: {"nested-bin-1": "md1", "nested-bin-2": "md2"}
         )
-        test_repo._sign = pretend.call_recorder(lambda *a: None)
+        test_repo._sign = pretend.call_recorder(lambda *a, **kw: None)
         monkeypatch.setattr(
             crud,
             "read_role_deactivated_by_rolename",
@@ -5726,9 +5790,12 @@ class TestMetadataRepository:
         assert role_name in success
         assert len(nested_bins) == 2
         assert delegations.roles[role_name].terminating is False
-        assert test_repo._setup_nested_hashbin_delegations.calls == [
-            pretend.call(success[role_name], role_name, 180, 2)
-        ]
+        setup_calls = test_repo._setup_nested_hashbin_delegations.calls
+        assert len(setup_calls) == 1
+        assert setup_calls[0].args == (success[role_name], role_name, 180, 2)
+        # The role's resolved online key set is passed so the bins inherit it
+        role_keys = setup_calls[0].kwargs["role_keys"]
+        assert [key.keyid for key in role_keys] == ["online_key_id"]
         assert test_repo._sign.calls, "Parent role should be signed"
 
     def test_metadata_delegation_delete_with_nested_hash_bins(
@@ -6268,6 +6335,11 @@ class TestMetadataRepository:
             "_online_key",
             property(lambda self: fake_key),
         )
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keyids",
+            property(lambda self: ["online_key_id"]),
+        )
 
         mock_snapshot = Metadata(Snapshot(version=3, meta={}))
         mock_targets = Metadata(
@@ -6349,3 +6421,155 @@ class TestMetadataRepository:
         assert parent_role_name in storage_get_calls
         # Bin's snapshot meta entry was added
         assert f"{nested_bin_rolename}.json" in mock_snapshot.signed.meta
+
+    def test__update_snapshot_empty_keyids_not_treated_as_online(
+        self, test_repo, monkeypatch
+    ):
+        # Regression: an empty keyids list is a subset of any set, so without
+        # a guard a role with no keyids would take the full-online path and
+        # be "signed" with no keys. It must take the offline path instead.
+        role_name = "orphan-role"
+
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keyids",
+            property(lambda self: ["online_key_id"]),
+        )
+
+        mock_snapshot = Metadata(Snapshot(version=3, meta={}))
+        mock_targets = Metadata(
+            Targets(
+                version=4,
+                delegations=Delegations(
+                    keys={},
+                    roles={
+                        role_name: DelegatedRole.from_dict(
+                            {
+                                "keyids": [],
+                                "name": role_name,
+                                "paths": ["*"],
+                                "terminating": False,
+                                "threshold": 1,
+                            }
+                        )
+                    },
+                ),
+            )
+        )
+        delegation_metadata = Metadata(Targets(version=1))
+
+        def mock_storage_get(rolename):
+            if rolename == role_name:
+                return delegation_metadata
+            return None
+
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: mock_snapshot
+        )
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: mock_targets
+        )
+        test_repo._storage_backend = pretend.stub(
+            get=pretend.call_recorder(mock_storage_get)
+        )
+
+        fake_db_role = pretend.stub(id=1, rolename=role_name, target_files=[])
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "read_roles_joint_files",
+            pretend.call_recorder(lambda *a: [fake_db_role]),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_files_to_published",
+            pretend.call_recorder(lambda *a: None),
+        )
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "update_roles_version",
+            pretend.call_recorder(lambda *a: None),
+        )
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo._bump_version = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        result = test_repo._update_snapshot(target_roles=[role_name])
+
+        # Offline path: nothing persisted, snapshot not advanced.
+        assert result is None
+        assert test_repo._bump_and_persist.calls == []
+        assert test_repo._persist.calls == []
+        assert f"{role_name}.json" not in mock_snapshot.signed.meta
+        assert test_repo.write_repository_settings.calls == [
+            pretend.call(
+                f"{role_name.upper()}_SIGNING", delegation_metadata.to_dict()
+            )
+        ]
+
+    def test__setup_nested_hashbin_delegations_no_persist_on_bin_failure(
+        self, test_repo, monkeypatch
+    ):
+        # If any bin fails to be created or signed, no bin may be persisted
+        # and no DB roles created, so the caller never advances the snapshot
+        # for a partially signed delegation (PR #810 review point).
+        parent_role_name = "custom-parent"
+
+        fake_key_dict = {
+            "keyid": "online_key_id",
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {"public": "abcd1234"},
+        }
+
+        def fake_get_fresh(setting: str):
+            if setting == "ONLINE_KEY":
+                return copy(fake_key_dict)
+
+        fake_settings = pretend.stub(
+            get_fresh=pretend.call_recorder(lambda a: fake_get_fresh(a))
+        )
+        monkeypatch.setattr(
+            repository,
+            "get_repository_settings",
+            lambda *a, **kw: fake_settings,
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._signer_store = pretend.stub(
+            get=pretend.call_recorder(lambda key: pretend.stub())
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a, **kw: None)
+        test_repo._bump_expiry = pretend.call_recorder(lambda *a, **kw: None)
+
+        # Two bins, one signer each: the first _sign call succeeds, the
+        # second raises -- one bin is fully signed, the other fails.
+        sign_outcomes = iter([None, ValueError("signer failure")])
+
+        def fake_sign(*a, **kw):
+            outcome = next(sign_outcomes, None)
+            if isinstance(outcome, Exception):
+                raise outcome
+
+        test_repo._sign = fake_sign
+
+        monkeypatch.setattr(
+            repository.targets_crud,
+            "create_roles",
+            pretend.call_recorder(lambda db, roles: None),
+        )
+
+        with pytest.raises(ValueError, match="signer failure"):
+            test_repo._setup_nested_hashbin_delegations(
+                Metadata(Targets()), parent_role_name, 90, 2
+            )
+
+        assert test_repo._persist.calls == []
+        assert repository.targets_crud.create_roles.calls == []
