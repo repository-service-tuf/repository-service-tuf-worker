@@ -394,8 +394,8 @@ class TestMetadataRepository:
         delegations = pretend.stub(
             roles={role_name: role},
             keys={
-                "online_1": pretend.stub(),
-                "online_2": pretend.stub(),
+                "online_1": pretend.stub(unrecognized_fields={}),
+                "online_2": pretend.stub(unrecognized_fields={}),
             },
         )
         targets = pretend.stub(signed=pretend.stub(delegations=pretend.stub(keys={})))
@@ -408,7 +408,7 @@ class TestMetadataRepository:
 
         assert role.keyids == ["online_1", "online_2"]
         assert test_repo._sign_with_online_keys.calls == [
-            pretend.call(role_metadata, ["online_1", "online_2"])
+            pretend.call(role_metadata, ["online_1", "online_2"], extra_keys={})
         ]
 
     def test__add_delegated_role_keys_partial_online_keys_signs_subset(
@@ -426,8 +426,8 @@ class TestMetadataRepository:
         delegations = pretend.stub(
             roles={role_name: role},
             keys={
-                "online_1": pretend.stub(),
-                "offline_1": pretend.stub(),
+                "online_1": pretend.stub(unrecognized_fields={}),
+                "offline_1": pretend.stub(unrecognized_fields={}),
             },
         )
         targets = pretend.stub(signed=pretend.stub(delegations=pretend.stub(keys={})))
@@ -439,7 +439,7 @@ class TestMetadataRepository:
         )
 
         assert test_repo._sign_with_online_keys.calls == [
-            pretend.call(role_metadata, ["online_1"])
+            pretend.call(role_metadata, ["online_1"], extra_keys={})
         ]
 
     def test__add_delegated_role_keys_offline_only_not_signed(
@@ -456,8 +456,8 @@ class TestMetadataRepository:
         delegations = pretend.stub(
             roles={role_name: role},
             keys={
-                "offline_1": pretend.stub(),
-                "offline_2": pretend.stub(),
+                "offline_1": pretend.stub(unrecognized_fields={}),
+                "offline_2": pretend.stub(unrecognized_fields={}),
             },
         )
         targets = pretend.stub(signed=pretend.stub(delegations=pretend.stub(keys={})))
@@ -484,7 +484,7 @@ class TestMetadataRepository:
         role = pretend.stub(keyids=["online_1"])
         delegations = pretend.stub(
             roles={role_name: role},
-            keys={"online_1": pretend.stub()},
+            keys={"online_1": pretend.stub(unrecognized_fields={})},
         )
         targets = pretend.stub(signed=pretend.stub(delegations=pretend.stub(keys={})))
         test_repo._sign_with_online_keys = pretend.call_recorder(lambda *a, **kw: None)
@@ -6573,3 +6573,172 @@ class TestMetadataRepository:
 
         assert test_repo._persist.calls == []
         assert repository.targets_crud.create_roles.calls == []
+
+    def test__resolve_online_keys_role_local_key(self, test_repo, monkeypatch):
+        # A role may declare a key that is not a repository online key, as
+        # long as it is URI-tagged in the delegating metadata ("trust on the
+        # role"). The Worker resolves and signs with it.
+        global_key = pretend.stub(keyid="global_key_id")
+        role_key = pretend.stub(
+            keyid="role_key_id",
+            unrecognized_fields={
+                repository.RSTUF_ONLINE_KEY_URI_FIELD: "fn:role_key_id"
+            },
+        )
+        offline_key = pretend.stub(keyid="offline_key_id", unrecognized_fields={})
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keys",
+            property(lambda self: [global_key]),
+        )
+        targets = pretend.stub(
+            signed=pretend.stub(
+                delegations=pretend.stub(
+                    keys={
+                        "role_key_id": role_key,
+                        "offline_key_id": offline_key,
+                    },
+                    roles={},
+                )
+            )
+        )
+        test_repo._storage_load_targets = lambda: targets
+
+        # Role-local online key resolves...
+        assert test_repo._resolve_online_keys(
+            "packages", declared_keyids=["role_key_id"]
+        ) == [role_key]
+        # ...offline keys do not (no URI to resolve a signer from), so the
+        # role falls back to the global set for automated signing.
+        assert test_repo._resolve_online_keys(
+            "packages", declared_keyids=["offline_key_id"]
+        ) == [global_key]
+
+    def test__resolve_online_keys_extra_keys_from_payload(
+        self, test_repo, monkeypatch
+    ):
+        # Keys arriving with the current operation are not in stored
+        # metadata yet; they must still resolve.
+        global_key = pretend.stub(keyid="global_key_id")
+        new_key = pretend.stub(
+            keyid="new_role_key",
+            unrecognized_fields={
+                repository.RSTUF_ONLINE_KEY_URI_FIELD: "fn:new_role_key"
+            },
+        )
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keys",
+            property(lambda self: [global_key]),
+        )
+        test_repo._storage_load_targets = pretend.raiser(
+            repository.StorageError("no targets yet")
+        )
+
+        result = test_repo._resolve_online_keys(
+            "packages",
+            declared_keyids=["new_role_key"],
+            extra_keys={"new_role_key": new_key},
+        )
+
+        assert result == [new_key]
+
+    def _update_delegation_setup(self, test_repo, monkeypatch, new_keyids):
+        """Common setup: stored role 'packages' trusts the repository online
+        key; an update arrives changing its keyids to ``new_keyids``."""
+        monkeypatch.setattr(
+            repository.MetadataRepository,
+            "_online_keyids",
+            property(lambda self: ["online_key_id"]),
+        )
+        mock_targets = Metadata(
+            Targets(
+                version=4,
+                delegations=Delegations(
+                    keys={},
+                    roles={
+                        "packages": DelegatedRole.from_dict(
+                            {
+                                "keyids": ["online_key_id"],
+                                "name": "packages",
+                                "paths": ["packages/*"],
+                                "terminating": False,
+                                "threshold": 1,
+                            }
+                        )
+                    },
+                ),
+            )
+        )
+        update = Delegations(
+            keys={},
+            roles={
+                "packages": DelegatedRole.from_dict(
+                    {
+                        "keyids": new_keyids,
+                        "name": "packages",
+                        "paths": ["packages/*"],
+                        "terminating": False,
+                        "threshold": 1,
+                    }
+                )
+            },
+        )
+        test_repo._storage_load_targets = pretend.call_recorder(
+            lambda: mock_targets
+        )
+        test_repo._update_delegated_roles = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._add_delegated_role_keys = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._bump_and_persist = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda *a, **kw: 5
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        return update
+
+    def test__update_metadata_delegation_cannot_remove_online_keys(
+        self, test_repo, monkeypatch
+    ):
+        # Privilege model: trusting the repository online key gives a role no
+        # privilege over it. An update that drops the online keyid (e.g. an
+        # attacker replacing it with their own key) must fail -- repository
+        # online keys change only through root-signed operations.
+        update = self._update_delegation_setup(
+            test_repo, monkeypatch, new_keyids=["attacker_key_id"]
+        )
+
+        success, failed = test_repo._update_metadata_delegation(update)
+
+        assert success == {}
+        assert len(failed) == 1
+        assert failed[0]["role"] == "packages"
+        assert "online key" in failed[0]["reason"]
+        assert test_repo._update_delegated_roles.calls == []
+        assert test_repo._add_delegated_role_keys.calls == []
+        assert test_repo._bump_and_persist.calls == []
+
+    def test__update_metadata_delegation_keeping_online_keys_allowed(
+        self, test_repo, monkeypatch
+    ):
+        # Keeping the repository online key while adding a role key is the
+        # legitimate flow and must still work.
+        update = self._update_delegation_setup(
+            test_repo,
+            monkeypatch,
+            new_keyids=["online_key_id", "role_key_id"],
+        )
+
+        success, failed = test_repo._update_metadata_delegation(update)
+
+        assert failed == []
+        assert "packages" in success
+        assert len(test_repo._update_delegated_roles.calls) == 1
+        assert len(test_repo._add_delegated_role_keys.calls) == 1

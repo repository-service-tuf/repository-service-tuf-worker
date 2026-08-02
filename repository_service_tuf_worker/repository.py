@@ -233,6 +233,30 @@ class MetadataRepository:
     def _online_keyids(self) -> List[str]:
         return [key.keyid for key in self._online_keys]
 
+    @staticmethod
+    def _uri_tagged_keys(
+        delegations: Optional[Delegations],
+    ) -> Dict[str, Key]:
+        """Role-local online keys: keys in ``delegations.keys`` carrying an
+        online-key URI. Declared by the delegating metadata ("trust on the
+        role"), resolvable by ``SignerStore`` like any online key."""
+        if delegations is None or not delegations.keys:
+            return {}
+        return {
+            keyid: key
+            for keyid, key in delegations.keys.items()
+            if RSTUF_ONLINE_KEY_URI_FIELD in key.unrecognized_fields
+        }
+
+    def _role_local_online_keys(self) -> Dict[str, Key]:
+        """URI-tagged keys declared in the stored ``targets`` delegations."""
+        try:
+            targets: Metadata[Targets] = self._storage_load_targets()
+            return self._uri_tagged_keys(targets.signed.delegations)
+        except Exception as e:
+            logging.debug(f"Could not read role-local online keys: {e}")
+            return {}
+
     def _declared_role_keyids(self, role_name: str) -> List[str]:
         """Per-role online keyids declared for ``role_name``.
 
@@ -253,13 +277,17 @@ class MetadataRepository:
         self,
         role_name: str,
         declared_keyids: Optional[List[str]] = None,
+        extra_keys: Optional[Dict[str, Key]] = None,
     ) -> List[Key]:
         """Resolve the online ``Key`` objects that must sign ``role_name``.
 
         Order:
           1. Nested bin -> inherit the parent custom delegation's keys.
           2. Declared per-role keyids -> those keys (from ``declared_keyids``
-             if provided, else read from stored metadata).
+             if provided, else read from stored metadata). Keyids resolve
+             against the global online keys plus role-local online keys
+             (URI-tagged keys in the delegating metadata, or ``extra_keys``
+             for keys arriving with the current operation's payload).
           3. Fallback -> the global online key collection.
 
         Pure: no persistence side effects. Unknown declared keyids are dropped
@@ -268,7 +296,7 @@ class MetadataRepository:
         # 1. Nested bin inherits from its parent custom delegation.
         if declared_keyids is None and NESTED_BINS_SEPARATOR in role_name:
             parent = role_name.split(NESTED_BINS_SEPARATOR)[0]
-            return self._resolve_online_keys(parent)
+            return self._resolve_online_keys(parent, extra_keys=extra_keys)
 
         # 2. Declared per-role keys.
         if declared_keyids is None:
@@ -277,6 +305,9 @@ class MetadataRepository:
         online_keys = self._online_keys
         if declared_keyids:
             by_id = {k.keyid: k for k in online_keys}
+            by_id.update(self._role_local_online_keys())
+            if extra_keys:
+                by_id.update(extra_keys)
             resolved = [by_id[kid] for kid in declared_keyids if kid in by_id]
             if resolved:
                 return resolved
@@ -464,12 +495,31 @@ class MetadataRepository:
             self._sign_with_online_keys(role, keyids)
 
     def _sign_with_online_keys(
-        self, role: Metadata, keyids: Optional[List[str]] = None
+        self,
+        role: Metadata,
+        keyids: Optional[List[str]] = None,
+        extra_keys: Optional[Dict[str, Key]] = None,
     ) -> None:
+        """Sign ``role`` with every online key in ``keyids``.
+
+        ``extra_keys`` carries role-local online keys that are not in stored
+        metadata yet (they arrive with the operation being processed).
+        """
         online_keys = self._online_keys
         if keyids is not None:
             allowed_keyids = set(keyids)
             online_keys = [key for key in online_keys if key.keyid in allowed_keyids]
+            # Role-local online keys (URI-tagged in the delegating metadata)
+            # are signable too; global keys keep precedence on overlap.
+            role_local = self._role_local_online_keys()
+            if extra_keys:
+                role_local.update(extra_keys)
+            covered = {key.keyid for key in online_keys}
+            online_keys += [
+                key
+                for keyid, key in role_local.items()
+                if keyid in allowed_keyids and keyid not in covered
+            ]
 
         for key in online_keys:
             self._sign(role, key)
@@ -651,7 +701,11 @@ class MetadataRepository:
                 raise ValueError("'bump_all' or 'target_roles")
 
             snapshot_meta_updated = False
-            online_keyid_set = set(self._online_keyids)
+            # Keys the Worker can sign with: global online keys plus
+            # role-local online keys declared in the targets delegations.
+            online_keyid_set = set(self._online_keyids) | set(
+                self._uri_tagged_keys(targets.signed.delegations)
+            )
             for db_role in db_target_roles:
                 rolename = db_role.rolename
                 try:
@@ -1117,11 +1171,22 @@ class MetadataRepository:
                 else:
                     raise ValueError(f"role {role_name} has inconsistent keys")
 
-        online_keyid_set = set(online_keyids)
-        matching_online_keyids = [k for k in role_keyids if k in online_keyid_set]
+        # Sign with every key the role trusts that the Worker can resolve:
+        # the global online keys plus role-local online keys (URI-tagged in
+        # this delegations payload). Offline keys are signed out-of-band.
+        signable_keyids = set(online_keyids) | set(
+            self._uri_tagged_keys(delegations)
+        )
+        matching_online_keyids = [
+            k for k in role_keyids if k in signable_keyids
+        ]
         if matching_online_keyids and role_metadata:
             logging.debug(f"role '{role_name}' using online key(s), signing")
-            self._sign_with_online_keys(role_metadata, matching_online_keyids)
+            self._sign_with_online_keys(
+                role_metadata,
+                matching_online_keyids,
+                extra_keys=self._uri_tagged_keys(delegations),
+            )
 
     def _update_delegated_roles(
         self,
@@ -1324,11 +1389,16 @@ class MetadataRepository:
                     # global online key,
                     # we can add further hash-bin delegations
                     role_keyids = set(delegations.roles[role].keyids)
+                    # Role-local online keys arrive with this payload; they
+                    # are signable by the Worker just like the global ones.
+                    payload_online_keys = self._uri_tagged_keys(delegations)
+                    signable_keyids = set(self._online_keyids) | set(
+                        payload_online_keys
+                    )
                     is_nested_bin = False
                     if num_bins:
-                        online_keyids = self._online_keyids
                         if len(role_keyids) == 0 or role_keyids.issubset(
-                            set(online_keyids)
+                            signable_keyids
                         ):
                             is_nested_bin = True
 
@@ -1342,7 +1412,9 @@ class MetadataRepository:
                         # keys, else fall back to the global online keys.
                         declared = list(delegations.roles[role].keyids)
                         role_keys = self._resolve_online_keys(
-                            role, declared_keyids=declared
+                            role,
+                            declared_keyids=declared,
+                            extra_keys=payload_online_keys,
                         )
                         resolved_keyids = [k.keyid for k in role_keys]
                         delegations.roles[role].terminating = False
@@ -1363,6 +1435,7 @@ class MetadataRepository:
                         self._sign_with_online_keys(
                             role_metadata,
                             delegations.roles[role].keyids,
+                            extra_keys=payload_online_keys,
                         )
                     else:
                         # add keys to the delegated target role
@@ -1517,9 +1590,34 @@ class MetadataRepository:
         o_role: DelegatedRole  # old role
         logging.debug("updating roles in Targets delegations")
         current_delegations = copy.deepcopy(targets.signed.delegations)
+        online_keyid_set = set(self._online_keyids)
         for u_role in delegations.roles.values():
             for o_role in current_delegations.roles.values():
                 if u_role.name == o_role.name:
+                    # Privilege model: a role trusting a repository online
+                    # key has no privilege over it. Repository online keys
+                    # are added/removed only by root-signed operations, so a
+                    # delegation update must not drop them from the role.
+                    removed_online = (
+                        set(o_role.keyids) & online_keyid_set
+                    ) - set(u_role.keyids)
+                    if removed_online:
+                        logging.debug(
+                            f"failed {u_role.name}: update removes "
+                            f"repository online key(s) {removed_online}"
+                        )
+                        failed.append(
+                            {
+                                "role": u_role.name,
+                                "reason": (
+                                    "cannot remove repository online "
+                                    "key(s) via delegation update; use a "
+                                    "root metadata update"
+                                ),
+                            }
+                        )
+                        continue
+
                     if len(u_role.keyids) == 0 and u_role.threshold > 1:
                         logging.debug(f"failed {u_role} due invalid threshold")
                         failed.append(
@@ -1584,7 +1682,11 @@ class MetadataRepository:
         from_storage: bool,
     ):
         delegation_keyids = self.get_delegation_keyids(rolename)
-        online_keyids = set(self._online_keyids)
+        # Keys the Worker can sign with: global online keys plus role-local
+        # online keys declared in the delegating metadata.
+        online_keyids = set(self._online_keyids) | set(
+            self._role_local_online_keys()
+        )
         delegation_keyid_set = set(delegation_keyids)
 
         if delegation_keyids and delegation_keyid_set.issubset(online_keyids):
