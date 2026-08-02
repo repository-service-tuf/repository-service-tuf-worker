@@ -511,15 +511,18 @@ class MetadataRepository:
             online_keys = [key for key in online_keys if key.keyid in allowed_keyids]
             # Role-local online keys (URI-tagged in the delegating metadata)
             # are signable too; global keys keep precedence on overlap.
-            role_local = self._role_local_online_keys()
-            if extra_keys:
-                role_local.update(extra_keys)
-            covered = {key.keyid for key in online_keys}
-            online_keys += [
-                key
-                for keyid, key in role_local.items()
-                if keyid in allowed_keyids and keyid not in covered
-            ]
+            missing = allowed_keyids - {key.keyid for key in online_keys}
+            if missing:
+                role_local = dict(extra_keys) if extra_keys else {}
+                # Only read stored metadata when a requested key is not a
+                # global online key: this runs once per role during bumps.
+                if missing - set(role_local):
+                    role_local.update(self._role_local_online_keys())
+                online_keys += [
+                    key
+                    for keyid, key in role_local.items()
+                    if keyid in missing
+                ]
 
         for key in online_keys:
             self._sign(role, key)
@@ -1682,12 +1685,13 @@ class MetadataRepository:
         from_storage: bool,
     ):
         delegation_keyids = self.get_delegation_keyids(rolename)
-        # Keys the Worker can sign with: global online keys plus role-local
-        # online keys declared in the delegating metadata.
-        online_keyids = set(self._online_keyids) | set(
-            self._role_local_online_keys()
-        )
+        online_keyids = set(self._online_keyids)
         delegation_keyid_set = set(delegation_keyids)
+        # Role-local online keys are signable too, but reading them costs a
+        # storage round trip, so only look when a keyid is not already a
+        # global online key (this runs once per role during bumps).
+        if delegation_keyid_set - online_keyids:
+            online_keyids |= set(self._role_local_online_keys())
 
         if delegation_keyids and delegation_keyid_set.issubset(online_keyids):
             logging.debug(f"role {rolename} full online keys")
