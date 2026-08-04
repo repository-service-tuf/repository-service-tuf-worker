@@ -239,6 +239,48 @@ class TestMetadataRepository:
         test_repo._online_keys_override = None
         assert [k.keyid for k in test_repo._online_keys] == ["old_key"]
 
+    def test_bootstrap_finalize_clears_online_keys_override(
+        self, test_repo, monkeypatch
+    ):
+        # Regression: the _online_keys setter records an in-memory override so
+        # bootstrap's online-roles signing (before the root is persisted) uses
+        # the new keys. Because MetadataRepository is a reused module-level
+        # singleton, that override MUST be cleared once bootstrap persists the
+        # root -- otherwise this instance keeps the bootstrap keys and would
+        # ignore a rotation persisted by another worker.
+        fake_settings = pretend.stub(get_fresh=lambda *a, **kw: None)
+        monkeypatch.setattr(
+            repository, "get_repository_settings", lambda *a, **kw: fake_settings
+        )
+        key = pretend.stub(
+            keyid="bootstrap_key",
+            unrecognized_fields={
+                repository.RSTUF_ONLINE_KEY_URI_FIELD: "fn:bootstrap_key"
+            },
+            to_dict=lambda: {"keyval": "x"},
+        )
+        root = pretend.stub(signed=pretend.stub(keys={"bootstrap_key": key}))
+
+        signed_with = {}
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+        test_repo._bootstrap_online_roles = pretend.call_recorder(
+            # capture the override that is live during signing
+            lambda **kw: signed_with.update(
+                override=list(test_repo._online_keys_override or [])
+            )
+        )
+        test_repo._persist = pretend.call_recorder(lambda *a: None)
+
+        test_repo._bootstrap_finalize(root, "task-1")
+
+        # The override was live during signing ...
+        assert signed_with["override"] == [key]
+        # ... and cleared once the root was persisted.
+        assert test_repo._online_keys_override is None
+        assert test_repo._persist.calls
+
     @pytest.mark.parametrize(
         "mock_setting, expected",
         [

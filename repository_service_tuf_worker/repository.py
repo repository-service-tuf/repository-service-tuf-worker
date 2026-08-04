@@ -1896,6 +1896,14 @@ class MetadataRepository:
         self._bootstrap_online_roles(delegations=delegations)
         self.write_repository_settings("ROOT_SIGNING", None)
         self._persist(root, Root.type)
+        # The setter set an in-memory override so the online-roles signing
+        # above used these keys before the root was persisted. Now that the
+        # root is stored, clear it so metadata is the source of truth again;
+        # otherwise this reused (module-level singleton) instance would keep
+        # the bootstrap keys and ignore a later rotation persisted by another
+        # worker -- reintroducing the stale-key signing bug this override
+        # exists to prevent.
+        self._online_keys_override = None
         self.write_repository_settings("BOOTSTRAP", task_id)
 
     def bootstrap(
