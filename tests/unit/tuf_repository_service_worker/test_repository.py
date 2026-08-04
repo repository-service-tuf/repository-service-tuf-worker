@@ -202,6 +202,43 @@ class TestMetadataRepository:
             pretend.call("key_id", {"keyval": "foo"})
         ]
 
+    def test_online_keys_in_memory_override_wins_over_stored_root(
+        self, test_repo, monkeypatch
+    ):
+        # Regression: during a root-update rotation the new root is persisted
+        # only after the online-roles bump, so the stored root still advertises
+        # the previous online keys. The setter records the incoming keys in
+        # memory and the getter must return those, not the stale stored root's
+        # keys -- otherwise the bump re-signs every online role with the old
+        # key while root advertises the new one (unverifiable repository).
+        stale_root_key = pretend.stub(
+            keyid="old_key",
+            unrecognized_fields={repository.RSTUF_ONLINE_KEY_URI_FIELD: "fn:old"},
+        )
+        stale_root = pretend.stub(
+            signed=pretend.stub(keys={"old_key": stale_root_key})
+        )
+        test_repo._storage_load_root = pretend.call_recorder(lambda: stale_root)
+
+        new_key = pretend.stub(
+            keyid="new_key",
+            to_dict=pretend.call_recorder(lambda: {"keyval": "n"}),
+        )
+        test_repo.write_repository_settings = pretend.call_recorder(
+            lambda *a: None
+        )
+
+        # Setting the keys must make them authoritative immediately.
+        test_repo._online_keys = [new_key]
+        assert test_repo._online_keys_override == [new_key]
+        assert [k.keyid for k in test_repo._online_keys] == ["new_key"]
+        # The stale stored root must not be consulted while an override is set.
+        assert test_repo._storage_load_root.calls == []
+
+        # Clearing the override falls back to metadata (source of truth).
+        test_repo._online_keys_override = None
+        assert [k.keyid for k in test_repo._online_keys] == ["old_key"]
+
     @pytest.mark.parametrize(
         "mock_setting, expected",
         [

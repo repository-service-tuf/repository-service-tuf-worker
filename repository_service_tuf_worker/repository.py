@@ -145,6 +145,11 @@ class MetadataRepository:
         self._expire_timedelta = timedelta(hours=self._hours_before_expire)
         self._timeout = int(app_settings.get("LOCK_TIMEOUT", 500.0))
         self._uses_succinct_roles: Optional[bool] = None
+        # In-flight authoritative online-key set. During a root rotation the
+        # new root is not persisted until after the online-roles bump, so the
+        # stored root still advertises the previous keys; this lets the setter
+        # make the incoming keys win for the duration of that bump.
+        self._online_keys_override: Optional[List[Key]] = None
 
     @property
     def _settings(self) -> Dynaconf:
@@ -152,6 +157,12 @@ class MetadataRepository:
 
     @property
     def _online_keys(self) -> List[Key]:
+        # Priority 0: an in-flight rotation set the authoritative key set in
+        # memory before persisting the new root; honor it so the online-roles
+        # bump signs with the incoming keys and not the still-stored old root.
+        if self._online_keys_override is not None:
+            return self._online_keys_override
+
         # Priority 1: Metadata is the source of truth. Read online keys from
         # root metadata in storage so ceremony-driven key rotation is honored
         # everywhere (post-bootstrap). Settings are only a pre-bootstrap seed.
@@ -186,6 +197,9 @@ class MetadataRepository:
 
     @_online_keys.setter
     def _online_keys(self, keys: List[Key]):
+        # Make this set authoritative in-memory immediately (see the getter's
+        # Priority 0), so a rotation's bump uses it before the root persists.
+        self._online_keys_override = keys
         key_dicts = []
         for key in keys:
             kd = key.to_dict()
@@ -2676,24 +2690,31 @@ class MetadataRepository:
                             new_root.signed.keys[kid]
                             for kid in new_root.signed.roles[Timestamp.type].keyids
                         ]
+                    # Set the incoming keys as authoritative in memory so the
+                    # bump below signs with them; the new root is persisted
+                    # only afterwards, so the getter would otherwise still see
+                    # the previous keys. Cleared in the finally so metadata is
+                    # the source of truth again once persisted.
                     self._online_keys = new_online_keys
-
                     try:
-                        self._run_online_roles_bump(force=True)
-                        logging.info("Updating all targets metadata")
-                    except Exception as e:
-                        # Recover to correct online keys state.
-                        self._online_keys = curr_online_keys
-                        raise e
+                        try:
+                            self._run_online_roles_bump(force=True)
+                            logging.info("Updating all targets metadata")
+                        except Exception as e:
+                            # Recover to correct online keys state.
+                            self._online_keys = curr_online_keys
+                            raise e
 
-                    # root metadata and online keys are updated
-                    # 1. persist the new root
-                    # 2. bump all target roles
-                    self._persist(new_root, Root.type)
-                    logging.info(
-                        f"Updating root metadata: {new_root.signed.version}"
-                    )
-                    status_lock_targets = True
+                        # root metadata and online keys are updated
+                        # 1. persist the new root
+                        # 2. bump all target roles
+                        self._persist(new_root, Root.type)
+                        logging.info(
+                            f"Updating root metadata: {new_root.signed.version}"
+                        )
+                        status_lock_targets = True
+                    finally:
+                        self._online_keys_override = None
             except redis.exceptions.LockNotOwnedError:
                 if status_lock_targets is False:
                     logging.error(
