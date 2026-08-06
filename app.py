@@ -136,7 +136,13 @@ def _end_bor_chain_callback(result, start_time: float):
     return {"result": result, "execution_time_seconds": total_time}
 
 
-@app.task(serializer="json", queue="rstuf_internals")
+@app.task(
+    serializer="json",
+    queue="rstuf_internals",
+    autoretry_for=(OperationalError,),
+    max_retries=3,
+    retry_backoff=True,
+)
 def _update_online_role(role: str) -> Optional[str]:
     """
     Update online role (DB and JSON)
@@ -144,7 +150,13 @@ def _update_online_role(role: str) -> Optional[str]:
     return repository.update_targets_delegated_role(role)
 
 
-@app.task(serializer="json", queue="rstuf_internals")
+@app.task(
+    serializer="json",
+    queue="rstuf_internals",
+    autoretry_for=(OperationalError,),
+    max_retries=3,
+    retry_backoff=True,
+)
 def _update_snapshot_timestamp(*args) -> Dict[str, Any]:
     """
     Update the snapshot timestamp with the updated roles data.
@@ -303,6 +315,15 @@ def _publish_signals(
             {"status": status.value, "task_id": task_id, "result": result}
         ),
     )
+
+
+@signals.task_postrun.connect
+def cleanup_db_session(**kwargs):
+    """Remove scoped session after every task to ensure clean state."""
+    try:
+        repository._reset_db_session()
+    except Exception:
+        logging.warning("Failed to reset DB session", exc_info=True)
 
 
 @signals.task_prerun.connect(sender=repository_service_tuf_worker)
