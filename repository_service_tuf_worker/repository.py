@@ -136,7 +136,8 @@ class MetadataRepository:
         raw_session = app_settings.SQL  # Session instance from rstuf_db()
         self._Session = scoped_session(
             sessionmaker(
-                autocommit=False, autoflush=False,
+                autocommit=False,
+                autoflush=False,
                 bind=raw_session.get_bind(),
             )
         )
