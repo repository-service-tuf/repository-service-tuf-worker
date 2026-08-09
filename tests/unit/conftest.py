@@ -9,11 +9,17 @@ from types import ModuleType
 import pretend
 import pytest
 
+from repository_service_tuf_worker import repository
 from repository_service_tuf_worker.repository import MetadataRepository
 
 
 @pytest.fixture()
 def test_repo(monkeypatch: pytest.MonkeyPatch) -> MetadataRepository:
+    fake_engine = pretend.stub()
+    fake_sql = pretend.stub(get_bind=lambda: fake_engine)
+    monkeypatch.setattr(
+        repository, "rstuf_db", pretend.call_recorder(lambda *a: fake_sql)
+    )
     return MetadataRepository.create_service()
 
 

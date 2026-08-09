@@ -29,6 +29,7 @@ from securesystemslib.signer import (
     SigstoreKey,
 )
 from sqlalchemy.engine import URL
+from sqlalchemy.orm import scoped_session, sessionmaker
 from tuf.api.exceptions import (
     BadVersionNumberError,
     RepositoryError,
@@ -132,7 +133,15 @@ class MetadataRepository:
         app_settings = self.refresh_settings()
         self._storage_backend: IStorage = app_settings.STORAGE
         self._signer_store = SignerStore(app_settings)
-        self._db = app_settings.SQL
+        raw_session = app_settings.SQL  # Session instance from rstuf_db()
+        self._Session = scoped_session(
+            sessionmaker(
+                autocommit=False,
+                autoflush=False,
+                bind=raw_session.get_bind(),
+            )
+        )
+        self._db_override = None
         self._redis = redis.StrictRedis.from_url(
             self._worker_settings.REDIS_SERVER
         )
@@ -142,6 +151,20 @@ class MetadataRepository:
         self._expire_timedelta = timedelta(hours=self._hours_before_expire)
         self._timeout = int(app_settings.get("LOCK_TIMEOUT", 500.0))
         self._uses_succinct_roles: Optional[bool] = None
+
+    @property
+    def _db(self):
+        if self._db_override is not None:
+            return self._db_override
+        return self._Session()
+
+    @_db.setter
+    def _db(self, value):
+        self._db_override = value
+
+    def _reset_db_session(self):
+        self._db_override = None
+        self._Session.remove()
 
     @property
     def _settings(self) -> Dynaconf:
