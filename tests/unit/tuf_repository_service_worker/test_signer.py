@@ -47,6 +47,14 @@ class TestSigner:
 
         assert store.get(fake_key) == fake_signer
 
+    def test_get_missing_uri_field(self):
+        settings = Dynaconf()
+        store = SignerStore(settings)
+        fake_key = stub(keyid="fake_id", unrecognized_fields={})
+
+        with pytest.raises(ValueError, match=RSTUF_ONLINE_KEY_URI_FIELD):
+            store.get(fake_key)
+
     def test_get_from_file_name_uri(self, key_metadata):
         dir_ = _FILES / "pem"
         uri = "fn:ed25519_private.pem"
