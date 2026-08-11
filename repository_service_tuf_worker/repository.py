@@ -176,15 +176,20 @@ class MetadataRepository:
                 if online_keys:
                     return online_keys
         except Exception as e:
-            logging.debug(f"Could not load online keys from root metadata: {e}")
+            logging.debug(
+                f"Could not load online keys from root metadata: {e}"
+            )
 
-        # Priority 2: Pre-bootstrap fallback -- ONLINE_KEYS setting (collection).
+        # Priority 2: Pre-bootstrap fallback -- ONLINE_KEYS setting
+        # (collection).
         key_dicts = self._settings.get_fresh("ONLINE_KEYS")
         if key_dicts is not None:
             online_keys = []
             for key_dict in key_dicts:
                 key_dict = copy.deepcopy(key_dict)
-                online_keys.append(Key.from_dict(key_dict.pop("keyid"), key_dict))
+                online_keys.append(
+                    Key.from_dict(key_dict.pop("keyid"), key_dict)
+                )
             return online_keys
 
         # Priority 3: Pre-bootstrap fallback -- single ONLINE_KEY setting.
@@ -216,7 +221,7 @@ class MetadataRepository:
             key_dict = copy.deepcopy(key_dict)
             return Key.from_dict(key_dict.pop("keyid"), key_dict)
 
-        # If no ONLINE_KEY setting, try to get the first one from dynamic online_keys
+        # No ONLINE_KEY setting: take the first of the dynamic online keys.
         online_keys = self._online_keys
         if online_keys:
             key = online_keys[0]
@@ -284,7 +289,9 @@ class MetadataRepository:
             if delegations.roles and role_name in delegations.roles:
                 return list(delegations.roles[role_name].keyids)
         except Exception as e:  # pragma: no cover - defensive
-            logging.debug(f"Could not read declared keyids for {role_name}: {e}")
+            logging.debug(
+                f"Could not read declared keyids for {role_name}: {e}"
+            )
         return []
 
     def _resolve_online_keys(
@@ -305,7 +312,8 @@ class MetadataRepository:
           3. Fallback -> the global online key collection.
 
         Pure: no persistence side effects. Unknown declared keyids are dropped
-        (defense in depth); the subset guard / API validation own hard failures.
+        (defense in depth); the subset guard / API validation own hard
+        failures.
         """
         # 1. Nested bin inherits from its parent custom delegation.
         if declared_keyids is None and NESTED_BINS_SEPARATOR in role_name:
@@ -380,7 +388,9 @@ class MetadataRepository:
         if self.uses_succinct_roles:
             logging.debug("delegations using succinct delegations")
             targets: Metadata[Targets] = self._storage_load_targets()
-            delegation_keyids = targets.signed.delegations.succinct_roles.keyids
+            delegation_keyids = (
+                targets.signed.delegations.succinct_roles.keyids
+            )
         else:
             logging.debug(f"delegations using custom delegations {rolename}")
             if NESTED_BINS_SEPARATOR in rolename:
@@ -403,20 +413,31 @@ class MetadataRepository:
 
     def _resolve_keyids_for_role(self, role_name: str) -> List[str]:
         # 1. Top-level roles
-        if role_name in [Root.type, Targets.type, Snapshot.type, Timestamp.type]:
+        if role_name in [
+            Root.type,
+            Targets.type,
+            Snapshot.type,
+            Timestamp.type,
+        ]:
             try:
                 root = self._storage_load_root()
                 return root.signed.roles[role_name].keyids
             except Exception as e:
-                logging.debug(f"Could not load root to resolve keyids for {role_name}: {e}")
-                # Fallback: if root not loaded (e.g., during bootstrap), return all online_keyids
+                logging.debug(
+                    "Could not load root to resolve keyids for "
+                    f"{role_name}: {e}"
+                )
+                # Fallback: root not loaded (e.g. during bootstrap), so
+                # return every online keyid.
                 return self._online_keyids
 
         # 2. Delegated roles
         try:
             return self.get_delegation_keyids(role_name)
         except Exception as e:
-            logging.debug(f"Could not get delegation keyids for {role_name}: {e}")
+            logging.debug(
+                f"Could not get delegation keyids for {role_name}: {e}"
+            )
             return self._online_keyids
 
     def refresh_settings(self, worker_settings: Optional[Dynaconf] = None):
@@ -490,7 +511,10 @@ class MetadataRepository:
         redis_loader.write(self._settings, settings_data)
 
     def _sign(
-        self, role: Metadata, signer: Optional[Union[Signer, Key]] = None, role_name: Optional[str] = None
+        self,
+        role: Metadata,
+        signer: Optional[Union[Signer, Key]] = None,
+        role_name: Optional[str] = None,
     ) -> None:
         """
         Re-signs metadata with role-specific key from global key store.
@@ -522,7 +546,9 @@ class MetadataRepository:
         online_keys = self._online_keys
         if keyids is not None:
             allowed_keyids = set(keyids)
-            online_keys = [key for key in online_keys if key.keyid in allowed_keyids]
+            online_keys = [
+                key for key in online_keys if key.keyid in allowed_keyids
+            ]
             # Role-local online keys (URI-tagged in the delegating metadata)
             # are signable too; global keys keep precedence on overlap.
             missing = allowed_keyids - {key.keyid for key in online_keys}
@@ -866,7 +892,9 @@ class MetadataRepository:
             return
 
         keyids_to_revoke = set(old_online_keyids) - set(new_online_keyids)
-        keys_to_add = [k for k in new_online_keys if k.keyid not in old_online_keyids]
+        keys_to_add = [
+            k for k in new_online_keys if k.keyid not in old_online_keyids
+        ]
 
         bins = True if targets.signed.delegations.succinct_roles else False
         if bins:
@@ -874,7 +902,9 @@ class MetadataRepository:
                 targets.signed.revoke_key(keyid)
             for key in keys_to_add:
                 targets.signed.add_key(key)
-            targets.signed.delegations.succinct_roles.keyids = list(new_online_keyids)
+            targets.signed.delegations.succinct_roles.keyids = list(
+                new_online_keyids
+            )
 
         else:
             for role in targets.signed.delegations.roles.values():
@@ -901,7 +931,9 @@ class MetadataRepository:
             )
 
             if not delegations.succinct_roles and not role_terminating:
-                role_metadata: Metadata[Targets] = self._storage_backend.get(role_name)
+                role_metadata: Metadata[Targets] = self._storage_backend.get(
+                    role_name
+                )
                 role_delegations = role_metadata.signed.delegations
 
                 role_name, _ = next(
@@ -1104,7 +1136,9 @@ class MetadataRepository:
         # an 'Settings' object has no attribute 'REDIS_SERVER'
         online_keys = copy.deepcopy(self._online_keys)
         expire_bins: int = self._settings.get_fresh("BINS_EXPIRATION")
-        signers = [self._signer_store.get(online_key) for online_key in online_keys]
+        signers = [
+            self._signer_store.get(online_key) for online_key in online_keys
+        ]
 
         # function to process each delegated role
         def process_delegated_role(delegated_name: str) -> str:
@@ -1176,7 +1210,9 @@ class MetadataRepository:
 
         online_keyids = self._online_keyids
         if len(delegations.roles[role_name].keyids) == 0:
-            logging.debug(f"role '{role_name}' without key, adding online keys")
+            logging.debug(
+                f"role '{role_name}' without key, adding online keys"
+            )
             delegations.roles[role_name].keyids.extend(online_keyids)
 
         role_keyids = delegations.roles[role_name].keyids
@@ -1269,7 +1305,9 @@ class MetadataRepository:
         )
 
         expire_bins: int = expiration
-        signers = [self._signer_store.get(online_key) for online_key in online_keys]
+        signers = [
+            self._signer_store.get(online_key) for online_key in online_keys
+        ]
 
         def process_delegated_bin_roles(
             bin_rolename: str,
@@ -1439,15 +1477,22 @@ class MetadataRepository:
                         # targets delegations.keys (invariant: every keyid the
                         # role trusts has a corresponding Key object).
                         for k in role_keys:
-                            targets.signed.delegations.keys.setdefault(k.keyid, k)
-                        nested_bin_success = self._setup_nested_hashbin_delegations(
-                            role_metadata, role, expires, num_bins,
-                            role_keys=role_keys,
+                            targets.signed.delegations.keys.setdefault(
+                                k.keyid, k
+                            )
+                        nested_bin_success = (
+                            self._setup_nested_hashbin_delegations(
+                                role_metadata,
+                                role,
+                                expires,
+                                num_bins,
+                                role_keys=role_keys,
+                            )
                         )
                         nb_success.update(nested_bin_success)
-                        # Unconditional: resolved_keyids already went through the
-                        # full declared -> fallback chain, so it is the source of
-                        # truth for this role's keyids.
+                        # Unconditional: resolved_keyids already went
+                        # through the full declared -> fallback chain, so
+                        # it is the source of truth for this role's keyids.
                         delegations.roles[role].keyids = list(resolved_keyids)
                         self._sign_with_online_keys(
                             role_metadata,
@@ -1801,7 +1846,9 @@ class MetadataRepository:
 
         for online_key in self._online_keys:
             if online_key.keyid not in targets.signed.delegations.keys:
-                logging.debug(f"online key {online_key.keyid} not in targets, adding key")
+                logging.debug(
+                    f"online key {online_key.keyid} not in targets, adding key"
+                )
                 targets.signed.delegations.keys[online_key.keyid] = online_key
 
         online_roles = {
@@ -1884,7 +1931,8 @@ class MetadataRepository:
         else:
             delegations = None
         online_keys = [
-            key for key in root.signed.keys.values()
+            key
+            for key in root.signed.keys.values()
             if RSTUF_ONLINE_KEY_URI_FIELD in key.unrecognized_fields
         ]
         if not online_keys:
@@ -2480,8 +2528,8 @@ class MetadataRepository:
                     f"of {self._timeout} seconds."
                 )
                 raise redis.exceptions.LockError(
-                    "RSTUF: Task exceed `LOCK_TIMEOUT` "
-                    f"({self._timeout} seconds)"
+                    f"RSTUF: Task exceed `LOCK_TIMEOUT` ({self._timeout} "
+                    "seconds)"
                 )
 
         return True
@@ -2661,22 +2709,28 @@ class MetadataRepository:
         # without verifying if the online keys are rotated to avoid a mismatch
         # with the rest of the roles using the online keys.
         current_online_keys = [
-            key for key in current_root.signed.keys.values()
+            key
+            for key in current_root.signed.keys.values()
             if RSTUF_ONLINE_KEY_URI_FIELD in key.unrecognized_fields
         ]
         current_online_keyids = {key.keyid for key in current_online_keys}
 
         new_online_keys = [
-            key for key in new_root.signed.keys.values()
+            key
+            for key in new_root.signed.keys.values()
             if RSTUF_ONLINE_KEY_URI_FIELD in key.unrecognized_fields
         ]
         new_online_keyids = {key.keyid for key in new_online_keys}
 
         # Fallback to old behavior if no online key URI fields are set
         if not current_online_keyids:
-            current_online_keyids = set(current_root.signed.roles[Timestamp.type].keyids)
+            current_online_keyids = set(
+                current_root.signed.roles[Timestamp.type].keyids
+            )
         if not new_online_keyids:
-            new_online_keyids = set(new_root.signed.roles[Timestamp.type].keyids)
+            new_online_keyids = set(
+                new_root.signed.roles[Timestamp.type].keyids
+            )
 
         if current_online_keyids == new_online_keyids:
             # online keys are not changed, persist the new root
@@ -2696,7 +2750,9 @@ class MetadataRepository:
                     if not new_online_keys:
                         new_online_keys = [
                             new_root.signed.keys[kid]
-                            for kid in new_root.signed.roles[Timestamp.type].keyids
+                            for kid in new_root.signed.roles[
+                                Timestamp.type
+                            ].keyids
                         ]
                     # Set the incoming keys as authoritative in memory so the
                     # bump below signs with them; the new root is persisted
@@ -2718,7 +2774,8 @@ class MetadataRepository:
                         # 2. bump all target roles
                         self._persist(new_root, Root.type)
                         logging.info(
-                            f"Updating root metadata: {new_root.signed.version}"
+                            "Updating root metadata: "
+                            f"{new_root.signed.version}"
                         )
                         status_lock_targets = True
                     finally:
@@ -3017,10 +3074,7 @@ class MetadataRepository:
                 self.write_repository_settings(
                     "ROOT_SIGNING", metadata.to_dict()
                 )
-                msg = (
-                    f"Root v{metadata.signed.version} is "
-                    "pending signatures"
-                )
+                msg = f"Root v{metadata.signed.version} is pending signatures"
                 return _result(True, bootstrap=msg)
 
             bootstrap_task_id = bootstrap_state.split("signing-")[1]
@@ -3051,10 +3105,7 @@ class MetadataRepository:
                 self.write_repository_settings(
                     "ROOT_SIGNING", metadata.to_dict()
                 )
-                msg = (
-                    f"Root v{metadata.signed.version} is "
-                    "pending signatures"
-                )
+                msg = f"Root v{metadata.signed.version} is pending signatures"
                 return _result(True, update=msg)
 
             # Threshold reached -> finalize event
