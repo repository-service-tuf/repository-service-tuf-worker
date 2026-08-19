@@ -221,7 +221,6 @@ class MetadataRepository:
             key_dict = copy.deepcopy(key_dict)
             return Key.from_dict(key_dict.pop("keyid"), key_dict)
 
-        # No ONLINE_KEY setting: take the first of the dynamic online keys.
         online_keys = self._online_keys
         if online_keys:
             key = online_keys[0]
@@ -230,7 +229,6 @@ class MetadataRepository:
             self.write_repository_settings("ONLINE_KEY", key_dict)
             return key
 
-        # Fallback to loading root metadata and getting timestamp key
         try:
             root = self._storage_load_root()
             keyid = root.signed.roles["timestamp"].keyids[0]
@@ -412,7 +410,6 @@ class MetadataRepository:
         return delegation_keyids
 
     def _resolve_keyids_for_role(self, role_name: str) -> List[str]:
-        # 1. Top-level roles
         if role_name in [
             Root.type,
             Targets.type,
@@ -431,7 +428,6 @@ class MetadataRepository:
                 # return every online keyid.
                 return self._online_keyids
 
-        # 2. Delegated roles
         try:
             return self.get_delegation_keyids(role_name)
         except Exception as e:
@@ -1204,7 +1200,6 @@ class MetadataRepository:
         role_name: str,
         role_metadata: Optional[Metadata[Targets]] = None,
     ):
-        # Add all configured online keys to the target delegations keys
         for key in self._online_keys:
             targets.signed.delegations.keys[key.keyid] = key
 
