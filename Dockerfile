@@ -31,10 +31,17 @@ FROM pre-final
 WORKDIR /opt/repository-service-tuf-worker
 ENV DATA_DIR=/data
 RUN mkdir $DATA_DIR
+
+RUN groupadd -g 1000 tuf && useradd -r -u 1000 -g tuf tuf
+
 COPY alembic.ini /opt/repository-service-tuf-worker/
 COPY alembic /opt/repository-service-tuf-worker/alembic
 COPY app.py /opt/repository-service-tuf-worker
 COPY entrypoint.sh /opt/repository-service-tuf-worker
 COPY supervisor.conf ${DATA_DIR}/
 COPY repository_service_tuf_worker /opt/repository-service-tuf-worker/repository_service_tuf_worker
+
+RUN chown -R tuf:tuf /opt/repository-service-tuf-worker ${DATA_DIR}
+USER 1000
+
 ENTRYPOINT ["bash", "entrypoint.sh"]
