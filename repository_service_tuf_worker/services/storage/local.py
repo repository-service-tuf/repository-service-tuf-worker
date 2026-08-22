@@ -92,3 +92,13 @@ class LocalStorage(IStorage):
                 os.fsync(destination_file.fileno())
         except OSError:
             raise StorageError(f"Can't write role file '{filename}'")
+
+    def delete(self, filename: str) -> None:
+        """Remove a file from the TUF repo path. Missing files are ignored."""
+        filepath = os.path.join(self._path, filename)
+        try:
+            os.remove(filepath)
+        except FileNotFoundError:
+            return
+        except OSError:
+            raise StorageError(f"Can't delete role file '{filepath}'")
