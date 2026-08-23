@@ -3946,6 +3946,98 @@ class TestMetadataRepository:
             },
         }
 
+    def test__remove_delegated_role_keys(self, test_repo):
+        """A removed role's exclusive keys are dropped from delegations."""
+        targets = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={
+                        "shared_key": "shared_key_obj",
+                        "only_role_1": "only_role_1_obj",
+                    },
+                    roles={
+                        "role-1": DelegatedRole.from_dict(
+                            {
+                                "keyids": ["shared_key", "only_role_1"],
+                                "name": "role-1",
+                                "paths": ["role-1/*"],
+                                "terminating": True,
+                                "threshold": 1,
+                            }
+                        ),
+                        "role-2": DelegatedRole.from_dict(
+                            {
+                                "keyids": ["shared_key"],
+                                "name": "role-2",
+                                "paths": ["role-2/*"],
+                                "terminating": True,
+                                "threshold": 1,
+                            }
+                        ),
+                    },
+                )
+            )
+        )
+        role_1 = targets.signed.delegations.roles["role-1"]
+
+        test_repo._remove_delegated_role_keys(targets, role_1)
+
+        # 'only_role_1' is used by nobody else, so it goes. 'shared_key' is
+        # still referenced by role-2, so it stays.
+        assert list(targets.signed.delegations.keys) == ["shared_key"]
+
+    def test__remove_delegated_role_keys_sole_role(self, test_repo):
+        """With no other role holding them, all its keys go."""
+        targets = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={"key_1": "key_1_obj", "key_2": "key_2_obj"},
+                    roles={
+                        "role-1": DelegatedRole.from_dict(
+                            {
+                                "keyids": ["key_1", "key_2"],
+                                "name": "role-1",
+                                "paths": ["role-1/*"],
+                                "terminating": True,
+                                "threshold": 1,
+                            }
+                        )
+                    },
+                )
+            )
+        )
+        role_1 = targets.signed.delegations.roles["role-1"]
+
+        test_repo._remove_delegated_role_keys(targets, role_1)
+
+        assert targets.signed.delegations.keys == {}
+
+    def test__remove_delegated_role_keys_dangling_keyid(self, test_repo):
+        """A keyid with no key object is skipped instead of raising."""
+        targets = Metadata(
+            Targets(
+                delegations=Delegations(
+                    keys={"key_1": "key_1_obj"},
+                    roles={
+                        "role-1": DelegatedRole.from_dict(
+                            {
+                                "keyids": ["key_1", "dangling_keyid"],
+                                "name": "role-1",
+                                "paths": ["role-1/*"],
+                                "terminating": True,
+                                "threshold": 1,
+                            }
+                        )
+                    },
+                )
+            )
+        )
+        role_1 = targets.signed.delegations.roles["role-1"]
+
+        test_repo._remove_delegated_role_keys(targets, role_1)
+
+        assert targets.signed.delegations.keys == {}
+
     def test_metadata_delegation_delete(
         self, test_repo, mocked_datetime, monkeypatch
     ):

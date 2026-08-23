@@ -928,7 +928,11 @@ class MetadataRepository:
         other_keys = []
         logging.debug("mapping keys")
         for not_delete in targets.signed.delegations.roles:
-            if not_delete == delegated:
+            # `not_delete` is a role name, so compare it against the name.
+            # Comparing it to the DelegatedRole itself is never true, which
+            # made this role contribute its own keyids to `other_keys` and
+            # so kept every key looking still-in-use.
+            if not_delete == delegated.name:
                 continue
             other_keys += targets.signed.delegations.roles[not_delete].keyids
 
@@ -936,7 +940,10 @@ class MetadataRepository:
         for key in role_keys:
             if key not in other_keys:
                 logging.debug(f"removing key id {key}")
-                targets.signed.delegations.keys.delete(key)
+                # `delegations.keys` is a plain dict and has no `.delete()`.
+                # Discard rather than `del` so a role that references a keyid
+                # with no key object cannot raise here.
+                targets.signed.delegations.keys.pop(key, None)
             else:
                 logging.debug(f"key {key} used by other role")
 
