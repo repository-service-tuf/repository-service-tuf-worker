@@ -1,5 +1,5 @@
 # Base
-FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS base_os
+FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS base_os
 
 # Builder requirements and deps
 FROM base_os AS builder
