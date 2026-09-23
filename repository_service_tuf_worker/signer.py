@@ -94,10 +94,22 @@ _AMBIENT_SETTING_NAMES = [
     "ONLINE_KEY_DIR",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
     "AWS_ENDPOINT_URL",
     "AWS_DEFAULT_REGION",
     "GOOGLE_APPLICATION_CREDENTIALS",
 ]
+
+
+def normalize_aws_kms_priv_key_uri(uri: str) -> str:
+    """Standardize incoming aws-kms URIs."""
+    if uri.startswith("aws-kms://"):
+        return uri.replace("aws-kms://", "awskms:", 1)
+    if uri.startswith("aws-kms:"):
+        return uri.replace("aws-kms:", "awskms:", 1)
+    if uri.startswith("awskms://"):
+        return uri.replace("awskms://", "awskms:", 1)
+    return uri
 
 
 class SignerStore:
@@ -126,6 +138,7 @@ class SignerStore:
 
         if key.keyid not in self._signers:
             if uri := key.unrecognized_fields.get(RSTUF_ONLINE_KEY_URI_FIELD):
+                uri = normalize_aws_kms_priv_key_uri(uri)
                 # (Re-)export ambient settings in isolated environment
                 with isolated_env(self._ambient_settings):
                     signer = Signer.from_priv_key_uri(uri, key)
