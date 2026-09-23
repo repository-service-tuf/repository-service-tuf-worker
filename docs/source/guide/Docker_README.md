@@ -182,6 +182,12 @@ See the AWS3 Environment Variables section below.
   volume is added to the path.
   Example: ``RSTUF_AWS_SECRET_ACCESS_KEY=/run/secrets/S3_SECRET_KEY``
 
+*  ``RSTUF_AWS_SESSION_TOKEN``
+
+  The session token to use when creating the client session to AWS services.
+
+  Example: ``RSTUF_AWS_SESSION_TOKEN=your_session_token``
+
 *  ``RSTUF_AWS_DEFAULT_REGION``
 
   The name of the region associated with the S3.
@@ -206,6 +212,20 @@ See the AWS3 Environment Variables section below.
   The path to the Google Cloud credentials file.
 
   Example: `RSTUF_GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/google-credentials.json`
+
+#### Using AWS KMS keys
+
+To use AWS KMS keys for signing, specify the key URI in the `x-rstuf-online-key-uri` field of the public key metadata.
+
+The canonical format for AWS KMS key URIs is `awskms:<key-arn>`, for example:
+`awskms:arn:aws:kms:us-east-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab`
+
+The worker also supports the `aws-kms` alias and allows using `//` in the URI. The following formats will be automatically normalized to the canonical `awskms:` format:
+* `aws-kms:<key-arn>`
+* `aws-kms://<key-arn>`
+* `awskms://<key-arn>`
+
+When using AWS KMS, ensure the required AWS credentials (`RSTUF_AWS_ACCESS_KEY_ID` and `RSTUF_AWS_SECRET_ACCESS_KEY`) and region (`RSTUF_AWS_DEFAULT_REGION`) are configured. If you are using temporary credentials, also configure `RSTUF_AWS_SESSION_TOKEN`.
 
 #### (Optional) `RSTUF_LOCK_TIMEOUT`
 
