@@ -1991,6 +1991,7 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_file_by_path.calls == [
             pretend.call(test_repo._db, "file1.tar.gz")
         ]
+        created_file = repository.targets_crud.create_file.calls[0].args[1]
         assert repository.targets_crud.create_file.calls == [
             pretend.call(
                 test_repo._db,
@@ -2005,6 +2006,7 @@ class TestMetadataRepository:
                     },
                     published=False,
                     action=repository.targets_schema.TargetAction.ADD,
+                    last_update=created_file.last_update,
                 ),
                 target_role="bins-e",
             )
@@ -2197,6 +2199,7 @@ class TestMetadataRepository:
         assert repository.targets_crud.read_file_by_path.calls == [
             pretend.call(test_repo._db, "file1.tar.gz")
         ]
+        created_file = repository.targets_crud.create_file.calls[0].args[1]
         assert repository.targets_crud.create_file.calls == [
             pretend.call(
                 test_repo._db,
@@ -2211,6 +2214,7 @@ class TestMetadataRepository:
                     },
                     published=False,
                     action=repository.targets_schema.TargetAction.ADD,
+                    last_update=created_file.last_update,
                 ),
                 target_role="bins-e",
             )
