@@ -54,7 +54,7 @@ class LocalStorage(IStorage):
                     os.path.join(self._path, f"*.{role}.json")
                 )
                 versions = [
-                    int(name.split("/")[-1].split(".", 1)[0])
+                    int(os.path.basename(name).split(".", 1)[0])
                     for name in filenames
                 ]
                 try:
