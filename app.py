@@ -73,6 +73,8 @@ app = Celery(
     task_acks_late=True,
     task_track_started=True,
     broker_heartbeat=0,
+    task_time_limit=int(worker_settings.get("TASK_TIME_LIMIT", 3600)),
+    task_soft_time_limit=int(worker_settings.get("TASK_SOFT_TIME_LIMIT", 3000)),
     # broker_use_ssl=BROKER_USE_SSL
     # (https://github.com/repository-service-tuf/vmware/issues/6)
 )
