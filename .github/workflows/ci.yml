@@ -24,7 +24,7 @@ jobs:
       run: |
         if [[ "$(egrep -w 'image:\s+repository-service-tuf-api|image:\s+repository-service-tuf-worker' docker-compose.yml -c)" -ne "0" ]]; then echo "Local image has been used in docker-compose.yml" && exit 1; fi
 
-    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
       with:
         python-version: ${{ matrix.python-versions }}
 
@@ -35,7 +35,7 @@ jobs:
       run: tox
 
     - name: Codecov
-      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         files: coverage.xml
         fail_ci_if_error: false
