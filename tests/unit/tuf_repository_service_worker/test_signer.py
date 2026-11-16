@@ -85,6 +85,14 @@ class TestSigner:
         with patch.dict("os.environ", {}, clear=True), pytest.raises(KeyError):
             store.get(fake_key)
 
+    def test_get_no_uri_fails(self):
+        settings = Dynaconf()
+        store = SignerStore(settings)
+        fake_key = stub(keyid="fake_id", unrecognized_fields={})
+
+        with pytest.raises(ValueError, match="Strict explicit URI mapping from metadata is required"):
+            store.get(fake_key)
+
     @pytest.mark.skipif(
         not os.environ.get("RSTUF_AWS_ENDPOINT_URL"), reason="No AWS endpoint"
     )
