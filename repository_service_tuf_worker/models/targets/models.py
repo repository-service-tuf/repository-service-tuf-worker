@@ -29,7 +29,7 @@ class RSTUFTargetFiles(Base):
         Enum(schemas.TargetAction),
         nullable=False,
     )
-    last_update = Column(DateTime, default=datetime.now(timezone.utc))
+    last_update = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     targets_role = Column(Integer, ForeignKey("rstuf_target_roles.id"))
 
 
@@ -40,5 +40,5 @@ class RSTUFTargetRoles(Base):
     expires = Column(DateTime, nullable=False)
     version = Column(Integer, nullable=False)
     active = Column(Boolean, default=True, nullable=False)
-    last_update = Column(DateTime, default=datetime.now(timezone.utc))
+    last_update = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     target_files = relationship(RSTUFTargetFiles, backref="rstuf_target_roles")

@@ -6,7 +6,7 @@ import enum
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TargetAction(enum.Enum):
@@ -19,7 +19,9 @@ class RSTUFTargetRoleCreate(BaseModel):
     version: int
     expires: datetime
     active: Optional[bool] = True
-    last_update: Optional[datetime] = datetime.now(timezone.utc)
+    last_update: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
 
     class Config:
         orm_mode = True
@@ -30,7 +32,9 @@ class RSTUFTargetFileCreate(BaseModel):
     info: Dict[str, Any]
     published: bool
     action: TargetAction
-    last_update: Optional[datetime] = datetime.now(timezone.utc)
+    last_update: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
 
     class Config:
         orm_mode = True
