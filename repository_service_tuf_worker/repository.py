@@ -2085,8 +2085,21 @@ class MetadataRepository:
             self._verify_new_root_signing(current_root, new_root)
 
         except UnsignedMetadataError:
-            # TODO: Add missing sanity check - new root must have at least 1
-            # and only valid signature - use `get_verification_status` (#367)
+            signed_serializer = CanonicalJSONSerializer()
+            signed_bytes = signed_serializer.serialize(new_root.signed)
+            
+            vr = new_root.signed.get_root_verification_result(
+                current_root.signed, signed_bytes, new_root.signatures
+            )
+            
+            if len(vr.signed) == 0:
+                return self._task_result(
+                    task=TaskName.METADATA_UPDATE,
+                    message="Metadata Update Failed",
+                    error="No valid trusted signatures found",
+                    details=None,
+                )
+
             self.write_repository_settings("ROOT_SIGNING", new_root.to_dict())
             return self._task_result(
                 task=TaskName.METADATA_UPDATE,
