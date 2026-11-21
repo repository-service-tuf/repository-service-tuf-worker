@@ -3376,13 +3376,17 @@ class TestMetadataRepository:
         ]
 
     def test__root_metadata_update_signatures_pending(
-        self, test_repo, mocked_datetime
+        self, test_repo, mocked_datetime, monkeypatch
     ):
         fake_new_root_md = pretend.stub(
             signed=pretend.stub(
                 roles={"timestamp": pretend.stub(keyids=["k1"])},
                 version=2,
-            )
+                get_root_verification_result=pretend.call_recorder(
+                    lambda *a, **kw: pretend.stub(signed={"fake_key": "fake_sig"})
+                ),
+            ),
+            signatures={"fake_key": "fake_sig"}
         )
         fake_old_root_md = pretend.stub(
             signed=pretend.stub(
@@ -3395,6 +3399,15 @@ class TestMetadataRepository:
         )
         test_repo._verify_new_root_signing = pretend.raiser(
             repository.UnsignedMetadataError()
+        )
+
+        fake_serializer = pretend.stub(
+            serialize=pretend.call_recorder(lambda x: b"fake_bytes")
+        )
+        monkeypatch.setattr(
+            repository,
+            "CanonicalJSONSerializer",
+            lambda: fake_serializer,
         )
 
         fake_new_root_md.to_dict = pretend.call_recorder(lambda: "fake dict")
@@ -3419,6 +3432,53 @@ class TestMetadataRepository:
         assert test_repo.write_repository_settings.calls == [
             pretend.call("ROOT_SIGNING", "fake dict")
         ]
+        
+    def test__root_metadata_update_signatures_failed(
+        self, test_repo, mocked_datetime, monkeypatch
+    ):
+        fake_new_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
+                version=2,
+                get_root_verification_result=pretend.call_recorder(
+                    lambda *a, **kw: pretend.stub(signed={})
+                ),
+            ),
+            signatures={}
+        )
+        fake_old_root_md = pretend.stub(
+            signed=pretend.stub(
+                roles={"timestamp": pretend.stub(keyids=["k1"])},
+                version=1,
+            )
+        )
+        test_repo._storage_load_root = pretend.call_recorder(
+            lambda: fake_old_root_md
+        )
+        test_repo._verify_new_root_signing = pretend.raiser(
+            repository.UnsignedMetadataError()
+        )
+
+        fake_serializer = pretend.stub(
+            serialize=pretend.call_recorder(lambda x: b"fake_bytes")
+        )
+        monkeypatch.setattr(
+            repository,
+            "CanonicalJSONSerializer",
+            lambda: fake_serializer,
+        )
+
+        result = test_repo._root_metadata_update(fake_new_root_md)
+
+        assert result == {
+            "task": repository.TaskName.METADATA_UPDATE,
+            "status": True,
+            "last_update": mocked_datetime.now(),
+            "message": "Metadata Update Failed",
+            "error": "No valid trusted signatures found",
+            "details": None,
+        }
+        assert test_repo._storage_load_root.calls == [pretend.call()]
 
     def test__root_metadata_update_not_trusted(
         self, test_repo, mocked_datetime

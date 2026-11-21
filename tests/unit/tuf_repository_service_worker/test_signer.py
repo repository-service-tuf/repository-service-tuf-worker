@@ -105,3 +105,34 @@ class TestSigner:
         store = SignerStore(settings)
         signer = store.get(key)
         assert isinstance(signer, AWSSigner)
+
+    @pytest.mark.parametrize(
+        "uri, expected",
+        [
+            ("aws-kms:arn:aws:kms:region:account:key/id", "awskms:arn:aws:kms:region:account:key/id"),
+            ("aws-kms://arn:aws:kms:region:account:key/id", "awskms:arn:aws:kms:region:account:key/id"),
+            ("awskms://arn:aws:kms:region:account:key/id", "awskms:arn:aws:kms:region:account:key/id"),
+            ("awskms:arn:aws:kms:region:account:key/id", "awskms:arn:aws:kms:region:account:key/id"),
+            ("fn:foo", "fn:foo"),
+        ],
+    )
+    def test_normalize_aws_kms_priv_key_uri(self, uri, expected):
+        from repository_service_tuf_worker.signer import normalize_aws_kms_priv_key_uri
+        assert normalize_aws_kms_priv_key_uri(uri) == expected
+
+    @patch("repository_service_tuf_worker.signer.Signer.from_priv_key_uri")
+    def test_get_from_aws_kms_alias(self, mock_from_priv_key_uri):
+        mock_from_priv_key_uri.return_value = stub()
+        uri = "aws-kms:arn:aws:kms:us-east-1:123456789012:key/foo-bar"
+        settings = Dynaconf()
+        store = SignerStore(settings)
+        fake_key = stub(
+            keyid="fake_id",
+            unrecognized_fields={RSTUF_ONLINE_KEY_URI_FIELD: uri},
+        )
+
+        store.get(fake_key)
+
+        mock_from_priv_key_uri.assert_called_once_with(
+            "awskms:arn:aws:kms:us-east-1:123456789012:key/foo-bar", fake_key
+        )
