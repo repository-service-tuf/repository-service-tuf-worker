@@ -65,7 +65,7 @@ services:
       - RSTUF_ONLINE_KEY_DIR=/var/opt/repository-service-tuf/key_storage
       - RSTUF_BROKER_SERVER=redis://redis
       - RSTUF_REDIS_SERVER=redis://redis
-      - RSTUF_SQL_SERVER=mysql+pymysql://root:secret@mysql:3306/rstuf
+      - RSTUF_DB_SERVER=mysql+pymysql://root:secret@mysql:3306/rstuf
     volumes:
       - ./:/opt/repository-service-tuf-worker:z
       - repository-service-tuf-storage:/var/opt/repository-service-tuf/storage
