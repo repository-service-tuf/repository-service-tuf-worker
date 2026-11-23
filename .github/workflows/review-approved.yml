@@ -14,6 +14,7 @@ jobs:
     uses: ./.github/workflows/functional-tests.yml
     with:
       api_version: dev
+      worker_version: dev
       cli_version: dev
 
   functional-tests-local-redis:
@@ -23,6 +24,7 @@ jobs:
     with:
       docker_compose: docker-compose-redis.yml
       api_version: dev
+      worker_version: dev
       cli_version: dev
 
   functional-tests-aws:
@@ -32,6 +34,7 @@ jobs:
     with:
       docker_compose: docker-compose-aws.yml
       api_version: dev
+      worker_version: dev
       cli_version: dev
 
   # disabled until MySQL is supported
@@ -42,4 +45,5 @@ jobs:
   #   with:
   #     docker_compose: docker-compose-mysql.yml
   #     api_version: dev
+  #     worker_version: dev
   #     cli_version: dev
