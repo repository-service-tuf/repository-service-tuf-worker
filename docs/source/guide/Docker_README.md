@@ -59,6 +59,35 @@ See [Celery Broker Instructions](https://docs.celeryq.dev/en/stable/getting-star
 
 Example: `guest:guest@rabbitmq:5672`
 
+#### (Optional) Celery broker TLS (`RSTUF_BROKER_USE_SSL` and related)
+
+When the AMQP broker requires TLS (or you use an ``amqps://`` broker URL), pass
+SSL options into Celery’s ``broker_use_ssl`` setting using either:
+
+* **Structured env vars** — set ``RSTUF_BROKER_USE_SSL`` to a truthy value
+  (``true``, ``1``, ``yes``, ``on``). Optional paths (must be existing files
+  inside the container):
+
+  * ``RSTUF_BROKER_SSL_KEYFILE`` — client private key
+  * ``RSTUF_BROKER_SSL_CERTFILE`` — client certificate
+  * ``RSTUF_BROKER_SSL_CA_CERTS`` — CA bundle for broker verification
+  * ``RSTUF_BROKER_SSL_CERT_REQS`` — ``required`` (default), ``optional``, or
+    ``none`` (maps to Python ``ssl.CERT_*``)
+
+  With only ``RSTUF_BROKER_USE_SSL=true``, the worker uses
+  ``cert_reqs=CERT_REQUIRED`` and no client certificate paths (suitable for
+  many server-authenticated TLS setups when the runtime trust store is enough).
+
+* **JSON override** — ``RSTUF_BROKER_SSL_OPTIONS`` as a JSON object is merged
+  as Celery’s ``broker_use_ssl`` dict (after normalizing ``cert_reqs`` strings).
+  When this variable is set to a non-empty object, it takes precedence over
+  ``RSTUF_BROKER_USE_SSL`` for building the dict.
+
+Invalid JSON, unknown ``cert_reqs``, or missing certificate files make the
+worker fail at startup with a clear error.
+
+See also [Celery broker-use-ssl](https://docs.celeryq.dev/en/stable/userguide/configuration.html#broker-use-ssl).
+
 #### (Required) `RSTUF_REDIS_SERVER`
 
 Redis server address.
