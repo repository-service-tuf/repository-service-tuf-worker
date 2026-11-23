@@ -216,6 +216,7 @@ class TestApp:
                 )
             ),
             bootstrap_state=booststrap_state,
+            bump_snapshot=pretend.call_recorder(lambda: None),
             get_delegated_rolenames=pretend.call_recorder(
                 lambda *a, **kw: mock_delegated_rolenames
             ),
@@ -259,6 +260,15 @@ class TestApp:
             assert app.repository.get_delegated_rolenames.calls == [
                 pretend.call(expired=expired)
             ]
+
+        if (
+            bor_lock is not False
+            and booststrap_state == "finished"
+            and len(mock_delegated_rolenames) == 0
+        ):
+            assert app.repository.bump_snapshot.calls == [pretend.call()]
+        else:
+            assert app.repository.bump_snapshot.calls == []
 
         if len(mock_delegated_rolenames) == 1:
             assert app.repository._settings.get_fresh.calls == [
