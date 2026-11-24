@@ -1970,11 +1970,19 @@ class MetadataRepository:
                 self._bump_and_persist(targets, Targets.type)
                 roles_diff += [Targets.type]
 
+            # The snapshot must name the targets version bumped above.
+            only_target = Targets.type in roles
             if delegated_roles == [Roles.BINS.value]:
-                self._update_timestamp(self._update_snapshot(bump_all=True))
+                self._update_timestamp(
+                    self._update_snapshot(
+                        bump_all=True, only_target=only_target
+                    )
+                )
             else:
                 self._update_timestamp(
-                    self._update_snapshot(target_roles=delegated_roles)
+                    self._update_snapshot(
+                        target_roles=delegated_roles, only_target=only_target
+                    )
                 )
 
             roles_diff += [*delegated_roles]
