@@ -727,6 +727,37 @@ class TestMetadataRepository:
         ]
         assert test_repo._bump_and_persist.calls == []
 
+    def test__update_snapshot_only_snapshot(self, test_repo):
+        mocked_snapshot = pretend.stub(signed=pretend.stub(meta={}, version=3))
+        mocked_targets = pretend.stub(
+            signed=pretend.stub(
+                version=4,
+                delegations=pretend.stub(succinct_roles=True),
+            )
+        )
+        test_repo._storage_backend.get = pretend.call_recorder(
+            lambda rolename: (
+                mocked_snapshot
+                if rolename == Snapshot.type
+                else mocked_targets
+            )
+        )
+
+        def fake__bump_and_persist(md, role, **kw):
+            md.signed.version += 1
+
+        test_repo._bump_and_persist = pretend.call_recorder(
+            fake__bump_and_persist
+        )
+
+        result = test_repo._update_snapshot(only_snapshot=True)
+
+        assert result == 4
+        assert mocked_snapshot.signed.version == 4
+        assert test_repo._bump_and_persist.calls == [
+            pretend.call(mocked_snapshot, Snapshot.type)
+        ]
+
     def test__update_targets_delegations_key_bins(
         self, test_repo, monkeypatch
     ):
@@ -2829,8 +2860,39 @@ class TestMetadataRepository:
             lambda: fake_snapshot
         )
 
+        test_repo._is_expired = pretend.call_recorder(lambda role: None)
+        test_repo._update_timestamp = pretend.call_recorder(lambda *a: None)
+
         test_repo.bump_snapshot()
         assert test_repo._storage_load_snapshot.calls == [pretend.call()]
+        assert test_repo._is_expired.calls == [pretend.call(Timestamp.type)]
+        assert test_repo._update_timestamp.calls == []
+
+    def test_bump_snapshot_unexpired_timestamp_expired(self, test_repo):
+        fake_exp = datetime.datetime(2080, 6, 16, 9, 5, 1, tzinfo=timezone.utc)
+        fake_snapshot = pretend.stub(
+            signed=pretend.stub(meta={}, expires=fake_exp, version=87)
+        )
+        test_repo._storage_load_snapshot = pretend.call_recorder(
+            lambda: fake_snapshot
+        )
+        test_repo._is_expired = pretend.call_recorder(
+            lambda role: Timestamp.type
+        )
+        test_repo._update_snapshot = pretend.call_recorder(
+            lambda *a, **kw: None
+        )
+        test_repo._update_timestamp = pretend.call_recorder(
+            lambda *a: pretend.stub(
+                signed=pretend.stub(version=88, expires=fake_exp)
+            )
+        )
+
+        test_repo.bump_snapshot()
+
+        assert test_repo._is_expired.calls == [pretend.call(Timestamp.type)]
+        assert test_repo._update_snapshot.calls == []
+        assert test_repo._update_timestamp.calls == [pretend.call(87)]
 
     def test_bump_snapshot_check_force_is_acknowledged(
         self, test_repo, caplog

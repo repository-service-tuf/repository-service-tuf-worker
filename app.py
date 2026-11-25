@@ -240,6 +240,8 @@ def bump_online_roles(expired: bool = False) -> List[Optional[str]]:
 
             # No expired roles, call end within the bump_online_role task
             if len(roles) == 0:
+                # Snapshot and timestamp can expire before any targets role
+                repository.bump_snapshot()
                 _end_bor_chain_callback(None, start_time)
                 return roles
 

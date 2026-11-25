@@ -633,6 +633,7 @@ class MetadataRepository:
         if only_snapshot:
             self._bump_and_persist(snapshot, Snapshot.type)
             logging.debug("Bumped version of 'Snapshot' role")
+            return snapshot.signed.version
 
         if len(db_target_roles) > 0 and snapshot_meta_updated:
             targets_crud.update_roles_version(
@@ -1911,6 +1912,13 @@ class MetadataRepository:
                 f"{snapshot.signed.expires}. More than "
                 f"{self._hours_before_expire} hour, skipping"
             )
+            if self._is_expired(Timestamp.type):
+                timestamp = self._update_timestamp(snapshot.signed.version)
+                logging.info(
+                    "[scheduled snapshot bump] Timestamp version bumped: "
+                    f"{timestamp.signed.version}, new expire "
+                    f"{timestamp.signed.expires}"
+                )
 
     def bump_online_roles(self, force: Optional[bool] = False) -> bool:
         """
